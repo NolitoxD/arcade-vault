@@ -1,45 +1,70 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
-import { use, useEffect, useState } from 'react';
-import { useUser } from '@/app/context/UserContext';
+import { useState, useCallback, useEffect } from 'react';
+import { createClient } from '@/lib/supabase/client';
 
-export default function GamePlayer({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  const { id } = use(params);
-  const { user } = useUser();
+const TetrisGame = dynamic(() => import('@/components/games/TetrisGame'), {
+  ssr: false,
+});
 
+const SKIN_OPTIONS = [
+  { key: 'retro', label: 'Retro' },
+  { key: 'neon', label: 'Neon' },
+  { key: 'pastel', label: 'Pastel' },
+  { key: 'pixel', label: 'Pixel Art' },
+];
+
+function getSavedSkin() {
+  if (typeof window === 'undefined') return 'retro';
+  return localStorage.getItem('tetris-skin') ?? 'retro';
+}
+
+export default function TetrisPlay() {
   const [score, setScore] = useState(0);
-  const [lives] = useState(3);
+  const [lives, setLives] = useState(1);
   const [level, setLevel] = useState(1);
   const [paused, setPaused] = useState(false);
   const [over, setOver] = useState(false);
-  const [name, setName] = useState(user ?? 'INVITADO');
+  const [name, setName] = useState('INVITADO');
   const [saved, setSaved] = useState(false);
+  const [gameKey, setGameKey] = useState(0);
+  const [skinKey, setSkinKey] = useState('retro');
 
   useEffect(() => {
-    if (over || paused) return;
-    const t = setInterval(
-      () => setScore((s) => s + Math.floor(10 + Math.random() * 90)),
-      220,
-    );
-    return () => clearInterval(t);
-  }, [over, paused]);
+    setSkinKey(getSavedSkin());
+  }, []);
+
+  const handleScoreChange = useCallback((s: number) => setScore(s), []);
+  const handleLivesChange = useCallback((l: number) => setLives(l), []);
+  const handleLevelChange = useCallback((l: number) => setLevel(l), []);
+  const handleGameOver = useCallback((finalScore: number) => {
+    setScore(finalScore);
+    setOver(true);
+  }, []);
 
   useEffect(() => {
-    if (score > 0 && score % 2500 < 100) setLevel((l) => l + 1);
-  }, [score]);
+    if (over) {
+      const saved = localStorage.getItem('av_player_name');
+      if (saved) setName(saved);
+    }
+  }, [over]);
+
+  function changeSkin(key: string) {
+    setSkinKey(key);
+    localStorage.setItem('tetris-skin', key);
+  }
 
   function restart() {
     setScore(0);
+    setLives(1);
     setLevel(1);
     setPaused(false);
     setOver(false);
     setSaved(false);
-    setName(user ?? 'INVITADO');
+    setName('INVITADO');
+    setGameKey((k) => k + 1);
   }
 
   return (
@@ -58,11 +83,37 @@ export default function GamePlayer({
           </div>
           <div className="hud-stat lives">
             <div className="l">Vidas</div>
-            <div className="v">{'♥ '.repeat(lives).trim() || '—'}</div>
+            <div className="v">
+              {'♥ '.repeat(Math.max(0, lives)).trim() || '—'}
+            </div>
           </div>
           <div className="hud-stat level">
             <div className="l">Nivel</div>
             <div className="v">{String(level).padStart(2, '0')}</div>
+          </div>
+          <div className="hud-stat">
+            <div className="l">Skin</div>
+            <div className="v">
+              <select
+                value={skinKey}
+                onChange={(e) => changeSkin(e.target.value)}
+                style={{
+                  background: 'transparent',
+                  border: '1px solid var(--ink-dim)',
+                  color: 'var(--ink)',
+                  fontFamily: 'inherit',
+                  fontSize: 'inherit',
+                  cursor: 'pointer',
+                  padding: '2px 4px',
+                }}
+              >
+                {SKIN_OPTIONS.map((s) => (
+                  <option key={s.key} value={s.key}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
         <div className="hud-actions">
@@ -72,7 +123,7 @@ export default function GamePlayer({
           <button className="btn magenta" onClick={() => setOver(true)}>
             FIN
           </button>
-          <Link href={`/games/${id}`} className="btn ghost">
+          <Link href="/games/tetris" className="btn ghost">
             SALIR
           </Link>
         </div>
@@ -80,13 +131,15 @@ export default function GamePlayer({
 
       <div className="crt">
         <div className="crt-screen">
-          <div className="game-arena">
-            <div className="grid-floor" />
-            <div className="enemy e1" />
-            <div className="enemy e2" />
-            <div className="enemy e3" />
-            <div className="player-ship" />
-          </div>
+          <TetrisGame
+            key={gameKey}
+            paused={paused}
+            skinKey={skinKey}
+            onScoreChange={handleScoreChange}
+            onLivesChange={handleLivesChange}
+            onLevelChange={handleLevelChange}
+            onGameOver={handleGameOver}
+          />
           {paused && (
             <div
               className="crt-content"
@@ -113,7 +166,7 @@ export default function GamePlayer({
         </div>
         <div className="crt-bottom">
           <span className="led">SEÑAL OK</span>
-          <span>{id.toUpperCase()} · CRT-83 · 60 HZ</span>
+          <span>TETRIS · CRT-83 · 60 HZ</span>
           <span>CARGA · 1MB</span>
         </div>
       </div>
@@ -133,7 +186,20 @@ export default function GamePlayer({
                   }
                   placeholder="TUS INICIALES"
                 />
-                <button className="btn yellow" onClick={() => setSaved(true)}>
+                <button
+                  className="btn yellow"
+                  onClick={async () => {
+                    setSaved(true);
+                    localStorage.setItem('av_player_name', name);
+                    const supabase = createClient();
+                    await supabase.from('scores').insert({
+                      game_id: 'tetris',
+                      player_name: name,
+                      score,
+                      user_id: null,
+                    });
+                  }}
+                >
                   GUARDAR PUNTUACIÓN
                 </button>
               </div>
@@ -144,7 +210,7 @@ export default function GamePlayer({
               <button className="btn" onClick={restart}>
                 JUGAR DE NUEVO
               </button>
-              <Link href={`/games/${id}#leaderboard`} className="btn cyan">
+              <Link href="/games/tetris#leaderboard" className="btn cyan">
                 VER LEADERBOARD
               </Link>
               <Link href="/games" className="btn magenta">

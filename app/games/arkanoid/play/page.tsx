@@ -1,45 +1,48 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
-import { use, useEffect, useState } from 'react';
-import { useUser } from '@/app/context/UserContext';
+import { useState, useCallback, useEffect } from 'react';
+import { createClient } from '@/lib/supabase/client';
 
-export default function GamePlayer({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  const { id } = use(params);
-  const { user } = useUser();
+const ArkanoidGame = dynamic(() => import('@/components/games/ArkanoidGame'), {
+  ssr: false,
+});
 
+export default function ArkanoidPlay() {
   const [score, setScore] = useState(0);
-  const [lives] = useState(3);
+  const [lives, setLives] = useState(3);
   const [level, setLevel] = useState(1);
   const [paused, setPaused] = useState(false);
   const [over, setOver] = useState(false);
-  const [name, setName] = useState(user ?? 'INVITADO');
+  const [name, setName] = useState('INVITADO');
   const [saved, setSaved] = useState(false);
+  const [gameKey, setGameKey] = useState(0);
+
+  const handleScoreChange = useCallback((s: number) => setScore(s), []);
+  const handleLivesChange = useCallback((l: number) => setLives(l), []);
+  const handleLevelChange = useCallback((l: number) => setLevel(l), []);
+  const handleGameOver = useCallback((finalScore: number) => {
+    setScore(finalScore);
+    setOver(true);
+  }, []);
 
   useEffect(() => {
-    if (over || paused) return;
-    const t = setInterval(
-      () => setScore((s) => s + Math.floor(10 + Math.random() * 90)),
-      220,
-    );
-    return () => clearInterval(t);
-  }, [over, paused]);
-
-  useEffect(() => {
-    if (score > 0 && score % 2500 < 100) setLevel((l) => l + 1);
-  }, [score]);
+    if (over) {
+      const saved = localStorage.getItem('av_player_name');
+      if (saved) setName(saved);
+    }
+  }, [over]);
 
   function restart() {
     setScore(0);
+    setLives(3);
     setLevel(1);
     setPaused(false);
     setOver(false);
     setSaved(false);
-    setName(user ?? 'INVITADO');
+    setName('INVITADO');
+    setGameKey((k) => k + 1);
   }
 
   return (
@@ -58,7 +61,9 @@ export default function GamePlayer({
           </div>
           <div className="hud-stat lives">
             <div className="l">Vidas</div>
-            <div className="v">{'♥ '.repeat(lives).trim() || '—'}</div>
+            <div className="v">
+              {'♥ '.repeat(Math.max(0, lives)).trim() || '—'}
+            </div>
           </div>
           <div className="hud-stat level">
             <div className="l">Nivel</div>
@@ -72,7 +77,7 @@ export default function GamePlayer({
           <button className="btn magenta" onClick={() => setOver(true)}>
             FIN
           </button>
-          <Link href={`/games/${id}`} className="btn ghost">
+          <Link href="/games/arkanoid" className="btn ghost">
             SALIR
           </Link>
         </div>
@@ -80,13 +85,14 @@ export default function GamePlayer({
 
       <div className="crt">
         <div className="crt-screen">
-          <div className="game-arena">
-            <div className="grid-floor" />
-            <div className="enemy e1" />
-            <div className="enemy e2" />
-            <div className="enemy e3" />
-            <div className="player-ship" />
-          </div>
+          <ArkanoidGame
+            key={gameKey}
+            paused={paused}
+            onScoreChange={handleScoreChange}
+            onLivesChange={handleLivesChange}
+            onLevelChange={handleLevelChange}
+            onGameOver={handleGameOver}
+          />
           {paused && (
             <div
               className="crt-content"
@@ -113,7 +119,7 @@ export default function GamePlayer({
         </div>
         <div className="crt-bottom">
           <span className="led">SEÑAL OK</span>
-          <span>{id.toUpperCase()} · CRT-83 · 60 HZ</span>
+          <span>ARKANOID · CRT-83 · 60 HZ</span>
           <span>CARGA · 1MB</span>
         </div>
       </div>
@@ -133,7 +139,20 @@ export default function GamePlayer({
                   }
                   placeholder="TUS INICIALES"
                 />
-                <button className="btn yellow" onClick={() => setSaved(true)}>
+                <button
+                  className="btn yellow"
+                  onClick={async () => {
+                    setSaved(true);
+                    localStorage.setItem('av_player_name', name);
+                    const supabase = createClient();
+                    await supabase.from('scores').insert({
+                      game_id: 'arkanoid',
+                      player_name: name,
+                      score,
+                      user_id: null,
+                    });
+                  }}
+                >
                   GUARDAR PUNTUACIÓN
                 </button>
               </div>
@@ -144,7 +163,7 @@ export default function GamePlayer({
               <button className="btn" onClick={restart}>
                 JUGAR DE NUEVO
               </button>
-              <Link href={`/games/${id}#leaderboard`} className="btn cyan">
+              <Link href="/games/arkanoid#leaderboard" className="btn cyan">
                 VER LEADERBOARD
               </Link>
               <Link href="/games" className="btn magenta">
