@@ -4,11 +4,124 @@ import { useEffect, useRef } from 'react';
 
 interface SnakeGameProps {
   paused: boolean;
+  skinKey?: string;
   onScoreChange: (score: number) => void;
   onLevelChange: (level: number) => void;
   onLivesChange: (lives: number) => void;
   onGameOver: (finalScore: number) => void;
 }
+
+// ── Skin system ───────────────────────────────────────────────────────────────
+
+type Skin = {
+  name: string;
+  boardBg: string;
+  gridColor: string;
+  headColor: string;
+  bodyColor: string;
+  eyeColor: string;
+  hudBg: string;
+  hudPrimaryColor: string;
+  hudSecondaryColor: string;
+  drawSegment: (
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    cell: number,
+    isHead: boolean,
+    alpha: number,
+  ) => void;
+};
+
+const SKINS: Record<string, Skin> = {
+  classic: {
+    name: 'Classic',
+    boardBg: '#0a1a0a',
+    gridColor: 'rgba(0,255,80,0.06)',
+    headColor: '#00ff50',
+    bodyColor: '#00cc40',
+    eyeColor: '#001a00',
+    hudBg: 'rgba(0,0,0,0.55)',
+    hudPrimaryColor: '#00ff80',
+    hudSecondaryColor: '#80ffcc',
+    drawSegment(ctx, x, y, cell, isHead, alpha) {
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = isHead ? this.headColor : this.bodyColor;
+      const pad = isHead ? 2 : 4;
+      ctx.beginPath();
+      ctx.roundRect(
+        x * cell + pad,
+        y * cell + pad,
+        cell - pad * 2,
+        cell - pad * 2,
+        isHead ? 6 : 4,
+      );
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    },
+  },
+  retro: {
+    name: 'Retro',
+    boardBg: '#0d1f0d',
+    gridColor: 'rgba(180,220,100,0.08)',
+    headColor: '#a8d848',
+    bodyColor: '#78b828',
+    eyeColor: '#1a2a00',
+    hudBg: 'rgba(10,20,10,0.75)',
+    hudPrimaryColor: '#c8e860',
+    hudSecondaryColor: '#90c840',
+    drawSegment(ctx, x, y, cell, isHead, alpha) {
+      ctx.globalAlpha = alpha;
+      const pad = isHead ? 2 : 3;
+      ctx.fillStyle = isHead ? this.headColor : this.bodyColor;
+      ctx.fillRect(
+        x * cell + pad,
+        y * cell + pad,
+        cell - pad * 2,
+        cell - pad * 2,
+      );
+      // CRT highlight strip (4px at top)
+      ctx.fillStyle = 'rgba(255,255,255,0.12)';
+      ctx.fillRect(x * cell + pad, y * cell + pad, cell - pad * 2, 4);
+      ctx.globalAlpha = 1;
+    },
+  },
+  neon: {
+    name: 'Neon',
+    boardBg: '#000000',
+    gridColor: 'rgba(0,255,120,0.18)',
+    headColor: '#00ff88',
+    bodyColor: '#00cc66',
+    eyeColor: '#003311',
+    hudBg: 'rgba(0,0,0,0.7)',
+    hudPrimaryColor: '#00ffaa',
+    hudSecondaryColor: '#00ff44',
+    drawSegment(ctx, x, y, cell, isHead, alpha) {
+      ctx.globalAlpha = alpha;
+      const color = isHead ? this.headColor : this.bodyColor;
+      const pad = isHead ? 2 : 4;
+      const bx = x * cell + pad;
+      const by = y * cell + pad;
+      const bw = cell - pad * 2;
+
+      ctx.shadowBlur = isHead ? 18 : 10;
+      ctx.shadowColor = color;
+
+      const r = parseInt(color.slice(1, 3), 16);
+      const g = parseInt(color.slice(3, 5), 16);
+      const b = parseInt(color.slice(5, 7), 16);
+      ctx.fillStyle = `rgba(${r},${g},${b},0.45)`;
+      ctx.fillRect(bx, by, bw, bw);
+
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(bx + 0.75, by + 0.75, bw - 1.5, bw - 1.5);
+
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1;
+    },
+  },
+};
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -103,6 +216,7 @@ function intervalMs(level: number): number {
 
 export default function SnakeGame({
   paused,
+  skinKey = 'classic',
   onScoreChange,
   onLevelChange,
   onLivesChange,
@@ -110,6 +224,7 @@ export default function SnakeGame({
 }: SnakeGameProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const pausedRef = useRef(paused);
+  const skinRef = useRef<Skin>(SKINS[skinKey ?? 'classic'] ?? SKINS.classic);
   const stateRef = useRef<GameState>(initialState());
   const prevScoreRef = useRef(0);
   const prevLevelRef = useRef(1);
@@ -121,6 +236,10 @@ export default function SnakeGame({
   useEffect(() => {
     pausedRef.current = paused;
   }, [paused]);
+
+  useEffect(() => {
+    skinRef.current = SKINS[skinKey ?? 'classic'] ?? SKINS.classic;
+  }, [skinKey]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -141,14 +260,14 @@ export default function SnakeGame({
     // ── Draw ────────────────────────────────────────────────────────────────
     function draw() {
       const s = stateRef.current;
-      ctx.clearRect(0, 0, W, H);
+      const skin = skinRef.current;
 
       // Background
-      ctx.fillStyle = '#0a1a0a';
+      ctx.fillStyle = skin.boardBg;
       ctx.fillRect(0, 0, W, H);
 
       // Grid lines
-      ctx.strokeStyle = 'rgba(0,255,80,0.06)';
+      ctx.strokeStyle = skin.gridColor;
       ctx.lineWidth = 1;
       for (let c = 0; c <= COLS; c++) {
         ctx.beginPath();
@@ -167,22 +286,12 @@ export default function SnakeGame({
       s.snake.forEach((seg, i) => {
         const isHead = i === 0;
         const alpha = isHead ? 1 : Math.max(0.4, 1 - i * 0.03);
-        ctx.globalAlpha = alpha;
-        ctx.fillStyle = isHead ? '#00ff50' : '#00cc40';
-        const pad = isHead ? 2 : 4;
-        ctx.beginPath();
-        ctx.roundRect(
-          seg.x * CELL + pad,
-          seg.y * CELL + pad,
-          CELL - pad * 2,
-          CELL - pad * 2,
-          isHead ? 6 : 4,
-        );
-        ctx.fill();
+        skin.drawSegment(ctx, seg.x, seg.y, CELL, isHead, alpha);
 
         // Head eyes
         if (isHead) {
-          ctx.fillStyle = '#001a00';
+          ctx.globalAlpha = 1;
+          ctx.fillStyle = skin.eyeColor;
           const d = s.dir;
           const ex = seg.x * CELL + CELL / 2 + d.x * 8;
           const ey = seg.y * CELL + CELL / 2 + d.y * 8;
@@ -216,17 +325,17 @@ export default function SnakeGame({
       );
 
       // HUD overlay
-      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillStyle = skin.hudBg;
       ctx.fillRect(0, 0, W, 38);
 
       ctx.font = 'bold 14px monospace';
       ctx.textBaseline = 'middle';
 
-      ctx.fillStyle = '#00ff80';
+      ctx.fillStyle = skin.hudPrimaryColor;
       ctx.textAlign = 'left';
       ctx.fillText(`SCORE  ${String(s.score).padStart(6, '0')}`, 12, 19);
 
-      ctx.fillStyle = '#80ffcc';
+      ctx.fillStyle = skin.hudSecondaryColor;
       ctx.textAlign = 'right';
       ctx.fillText(`LEVEL  ${String(s.level).padStart(2, '0')}`, W - 12, 19);
 

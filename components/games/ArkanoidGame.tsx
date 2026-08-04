@@ -4,11 +4,125 @@ import { useEffect, useRef } from 'react';
 
 interface ArkanoidGameProps {
   paused: boolean;
+  skinKey?: string;
   onScoreChange: (score: number) => void;
   onLivesChange: (lives: number) => void;
   onLevelChange: (level: number) => void;
   onGameOver: (finalScore: number) => void;
 }
+
+// ── Skin system ───────────────────────────────────────────────────────────────
+
+type BlockColor =
+  | 'red'
+  | 'yellow'
+  | 'cyan'
+  | 'magenta'
+  | 'hotpink'
+  | 'green'
+  | 'gray';
+
+type Skin = {
+  name: string;
+  boardBg: string;
+  // When true the skin draws blocks itself (retro/neon); when false the
+  // caller falls back to the spritesheet.
+  drawsBlocks: boolean;
+  drawBlock: (
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    color: BlockColor,
+  ) => void;
+  hudColor: string;
+};
+
+// NES-accurate Arkanoid block palette used by the classic skin
+const CLASSIC_BLOCK_COLORS: Record<BlockColor, string> = {
+  red: '#e03030',
+  yellow: '#e0c000',
+  cyan: '#00c8d0',
+  magenta: '#c040c0',
+  hotpink: '#e050a0',
+  green: '#28b040',
+  gray: '#909090',
+};
+
+// Retro CRT palette — saturated solids, no shadow
+const RETRO_BLOCK_COLORS: Record<BlockColor, string> = {
+  red: '#ff5555',
+  yellow: '#ffdd55',
+  cyan: '#55ffee',
+  magenta: '#dd55ff',
+  hotpink: '#ff55aa',
+  green: '#55ff88',
+  gray: '#aaaaaa',
+};
+
+// Neon electric palette
+const NEON_BLOCK_COLORS: Record<BlockColor, string> = {
+  red: '#ff2244',
+  yellow: '#ffff00',
+  cyan: '#00ffff',
+  magenta: '#ff00ff',
+  hotpink: '#ff0088',
+  green: '#00ff66',
+  gray: '#888899',
+};
+
+const SKINS: Record<string, Skin> = {
+  classic: {
+    name: 'Classic',
+    boardBg: '#000000',
+    drawsBlocks: false,
+    // Fallback used only when spritesheet is unavailable
+    drawBlock(ctx, x, y, w, h, color) {
+      ctx.fillStyle = CLASSIC_BLOCK_COLORS[color] ?? '#888';
+      ctx.fillRect(x, y, w, h);
+    },
+    hudColor: '#ffffff',
+  },
+
+  retro: {
+    name: 'Retro',
+    boardBg: '#0a0a0f',
+    drawsBlocks: true,
+    drawBlock(ctx, x, y, w, h, color) {
+      const fill = RETRO_BLOCK_COLORS[color] ?? '#888';
+      ctx.fillStyle = fill;
+      ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
+      // CRT highlight: 4 px white strip at the top
+      ctx.fillStyle = 'rgba(255,255,255,0.18)';
+      ctx.fillRect(x + 1, y + 1, w - 2, 4);
+    },
+    hudColor: '#e0e0e0',
+  },
+
+  neon: {
+    name: 'Neon',
+    boardBg: '#000000',
+    drawsBlocks: true,
+    drawBlock(ctx, x, y, w, h, color) {
+      const fill = NEON_BLOCK_COLORS[color] ?? '#888';
+      const r = parseInt(fill.slice(1, 3), 16);
+      const g = parseInt(fill.slice(3, 5), 16);
+      const b = parseInt(fill.slice(5, 7), 16);
+
+      ctx.shadowColor = fill;
+      ctx.shadowBlur = 12;
+      ctx.fillStyle = `rgba(${r},${g},${b},0.45)`;
+      ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
+
+      ctx.strokeStyle = fill;
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(x + 1.75, y + 1.75, w - 3.5, h - 3.5);
+      ctx.shadowBlur = 0;
+    },
+    hudColor: '#00ffff',
+  },
+};
 
 // ── Spritesheet data ──────────────────────────────────────────────────────────
 
@@ -177,6 +291,7 @@ type Explosion = {
 
 export default function ArkanoidGame({
   paused,
+  skinKey = 'classic',
   onScoreChange,
   onLivesChange,
   onLevelChange,
@@ -184,10 +299,15 @@ export default function ArkanoidGame({
 }: ArkanoidGameProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const pausedRef = useRef(paused);
+  const skinRef = useRef<Skin>(SKINS[skinKey] ?? SKINS.classic);
 
   useEffect(() => {
     pausedRef.current = paused;
   }, [paused]);
+
+  useEffect(() => {
+    skinRef.current = SKINS[skinKey] ?? SKINS.classic;
+  }, [skinKey]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -407,18 +527,44 @@ export default function ArkanoidGame({
 
     // ── Draw ─────────────────────────────────────────────────────────────────
     function draw() {
-      ctx.fillStyle = '#000';
+      const skin = skinRef.current;
+
+      ctx.fillStyle = skin.boardBg;
       ctx.fillRect(0, 0, W, H);
 
-      for (const block of blocks)
-        if (block.alive)
-          drawSprite(
-            'block_' + block.color,
+      for (const block of blocks) {
+        if (!block.alive) continue;
+        if (skin.drawsBlocks) {
+          skin.drawBlock(
+            ctx,
             block.x,
             block.y,
             block.w,
             block.h,
+            block.color as BlockColor,
           );
+        } else {
+          // classic: use spritesheet, fallback to solid if not loaded
+          if (ssLoaded) {
+            drawSprite(
+              'block_' + block.color,
+              block.x,
+              block.y,
+              block.w,
+              block.h,
+            );
+          } else {
+            skin.drawBlock(
+              ctx,
+              block.x,
+              block.y,
+              block.w,
+              block.h,
+              block.color as BlockColor,
+            );
+          }
+        }
+      }
 
       for (const exp of explosions) {
         const frameIndex = Math.min(
@@ -434,11 +580,12 @@ export default function ArkanoidGame({
         );
       }
 
+      // Paddle and ball always use the spritesheet
       drawSprite('paddle', paddle.x, paddle.y, paddle.w, paddle.h);
       drawSprite('ball', ball.x, ball.y, ball.w, ball.h);
 
-      // Internal HUD (score top-left, level top-center, lives as sprites top-right)
-      ctx.fillStyle = '#fff';
+      // Internal HUD
+      ctx.fillStyle = skin.hudColor;
       ctx.font = 'bold 18px monospace';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
