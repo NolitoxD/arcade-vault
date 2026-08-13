@@ -6,3 +6,4 @@
 | `tetris`    | TETRIS    | PUZZLE    | cyan   | Apila tetrominos antes de que el techo te aplaste.   |
 | `arkanoid`  | ARKANOID  | ARCADE    | cyan   | Rompe todos los bloques antes de perder tus 3 vidas. |
 | `snake`     | SNAKE     | ARCADE    | green  | Come frutas, crece y no te muerdas la cola.          |
+| `pong`      | PONG      | SPORTS    | blue   | Golpea la pelota más rápido de lo que tu rival puede reaccionar. |

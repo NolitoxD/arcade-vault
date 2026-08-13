@@ -6,12 +6,10 @@
 
 | ID               | Título            | Categoría  | Color  | Descripción breve                                                                            | Justificación                                                                                         | Fecha      |
 | ---------------- | ----------------- | ---------- | ------ | -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ---------- |
-| `frogger`        | FROGGER           | MAZE       | lime   | Cruza la carretera y el río sin convertirte en papilla.                                      | Añade categoría MAZE ausente; lógica de cuadrícula simple, colisiones por celda, sin físicas.         | 2026-05-20 |
 | `pacman`         | PAC-MAN           | MAZE       | yellow | Come todos los puntos del laberinto huyendo de 4 fantasmas.                                  | Segunda cobertura de MAZE con IA de fantasmas clásica; canvas 2D con tilemaps es bien conocido.       | 2026-05-20 |
 | `dig-dug`        | DIG DUG           | MAZE       | orange | Excava túneles bajo tierra para inflar y reventar monstruos subterráneos.                    | Terreno destructible como grid de celdas booleanas; dos tipos de enemigos, factibilidad alta.         | 2026-05-20 |
 | `space-invaders` | SPACE INVADERS    | SHOOTER    | green  | Destruye oleadas de alienígenas antes de que lleguen a la Tierra.                            | Shooter icónico; grid de enemigos con movimiento uniforme, escudos destructibles, factibilidad alta.  | 2026-05-20 |
 | `galaga`         | GALAGA            | SHOOTER    | purple | Repele formaciones enemigas que se lanzan en picado sobre tu nave.                           | Shooter con patrones de vuelo Bezier; más dinámico que Space Invaders, factibilidad media.            | 2026-05-20 |
-| `pong`           | PONG              | SPORTS     | blue   | Golpea la pelota más rápido de lo que tu rival puede reaccionar.                             | Incorpora categoría SPORTS; es el juego más simple del canon arcade, implementación en <200 líneas.   | 2026-05-20 |
 | `ice-hockey`     | ICE HOCKEY        | SPORTS     | cyan   | Controla tu equipo en una pista helada y marca más goles que el rival en 90 segundos.        | Cubre SPORTS con multi-sprite; lógica de posesión del disco, factibilidad media.                      | 2026-05-20 |
 | `tennis`         | TENNIS            | SPORTS     | lime   | Devuelve cada golpe con precisión de ángulo antes de que la pelota bote dos veces.           | Variante de SPORTS con pseudo-perspectiva 3D; más profundidad visual que Pong, factibilidad media.    | 2026-05-20 |
 | `kong`           | DONKEY KONG       | PLATFORMER | red    | Sube escaleras y salta barriles rodantes para rescatar a la princesa en la cima.             | Introduce categoría PLATFORMER; física de salto + plataformas, factibilidad media.                    | 2026-05-20 |
@@ -28,8 +26,9 @@
 
 ## 🟢 Aceptados / en desarrollo
 
-| ID  | Título | Spec | Fecha aceptado |
-| --- | ------ | ---- | -------------- |
+| ID     | Título | Spec       | Fecha aceptado |
+| ------ | ------ | ---------- | -------------- |
+| `pong` | PONG   | 15-pong.md | 2026-08-13     |
 
 ## ✅ Implementados
 
@@ -39,6 +38,7 @@
 | `tetris`    | TETRIS    | PUZZLE    | —     |
 | `arkanoid`  | ARKANOID  | ARCADE    | —     |
 | `snake`     | SNAKE     | ARCADE    | —     |
+| `frogger`   | FROGGER   | ARCADE    | —     |
 
 ## ❌ Descartados
 

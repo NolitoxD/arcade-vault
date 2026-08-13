@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import type { GameRow, ScoreRow } from '@/lib/supabase/types';
+import LiveLeaderboard from './LiveLeaderboard';
 
 export default async function GameDetail({
   params,
@@ -26,11 +27,6 @@ export default async function GameDetail({
   const typedGame = game as GameRow;
   const typedScores = (scores ?? []) as ScoreRow[];
   const best = typedScores[0]?.score ?? 0;
-
-  function formatDate(iso: string) {
-    const d = new Date(iso);
-    return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
-  }
 
   return (
     <div className="av-detail fade-in">
@@ -90,52 +86,7 @@ export default async function GameDetail({
         </div>
       </div>
 
-      <aside>
-        <div className="leaderboard">
-          <h3>MEJORES PUNTUACIONES</h3>
-          {typedScores.length === 0 ? (
-            <div
-              style={{
-                padding: '40px 0',
-                textAlign: 'center',
-                color: 'var(--ink-faint)',
-              }}
-            >
-              <div
-                className="pixel"
-                style={{ fontSize: 12, color: 'var(--cyan)', marginBottom: 8 }}
-              >
-                SIN REGISTROS
-              </div>
-              <div style={{ fontSize: 13 }}>
-                Sé el primero en entrar al salón de la fama
-              </div>
-            </div>
-          ) : (
-            typedScores.map((r, i) => (
-              <div
-                key={r.id}
-                className={`lb-row${i === 0 ? ' top1' : i === 1 ? ' top2' : i === 2 ? ' top3' : ''}`}
-              >
-                <div className="rk">#{String(i + 1).padStart(2, '0')}</div>
-                <div className="pl">
-                  {r.player_name}
-                  <div
-                    style={{
-                      fontSize: 10,
-                      color: 'var(--ink-faint)',
-                      letterSpacing: '0.1em',
-                    }}
-                  >
-                    {formatDate(r.created_at)}
-                  </div>
-                </div>
-                <div className="sc">{r.score.toLocaleString('es-ES')}</div>
-              </div>
-            ))
-          )}
-        </div>
-      </aside>
+      <LiveLeaderboard gameId={id} initialScores={typedScores} />
     </div>
   );
 }

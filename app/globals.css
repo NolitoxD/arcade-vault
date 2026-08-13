@@ -529,6 +529,18 @@ a { color: inherit; text-decoration: none; }
   filter: drop-shadow(0 0 8px rgba(0,255,136,0.5));
 }
 
+.cover-pong { background: linear-gradient(180deg,#001238,#0a0a18); }
+.cover-pong::after {
+  content: "";
+  position: absolute; inset: 0;
+  background:
+    repeating-linear-gradient(0deg, rgba(80,150,255,0.55) 0 10px, transparent 10px 20px) 50% 0/3px 100% no-repeat,
+    linear-gradient(#4d8dff,#4d8dff) 8% 33%/8px 34% no-repeat,
+    linear-gradient(#9dc0ff,#9dc0ff) 90% 45%/8px 34% no-repeat,
+    radial-gradient(circle at 62% 38%, #eaf2ff 0 6px, transparent 7px);
+  filter: drop-shadow(0 0 8px rgba(80,150,255,0.55));
+}
+
 .cover-duelo { background: #0a0a18; }
 .cover-duelo::after {
   content: "";

@@ -45,6 +45,7 @@ Eres el portador mobile de Arcade Vault. Aplicas el patrón de controles táctil
    - **Tetris:** `{ up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight', a: 'ArrowUp', b: 'Shift' }`
    - **Arkanoid:** `{ left: 'ArrowLeft', right: 'ArrowRight', a: ' ' }`
    - **Snake:** `{ up: 'w', down: 's', left: 'a', right: 'd' }`
+   - **Pong:** `{ up: 'ArrowUp', down: 'ArrowDown' }` — solo modo `solo` (gamepad renderizado únicamente con `mode === 'solo'`; versus es desktop-only).
    - Para juegos nuevos: derivar del canvas, D-pad = movimiento, A = acción principal, B = acción secundaria (omitir si no existe).
 
    e. Renderizar `<MobileGamepad>` **debajo del wrapper CRT y fuera de él**:
