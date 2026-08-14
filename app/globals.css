@@ -541,6 +541,21 @@ a { color: inherit; text-decoration: none; }
   filter: drop-shadow(0 0 8px rgba(80,150,255,0.55));
 }
 
+.cover-road-fighter { background: linear-gradient(180deg,#2a0008,#120a0e); }
+.cover-road-fighter::after {
+  content: "";
+  position: absolute; inset: 0;
+  background:
+    linear-gradient(#ff2d2d,#ff2d2d) 44% 74%/16px 28px no-repeat,
+    linear-gradient(#ffd23a,#ffd23a) 58% 26%/16px 28px no-repeat,
+    linear-gradient(#3ad1ff,#3ad1ff) 34% 44%/16px 28px no-repeat,
+    repeating-linear-gradient(0deg, rgba(232,232,232,0.75) 0 14px, transparent 14px 30px) 50% 0/4px 100% no-repeat,
+    repeating-linear-gradient(0deg, #d92b2b 0 16px, #e8e8e8 16px 32px) 22% 0/8px 100% no-repeat,
+    repeating-linear-gradient(0deg, #d92b2b 0 16px, #e8e8e8 16px 32px) 78% 0/8px 100% no-repeat,
+    linear-gradient(90deg, transparent 0 22%, #1c1c24 22% 78%, transparent 78%);
+  filter: drop-shadow(0 0 8px rgba(255,45,45,0.55));
+}
+
 .cover-duelo { background: #0a0a18; }
 .cover-duelo::after {
   content: "";

@@ -12,5 +12,6 @@
 | snake     | ✅      | ✅    | ✅   | —           | sí                 | 2026-05-21           |
 | frogger   | ✅      | ✅    | ✅   | —           | sí                 | 2026-05-25           |
 | pong      | ✅      | ✅    | ✅   | —           | sí                 | 2026-08-13           |
+| road-fighter | ✅   | ✅    | ✅   | —           | sí                 | 2026-08-14           |
 
 Leyenda: `✅` aplicado y verificado · `🟡` en progreso · `—` pendiente

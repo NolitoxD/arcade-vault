@@ -18,7 +18,6 @@
 | `2048`           | 2048              | PUZZLE     | amber  | Desliza y fusiona fichas hasta alcanzar el número 2048.                                      | Puzzle moderno icónico; grid 4×4, animaciones de merge simples, factibilidad alta.                    | 2026-05-20 |
 | `sokoban`        | SOKOBAN           | PUZZLE     | brown  | Empuja cajas hacia sus marcadores sin quedar atrapado.                                       | Puzzle clásico; tilemap estático, movimiento discreto por celdas, sistema de undo, factibilidad alta. | 2026-05-20 |
 | `columns`        | COLUMNS           | PUZZLE     | violet | Alinea 3 joyas del mismo color en columnas que caen sin parar.                               | Variante de Tetris con detección en 4 direcciones; sin rotaciones complejas, factibilidad alta.       | 2026-05-20 |
-| `road-fighter`   | ROAD FIGHTER      | RACING     | red    | Rebasa coches rivales y gestiona el combustible hasta llegar a la meta.                      | Introduce categoría RACING con scroll vertical top-down; patrón familiar a Snake, factibilidad alta.  | 2026-05-20 |
 | `out-run`        | OUT RUN           | RACING     | pink   | Conduce tu Ferrari por carreteras ramificadas antes de que el tiempo expire.                 | Racing pseudo-3D icónico; trapezoides en canvas 2D, factibilidad media.                               | 2026-05-20 |
 | `pole-position`  | POLE POSITION     | RACING     | silver | Clasifica en pole y gana la carrera en un circuito de Fórmula 1 retro.                       | Racing pseudo-3D + IA de rivales; más complejo que Road Fighter, factibilidad media.                  | 2026-05-20 |
 | `karate-champ`   | KARATE CHAMP      | FIGHTING   | gold   | Ejecuta técnicas de karate precisas para puntuar antes de que el árbitro detenga el combate. | Introduce FIGHTING; sistema de poses por combinación de teclas, factibilidad alta.                    | 2026-05-20 |
@@ -26,9 +25,9 @@
 
 ## 🟢 Aceptados / en desarrollo
 
-| ID     | Título | Spec       | Fecha aceptado |
-| ------ | ------ | ---------- | -------------- |
-| `pong` | PONG   | 15-pong.md | 2026-08-13     |
+| ID             | Título       | Spec               | Fecha aceptado |
+| -------------- | ------------ | ------------------ | -------------- |
+| `road-fighter` | ROAD FIGHTER | 16-road-fighter.md | 2026-08-14     |
 
 ## ✅ Implementados
 
@@ -38,7 +37,8 @@
 | `tetris`    | TETRIS    | PUZZLE    | —     |
 | `arkanoid`  | ARKANOID  | ARCADE    | —     |
 | `snake`     | SNAKE     | ARCADE    | —     |
-| `frogger`   | FROGGER   | ARCADE    | —     |
+| `frogger`   | FROGGER   | ARCADE    | —          |
+| `pong`      | PONG      | SPORTS    | 2026-08-13 |
 
 ## ❌ Descartados
 
