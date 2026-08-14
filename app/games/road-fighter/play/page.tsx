@@ -105,7 +105,12 @@ export default function RoadFighterPlay() {
     setGameKey((k) => k + 1);
   }
 
-  const keyMap = { left: 'ArrowLeft', right: 'ArrowRight' };
+  const keyMap = {
+    up: 'ArrowUp',
+    down: 'ArrowDown',
+    left: 'ArrowLeft',
+    right: 'ArrowRight',
+  };
 
   return (
     <div className="av-player fade-in">
