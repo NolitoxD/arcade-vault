@@ -4,6 +4,8 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 
+const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/;
+
 export default function ResetPassword() {
   const [pass, setPass] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -18,8 +20,10 @@ export default function ResetPassword() {
       setError('Las contraseñas no coinciden.');
       return;
     }
-    if (pass.length < 6) {
-      setError('La contraseña debe tener al menos 6 caracteres.');
+    if (!PASSWORD_REGEX.test(pass)) {
+      setError(
+        'La contraseña debe tener mínimo 8 caracteres e incluir mayúsculas, minúsculas, números y símbolos.',
+      );
       return;
     }
     setLoading(true);
@@ -82,6 +86,7 @@ export default function ResetPassword() {
                 onChange={(e) => setPass(e.target.value)}
                 placeholder="••••••••"
                 required
+                autoComplete="new-password"
               />
             </div>
             <div className="field">
@@ -92,6 +97,7 @@ export default function ResetPassword() {
                 onChange={(e) => setConfirm(e.target.value)}
                 placeholder="••••••••"
                 required
+                autoComplete="new-password"
               />
             </div>
             {error && (

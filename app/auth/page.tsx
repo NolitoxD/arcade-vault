@@ -1,7 +1,8 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { useUser } from '@/app/context/UserContext';
 
@@ -9,7 +10,7 @@ type View = 'in' | 'up' | 'forgot';
 
 const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/;
 
-export default function Auth() {
+function AuthForm() {
   const { user } = useUser();
   const [tab, setTab] = useState<'in' | 'up'>('in');
   const [view, setView] = useState<View>('in');
@@ -20,6 +21,8 @@ export default function Auth() {
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const callbackError = searchParams.get('error') === 'callback';
 
   useEffect(() => {
     if (user) router.replace('/');
@@ -81,7 +84,7 @@ export default function Auth() {
     setLoading(true);
     const supabase = createClient();
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/auth/reset-password`,
+      redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback?next=/auth/reset-password`,
     });
     setLoading(false);
     if (error) {
@@ -95,7 +98,9 @@ export default function Auth() {
     const supabase = createClient();
     await supabase.auth.signInWithOAuth({
       provider,
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
+      options: {
+        redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback`,
+      },
     });
   }
 
@@ -117,6 +122,19 @@ export default function Auth() {
             ACCESO AL SISTEMA · v2.6
           </div>
         </div>
+
+        {callbackError && (
+          <div
+            style={{
+              color: 'var(--neon-red, #ff4444)',
+              fontSize: 12,
+              marginBottom: 12,
+              textAlign: 'center',
+            }}
+          >
+            El enlace de acceso ha expirado o es inválido. Inténtalo de nuevo.
+          </div>
+        )}
 
         {view === 'forgot' ? (
           <>
@@ -244,6 +262,9 @@ export default function Auth() {
                     onChange={(e) => setPass(e.target.value)}
                     placeholder="••••••••"
                     required
+                    autoComplete={
+                      tab === 'in' ? 'current-password' : 'new-password'
+                    }
                   />
                 </div>
                 {error && (
@@ -319,5 +340,13 @@ export default function Auth() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function Auth() {
+  return (
+    <Suspense>
+      <AuthForm />
+    </Suspense>
   );
 }
