@@ -6,7 +6,7 @@ export async function GET(request: NextRequest) {
   const code = searchParams.get('code');
   const next = searchParams.get('next');
   // only same-origin relative paths, never protocol-relative (`//host`)
-  const safeNext = next?.startsWith('/') && !next.startsWith('//') ? next : '/';
+  const safeNext = next?.startsWith('/') && !next.startsWith('//') && !next.includes('\\') ? next : '/';
 
   if (code) {
     const supabase = await createClient();

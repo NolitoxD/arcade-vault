@@ -26,7 +26,7 @@ function AuthForm() {
   const reasonPlay = searchParams.get('reason') === 'play';
   const nextParam = searchParams.get('next');
   const safeNext =
-    nextParam && nextParam.startsWith('/') && !nextParam.startsWith('//')
+    nextParam && nextParam.startsWith('/') && !nextParam.startsWith('//') && !nextParam.includes('\\')
       ? nextParam
       : null;
 

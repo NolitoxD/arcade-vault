@@ -32,7 +32,7 @@ export async function proxy(request: NextRequest) {
   // only same-origin relative paths, never protocol-relative (`//host`)
   const nextParam = searchParams.get('next');
   const safeNext =
-    nextParam?.startsWith('/') && !nextParam.startsWith('//')
+    nextParam?.startsWith('/') && !nextParam.startsWith('//') && !nextParam.includes('\\')
       ? nextParam
       : null;
 
