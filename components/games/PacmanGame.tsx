@@ -478,6 +478,7 @@ type Ghost = {
   state: GhostState;
   frightened: boolean;
   wantsExit: boolean;
+  eatenThisFright: boolean;
 };
 
 type GameState = {
@@ -508,7 +509,16 @@ type GameState = {
 };
 
 function makeGhost(id: GhostId): Ghost {
-  return { id, x: 0, y: 0, dir: LEFT, state: 'house', frightened: false, wantsExit: false };
+  return {
+    id,
+    x: 0,
+    y: 0,
+    dir: LEFT,
+    state: 'house',
+    frightened: false,
+    wantsExit: false,
+    eatenThisFright: false,
+  };
 }
 
 function initialState(): GameState {
@@ -576,6 +586,7 @@ function placeEntities(s: GameState) {
     g.y = cellCY(cell);
     g.frightened = false;
     g.wantsExit = false;
+    g.eatenThisFright = false;
     if (g.id === 'blinky') {
       g.state = 'out';
       g.dir = LEFT;
@@ -804,8 +815,11 @@ function PacmanGame({
     // sale azul y comestible, no puede matar al jugador a mitad de power-pellet.
     // Se sincroniza tanto al arrancar la salida como al completarla, para cubrir
     // los dos órdenes posibles (power-pellet antes o durante el recorrido).
+    // Excepción (comportamiento del arcade): el que YA fue comido en esta misma
+    // fase azul re-sale en modo normal — salir azul otra vez permitiría farmear
+    // la cadena comiéndose al mismo fantasma a valores crecientes.
     function syncFrightenedWithGlobal(g: Ghost) {
-      g.frightened = s.frightenedMs > 0;
+      g.frightened = s.frightenedMs > 0 && !g.eatenThisFright;
     }
 
     // Salida escalonada de la casa: recorrido guionizado (la puerta no existe
@@ -912,6 +926,7 @@ function PacmanGame({
           s.frightenedMs = 0;
           for (let i = 0; i < s.ghosts.length; i++) {
             s.ghosts[i].frightened = false;
+            s.ghosts[i].eatenThisFright = false;
           }
         }
         return;
@@ -929,6 +944,10 @@ function PacmanGame({
     function startFrightened() {
       forceReverse();
       s.chainIdx = 0;
+      // Fase azul nueva: el historial de comidos de la anterior se borra
+      for (let i = 0; i < s.ghosts.length; i++) {
+        s.ghosts[i].eatenThisFright = false;
+      }
       const frightenedS = difficultyFor(s.level).frightenedS;
       if (frightenedS <= 0) return; // nivel ≥12: solo reversa, sin fase azul
       s.frightenedMs = frightenedS * 1000;
@@ -1005,6 +1024,7 @@ function PacmanGame({
             ];
           s.chainIdx++;
           g.frightened = false;
+          g.eatenThisFright = true;
           // Comido durante la salida: ya está sobre la columna de la puerta, así
           // que baja directo. `eyes` navegaría con `adjacency`, que en la celda
           // de la puerta no tiene salidas.
