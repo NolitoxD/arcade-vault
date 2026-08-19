@@ -1200,7 +1200,7 @@ function PacmanGame({
       if (s.readyMs > 0) {
         drawBanner(skin, 'READY!');
       } else if (s.clearMs > 0) {
-        drawBanner(skin, `¡NIVEL ${s.level}!`);
+        drawBanner(skin, `¡NIVEL ${s.level + 1}!`);
       }
     }
 

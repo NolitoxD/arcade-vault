@@ -17,7 +17,7 @@ Arcade Vault — online gaming platform where users play classic arcade games an
 - **Supabase** (`@supabase/ssr`, `@supabase/supabase-js`) — auth + scores persistence
 - **Resend** — contact form email delivery
 
-No test runner configured.
+Test runner: vitest (`npm test`) — logic tests in `components/games/pacman-logic/`.
 
 ## Skills
 
