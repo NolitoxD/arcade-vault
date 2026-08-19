@@ -69,10 +69,12 @@ describe('chaseTarget', () => {
     ).toBe(6 * COLS + 14); // (14,6)
   });
 
-  it('inky reflects blinky through 2 cells ahead of Pac-Man (horizontal)', () => {
+  it('inky reflects blinky through 2 cells ahead of Pac-Man (horizontal), clamped to the grid', () => {
     const pacmanCell = 10 * COLS + 14; // (14,10)
     const blinkyCell = 10 * COLS + 2; // (2,10)
-    // p2 = (16,10); vector p2-blinky = (14,0); target = blinky + 2*vector = (30,10)
+    // p2 = (16,10); vector p2-blinky = (14,0); raw target = (30,10), which
+    // overshoots the 28-col grid — clamp tx to cols-1=27 before flattening,
+    // or it aliases into row 11 when decoded back by nextDir.
     expect(
       chaseTarget('inky', {
         pacmanCell,
@@ -81,7 +83,21 @@ describe('chaseTarget', () => {
         ghostCell: 0,
         cols: COLS,
       }),
-    ).toBe(10 * COLS + 30);
+    ).toBe(10 * COLS + 27);
+  });
+
+  it('pinky clamps to the top row when 4 cells ahead would go off-grid', () => {
+    const pacmanCell = 2 * COLS + 14; // (14,2)
+    // raw target y = 2-4 = -2, clamped to row 0.
+    expect(
+      chaseTarget('pinky', {
+        pacmanCell,
+        pacmanDir: UP,
+        blinkyCell: 0,
+        ghostCell: 0,
+        cols: COLS,
+      }),
+    ).toBe(14);
   });
 
   it('inky reflects blinky through 2 cells ahead of Pac-Man (vertical)', () => {

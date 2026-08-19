@@ -13,14 +13,20 @@ export type TargetState = {
   cols: number;
 };
 
-// Canonical maze size fixed across the 3 shipped mazes (see specs/19-pacman.md
-// GRID_ROWS). Needed here because TargetState only carries cols, not rows,
-// yet Clyde's near-Pac-Man chase target falls back to his scatter corner.
+// Canonical maze size fixed across the 3 shipped mazes: spec 19 ("Geometría
+// y leyenda de los mazes") pins every maze to exactly 28x31 via GRID_ROWS,
+// and validateMaze's defaults enforce it. Needed here because TargetState
+// only carries cols, not rows, yet Clyde's near-Pac-Man chase target falls
+// back to his scatter corner, and pinky/inky targets clamp ty against it.
 const GRID_ROWS = 31;
 
 const DIRS: Dir[] = [0, 1, 2, 3];
 const DX: Record<Dir, number> = { 0: 0, 1: -1, 2: 0, 3: 1 };
 const DY: Record<Dir, number> = { 0: -1, 1: 0, 2: 1, 3: 0 };
+
+function clamp(v: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, v));
+}
 
 export function chaseTarget(id: GhostId, s: TargetState): number {
   const { pacmanCell, pacmanDir, blinkyCell, ghostCell, cols } = s;
@@ -31,8 +37,11 @@ export function chaseTarget(id: GhostId, s: TargetState): number {
     case 'blinky':
       return pacmanCell;
     case 'pinky': {
-      const tx = px + DX[pacmanDir] * 4;
-      const ty = py + DY[pacmanDir] * 4;
+      // Clamped so the flat index below always round-trips: nextDir decodes
+      // it via `% cols` / `/ cols`, which aliases to a different row for
+      // any out-of-range x or y.
+      const tx = clamp(px + DX[pacmanDir] * 4, 0, cols - 1);
+      const ty = clamp(py + DY[pacmanDir] * 4, 0, GRID_ROWS - 1);
       return ty * cols + tx;
     }
     case 'inky': {
@@ -40,8 +49,10 @@ export function chaseTarget(id: GhostId, s: TargetState): number {
       const p2y = py + DY[pacmanDir] * 2;
       const bx = blinkyCell % cols;
       const by = Math.floor(blinkyCell / cols);
-      const tx = bx + 2 * (p2x - bx);
-      const ty = by + 2 * (p2y - by);
+      // Same clamp as pinky — the 2x reflection can overshoot the grid by
+      // far more than the raw pacman-ahead offset.
+      const tx = clamp(bx + 2 * (p2x - bx), 0, cols - 1);
+      const ty = clamp(by + 2 * (p2y - by), 0, GRID_ROWS - 1);
       return ty * cols + tx;
     }
     case 'clyde': {
