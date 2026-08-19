@@ -23,10 +23,16 @@ function AuthForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const callbackError = searchParams.get('error') === 'callback';
+  const reasonPlay = searchParams.get('reason') === 'play';
+  const nextParam = searchParams.get('next');
+  const safeNext =
+    nextParam && nextParam.startsWith('/') && !nextParam.startsWith('//')
+      ? nextParam
+      : null;
 
   useEffect(() => {
-    if (user) router.replace('/');
-  }, [user, router]);
+    if (user) router.replace(safeNext ?? '/');
+  }, [user, router, safeNext]);
 
   function switchTab(t: 'in' | 'up') {
     setTab(t);
@@ -49,7 +55,7 @@ function AuthForm() {
       setError(error.message);
       return;
     }
-    router.push('/');
+    router.push(safeNext ?? '/');
   }
 
   async function handleSignUp(e: React.FormEvent) {
@@ -96,10 +102,13 @@ function AuthForm() {
 
   async function handleOAuth(provider: 'google' | 'github') {
     const supabase = createClient();
+    const callbackUrl = safeNext
+      ? `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback?next=${encodeURIComponent(safeNext)}`
+      : `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback`;
     await supabase.auth.signInWithOAuth({
       provider,
       options: {
-        redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback`,
+        redirectTo: callbackUrl,
       },
     });
   }
@@ -123,7 +132,7 @@ function AuthForm() {
           </div>
         </div>
 
-        {callbackError && (
+        {callbackError ? (
           <div
             style={{
               color: 'var(--neon-red, #ff4444)',
@@ -134,6 +143,19 @@ function AuthForm() {
           >
             El enlace de acceso ha expirado o es inválido. Inténtalo de nuevo.
           </div>
+        ) : (
+          reasonPlay && (
+            <div
+              style={{
+                color: 'var(--neon-cyan)',
+                fontSize: 12,
+                marginBottom: 12,
+                textAlign: 'center',
+              }}
+            >
+              Inicia sesión o crea tu cuenta para jugar
+            </div>
+          )
         )}
 
         {view === 'forgot' ? (

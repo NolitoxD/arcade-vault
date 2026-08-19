@@ -28,8 +28,29 @@ export async function proxy(request: NextRequest) {
   // quedan en supabaseResponse vía setAll
   const { data } = await supabase.auth.getClaims();
 
-  if (data?.claims && request.nextUrl.pathname === '/auth') {
-    const redirect = NextResponse.redirect(new URL('/', request.url));
+  const { pathname, searchParams } = request.nextUrl;
+  // only same-origin relative paths, never protocol-relative (`//host`)
+  const nextParam = searchParams.get('next');
+  const safeNext =
+    nextParam?.startsWith('/') && !nextParam.startsWith('//')
+      ? nextParam
+      : null;
+
+  if (data?.claims && pathname === '/auth') {
+    const redirect = NextResponse.redirect(
+      new URL(safeNext ?? '/', request.url),
+    );
+    supabaseResponse.cookies
+      .getAll()
+      .forEach((cookie) => redirect.cookies.set(cookie));
+    return redirect;
+  }
+
+  if (!data?.claims && /^\/games\/[^/]+\/play$/.test(pathname)) {
+    const authUrl = new URL('/auth', request.url);
+    authUrl.searchParams.set('reason', 'play');
+    authUrl.searchParams.set('next', pathname);
+    const redirect = NextResponse.redirect(authUrl);
     supabaseResponse.cookies
       .getAll()
       .forEach((cookie) => redirect.cookies.set(cookie));
