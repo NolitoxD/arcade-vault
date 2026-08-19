@@ -98,29 +98,28 @@ const EPS = 1e-6;
 const MAX_SUBSTEPS = 8; // acota el bucle de avance por celda
 
 // ── Escalado por nivel (spec 19) ──────────────────────────────────────────────
-// `scatterS` se documenta aquí por paridad con la tabla del spec; la máquina de
-// fases la construye `modeSchedule()` en pacman-logic/ghosts.ts, que consume la
-// misma columna — no se duplica la lógica, solo la referencia.
+// Solo las columnas que consume este componente. La columna `scatterS` de la
+// tabla del spec se ajusta en `SCATTER_S_BY_LEVEL` (pacman-logic/ghosts.ts): es
+// la que `modeSchedule()` usa para construir las fases scatter↔chase.
 
 type Difficulty = {
   ghostSpeedFactor: number;
-  scatterS: number;
   frightenedS: number;
 };
 
 const DIFFICULTY: Difficulty[] = [
-  { ghostSpeedFactor: 0.75, scatterS: 7, frightenedS: 6 },
-  { ghostSpeedFactor: 0.8, scatterS: 7, frightenedS: 5 },
-  { ghostSpeedFactor: 0.83, scatterS: 6, frightenedS: 4 },
-  { ghostSpeedFactor: 0.86, scatterS: 6, frightenedS: 3 },
-  { ghostSpeedFactor: 0.89, scatterS: 5, frightenedS: 3 },
-  { ghostSpeedFactor: 0.91, scatterS: 5, frightenedS: 2 },
-  { ghostSpeedFactor: 0.93, scatterS: 4, frightenedS: 2 },
-  { ghostSpeedFactor: 0.95, scatterS: 4, frightenedS: 2 },
-  { ghostSpeedFactor: 0.97, scatterS: 3, frightenedS: 1 },
-  { ghostSpeedFactor: 0.98, scatterS: 3, frightenedS: 1 },
-  { ghostSpeedFactor: 0.98, scatterS: 3, frightenedS: 1 },
-  { ghostSpeedFactor: 0.98, scatterS: 3, frightenedS: 0 },
+  { ghostSpeedFactor: 0.75, frightenedS: 6 },
+  { ghostSpeedFactor: 0.8, frightenedS: 5 },
+  { ghostSpeedFactor: 0.83, frightenedS: 4 },
+  { ghostSpeedFactor: 0.86, frightenedS: 3 },
+  { ghostSpeedFactor: 0.89, frightenedS: 3 },
+  { ghostSpeedFactor: 0.91, frightenedS: 2 },
+  { ghostSpeedFactor: 0.93, frightenedS: 2 },
+  { ghostSpeedFactor: 0.95, frightenedS: 2 },
+  { ghostSpeedFactor: 0.97, frightenedS: 1 },
+  { ghostSpeedFactor: 0.98, frightenedS: 1 },
+  { ghostSpeedFactor: 0.98, frightenedS: 1 },
+  { ghostSpeedFactor: 0.98, frightenedS: 0 },
 ];
 
 const MAX_DIFFICULTY_LEVEL = DIFFICULTY.length; // 12
@@ -800,6 +799,15 @@ function PacmanGame({
       ghostDecide(deciding, cell);
     }
 
+    // Frightened es un modo GLOBAL (spec 19): un fantasma que abandona la casa
+    // con la fase azul en curso se incorpora a ella con el tiempo restante —
+    // sale azul y comestible, no puede matar al jugador a mitad de power-pellet.
+    // Se sincroniza tanto al arrancar la salida como al completarla, para cubrir
+    // los dos órdenes posibles (power-pellet antes o durante el recorrido).
+    function syncFrightenedWithGlobal(g: Ghost) {
+      g.frightened = s.frightenedMs > 0;
+    }
+
     // Salida escalonada de la casa: recorrido guionizado (la puerta no existe
     // en `adjacency`, así que el pathfinding normal no puede atravesarla).
     function moveExiting(g: Ghost, dist: number) {
@@ -824,6 +832,7 @@ function PacmanGame({
           g.y = outY;
           g.state = 'out';
           g.dir = LEFT;
+          syncFrightenedWithGlobal(g);
         }
       }
     }
@@ -864,6 +873,7 @@ function PacmanGame({
         if (g.state === 'house' && g.wantsExit) {
           g.state = 'exiting';
           g.wantsExit = false;
+          syncFrightenedWithGlobal(g);
           return;
         }
       }
@@ -882,6 +892,7 @@ function PacmanGame({
         s.releaseFallbackMs >= GHOST_RELEASE_FALLBACK_MS;
       if (!ready) return;
       g.state = 'exiting';
+      syncFrightenedWithGlobal(g);
       s.releaseIdx++;
       s.releaseFallbackMs = 0;
     }
@@ -994,7 +1005,10 @@ function PacmanGame({
             ];
           s.chainIdx++;
           g.frightened = false;
-          g.state = 'eyes';
+          // Comido durante la salida: ya está sobre la columna de la puerta, así
+          // que baja directo. `eyes` navegaría con `adjacency`, que en la celda
+          // de la puerta no tiene salidas.
+          g.state = g.state === 'exiting' ? 'entering' : 'eyes';
           playBreak();
           continue;
         }
