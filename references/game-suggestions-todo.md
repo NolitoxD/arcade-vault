@@ -25,9 +25,8 @@
 
 ## 🟢 Aceptados / en desarrollo
 
-| ID             | Título       | Spec               | Fecha aceptado |
-| -------------- | ------------ | ------------------ | -------------- |
-| `road-fighter` | ROAD FIGHTER | 16-road-fighter.md | 2026-08-14     |
+| ID  | Título | Spec | Fecha aceptado |
+| --- | ------ | ---- | -------------- |
 
 ## ✅ Implementados
 
@@ -39,6 +38,7 @@
 | `snake`     | SNAKE     | ARCADE    | —     |
 | `frogger`   | FROGGER   | ARCADE    | —          |
 | `pong`      | PONG      | SPORTS    | 2026-08-13 |
+| `road-fighter` | ROAD FIGHTER | RACING | 2026-08-17 |
 
 ## ❌ Descartados
 
