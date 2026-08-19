@@ -556,6 +556,28 @@ a { color: inherit; text-decoration: none; }
   filter: drop-shadow(0 0 8px rgba(255,45,45,0.55));
 }
 
+.cover-pacman { background: linear-gradient(135deg,#050514,#000226); }
+.cover-pacman::after {
+  content: "";
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(circle at 78% 22%, #ff0000 0 5px, transparent 6px),
+    radial-gradient(circle at 88% 42%, #ffb8ff 0 5px, transparent 6px),
+    radial-gradient(circle at 80% 62%, #00ffff 0 5px, transparent 6px),
+    radial-gradient(circle at 66% 78%, #ffb852 0 5px, transparent 6px),
+    repeating-linear-gradient(90deg, rgba(77,77,255,0.4) 0 3px, transparent 3px 34px),
+    repeating-linear-gradient(0deg, rgba(77,77,255,0.4) 0 3px, transparent 3px 34px);
+}
+.cover-pacman::before {
+  content: "";
+  position: absolute; left: 24%; top: 52%;
+  width: 44px; height: 44px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: conic-gradient(#ffe600 0deg 65deg, transparent 65deg 115deg, #ffe600 115deg 360deg);
+  filter: drop-shadow(0 0 8px rgba(255,230,0,0.6));
+}
+
 .cover-duelo { background: #0a0a18; }
 .cover-duelo::after {
   content: "";

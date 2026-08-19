@@ -9,3 +9,4 @@
 | `frogger`   | FROGGER   | ARCADE    | green  | Cruza la carretera y el río sin convertirte en papilla. |
 | `pong`      | PONG      | SPORTS    | blue   | Golpea la pelota más rápido de lo que tu rival puede reaccionar. |
 | `road-fighter` | ROAD FIGHTER | RACING | red  | Esquiva el tráfico a toda velocidad antes de que se agote el depósito. |
+| `pacman`    | PAC-MAN   | MAZE      | yellow | Devora todos los puntos del laberinto sin que te atrapen los fantasmas. |
