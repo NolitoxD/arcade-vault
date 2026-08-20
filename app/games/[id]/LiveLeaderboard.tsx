@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import type { ScoreRow } from '@/lib/supabase/types';
 
-const REALTIME_GAMES = ['pong', 'road-fighter', 'pacman'];
+const REALTIME_GAMES = ['pong', 'road-fighter', 'pacman', 'space-invaders'];
 const TOP_LIMIT = 10;
 
 function formatDate(iso: string) {
