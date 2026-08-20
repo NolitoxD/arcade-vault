@@ -6,7 +6,6 @@
 
 | ID               | Título            | Categoría  | Color  | Descripción breve                                                                            | Justificación                                                                                         | Fecha      |
 | ---------------- | ----------------- | ---------- | ------ | -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ---------- |
-| `pacman`         | PAC-MAN           | MAZE       | yellow | Come todos los puntos del laberinto huyendo de 4 fantasmas.                                  | Segunda cobertura de MAZE con IA de fantasmas clásica; canvas 2D con tilemaps es bien conocido.       | 2026-05-20 |
 | `dig-dug`        | DIG DUG           | MAZE       | orange | Excava túneles bajo tierra para inflar y reventar monstruos subterráneos.                    | Terreno destructible como grid de celdas booleanas; dos tipos de enemigos, factibilidad alta.         | 2026-05-20 |
 | `space-invaders` | SPACE INVADERS    | SHOOTER    | green  | Destruye oleadas de alienígenas antes de que lleguen a la Tierra.                            | Shooter icónico; grid de enemigos con movimiento uniforme, escudos destructibles, factibilidad alta.  | 2026-05-20 |
 | `galaga`         | GALAGA            | SHOOTER    | purple | Repele formaciones enemigas que se lanzan en picado sobre tu nave.                           | Shooter con patrones de vuelo Bezier; más dinámico que Space Invaders, factibilidad media.            | 2026-05-20 |
@@ -39,6 +38,7 @@
 | `frogger`   | FROGGER   | ARCADE    | —          |
 | `pong`      | PONG      | SPORTS    | 2026-08-13 |
 | `road-fighter` | ROAD FIGHTER | RACING | 2026-08-17 |
+| `pacman`    | PAC-MAN   | MAZE      | 2026-08-19 |
 
 ## ❌ Descartados
 
