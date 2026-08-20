@@ -25,7 +25,7 @@
 
 | ID  | Título | Spec | Fecha aceptado |
 | --- | ------ | ---- | -------------- |
-| `space-invaders` | SPACE INVADERS | `specs/23-space-invaders.md` | 2026-08-20 |
+
 
 ## ✅ Implementados
 
@@ -38,6 +38,7 @@
 | `frogger`   | FROGGER   | ARCADE    | —          |
 | `pong`      | PONG      | SPORTS    | 2026-08-13 |
 | `road-fighter` | ROAD FIGHTER | RACING | 2026-08-17 |
+| `space-invaders` | SPACE INVADERS | SHOOTER | 2026-08-20 |
 | `pacman`    | PAC-MAN   | MAZE      | 2026-08-19 |
 
 ## ❌ Descartados

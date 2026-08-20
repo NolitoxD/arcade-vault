@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 
 const MUTED_STORAGE_KEY = 'av_music_muted';
 const PLAY_PAGE_PATTERN = /^\/games\/[^/]+\/play$/;
-const TRACK_SRC = '/arcade-theme.m4a';
+const TRACK_SRC = '/arcade-theme.mp3';
 
 interface MusicContextValue {
   muted: boolean;
