@@ -3,12 +3,11 @@
 import Link from 'next/link';
 import { useMemo, useRef, useState } from 'react';
 import type { GameRow } from '@/lib/supabase/types';
-
-const CATS = ['TODOS', 'ARCADE', 'PUZZLE', 'SHOOTER'] as const;
-type Cat = (typeof CATS)[number];
+import { useUser } from '@/app/context/UserContext';
 
 function GameCard({ game }: { game: GameRow }) {
   const ref = useRef<HTMLDivElement>(null);
+  const { hasPlayed } = useUser();
 
   function onMove(e: React.MouseEvent) {
     const el = ref.current;
@@ -37,8 +36,20 @@ function GameCard({ game }: { game: GameRow }) {
   return (
     <div ref={ref} className="card" onMouseMove={onMove} onMouseLeave={onLeave}>
       <Link href={`/games/${game.id}`} className="cover">
-        <div className={`cover-bg ${game.cover}`} />
+        {game.cover.startsWith('/') ? (
+          <div
+            className="cover-bg cover-image"
+            style={{ backgroundImage: `url(${game.cover})` }}
+          />
+        ) : (
+          <div className={`cover-bg ${game.cover}`} />
+        )}
         <div className="label">{game.cat}</div>
+        {hasPlayed(game.id) && (
+          <span className="played-badge" title="Ya jugado" aria-label="Ya jugado">
+            ✓
+          </span>
+        )}
       </Link>
       <div className="meta">
         <div className="title">{game.title}</div>
@@ -59,13 +70,18 @@ function GameCard({ game }: { game: GameRow }) {
 
 export default function GamesGrid({ games }: { games: GameRow[] }) {
   const [q, setQ] = useState('');
-  const [cat, setCat] = useState<Cat>('TODOS');
+  const [cat, setCat] = useState('');
+
+  const cats = useMemo(
+    () => Array.from(new Set(games.map((g) => g.cat))).sort(),
+    [games],
+  );
 
   const filtered = useMemo(
     () =>
       games.filter(
         (g) =>
-          (cat === 'TODOS' || g.cat === cat) &&
+          (cat === '' || g.cat === cat) &&
           g.title.toLowerCase().includes(q.toLowerCase()),
       ),
     [games, q, cat],
@@ -83,15 +99,25 @@ export default function GamesGrid({ games }: { games: GameRow[] }) {
           />
         </div>
         <div className="av-chips">
-          {CATS.map((c) => (
-            <button
-              key={c}
-              className={`chip${cat === c ? ' active' : ''}`}
-              onClick={() => setCat(c)}
-            >
-              {c}
-            </button>
-          ))}
+          <button
+            className={`chip${cat === '' ? ' active' : ''}`}
+            onClick={() => setCat('')}
+          >
+            TODOS
+          </button>
+          <select
+            className={`chip${cat !== '' ? ' active' : ''}`}
+            aria-label="Filtrar por categoría"
+            value={cat}
+            onChange={(e) => setCat(e.target.value)}
+          >
+            <option value="">CATEGORÍA</option>
+            {cats.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 

@@ -32,7 +32,14 @@ export default async function GameDetail({
     <div className="av-detail fade-in">
       <div>
         <div className="detail-cover">
-          <div className={`cover-bg ${typedGame.cover}`} />
+          {typedGame.cover.startsWith('/') ? (
+            <div
+              className="cover-bg cover-image"
+              style={{ backgroundImage: `url(${typedGame.cover})` }}
+            />
+          ) : (
+            <div className={`cover-bg ${typedGame.cover}`} />
+          )}
         </div>
         <div style={{ marginTop: 20 }} className="detail-info">
           <div className="detail-tags">

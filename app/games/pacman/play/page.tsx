@@ -5,12 +5,17 @@ import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useUser } from '@/app/context/UserContext';
+import MobileGamepad from '@/components/MobileGamepad';
 
 const PacmanGame = dynamic(() => import('@/components/games/PacmanGame'), {
   ssr: false,
 });
 
-const SKIN_OPTIONS = [{ key: 'classic', label: 'Classic' }];
+const SKIN_OPTIONS = [
+  { key: 'classic', label: 'Classic' },
+  { key: 'retro', label: 'Retro' },
+  { key: 'neon', label: 'Neon' },
+];
 
 function getSavedSkin() {
   if (typeof window === 'undefined') return 'classic';
@@ -98,6 +103,13 @@ export default function PacmanPlay() {
     setName(username ?? 'INVITADO');
     setGameKey((k) => k + 1);
   }
+
+  const keyMap = {
+    up: 'ArrowUp',
+    down: 'ArrowDown',
+    left: 'ArrowLeft',
+    right: 'ArrowRight',
+  };
 
   return (
     <div className="av-player fade-in">
@@ -214,6 +226,15 @@ export default function PacmanPlay() {
           <span>CARGA · 1MB</span>
         </div>
       </div>
+
+      <MobileGamepad
+        keyMap={keyMap}
+        paused={paused}
+        onPauseToggle={() => setPaused((p) => !p)}
+        skin={skinKey}
+        onSkinChange={changeSkin}
+        backHref="/games/pacman"
+      />
 
       {over && (
         <div className="modal-bd">

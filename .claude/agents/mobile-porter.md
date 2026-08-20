@@ -47,6 +47,7 @@ Eres el portador mobile de Arcade Vault. Aplicas el patrón de controles táctil
    - **Snake:** `{ up: 'w', down: 's', left: 'a', right: 'd' }`
    - **Pong:** `{ up: 'ArrowUp', down: 'ArrowDown' }` — solo modo `solo` (gamepad renderizado únicamente con `mode === 'solo'`; versus es desktop-only).
    - **Road Fighter:** `{ up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' }` — D-pad completo (↑ TURBO / ↓ FRENO por tecla mantenida, spec 17); NO declarar `a`/`b` (las teclas físicas w/s/a/d son alias de dirección en el canvas, no acciones).
+   - **Pac-Man:** `{ up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' }` — D-pad completo (4 direcciones, buffer de pre-giro en el canvas); NO declarar `a`/`b` (las teclas físicas w/a/s/d son alias de dirección, no acciones).
    - Para juegos nuevos: derivar del canvas, D-pad = movimiento, A = acción principal, B = acción secundaria (omitir si no existe).
 
    e. Renderizar `<MobileGamepad>` **debajo del wrapper CRT y fuera de él**:

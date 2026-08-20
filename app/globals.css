@@ -168,10 +168,31 @@ a { color: inherit; text-decoration: none; }
   box-shadow: 0 0 8px var(--cyan), 0 0 16px var(--cyan);
 }
 .av-nav .spacer { flex: 1; }
-.av-nav .coin-counter { display: flex; align-items: center; gap: 8px; font-family: var(--pixel); font-size: 9px; color: var(--yellow); }
-.av-nav .coin-counter .coin { width: 14px; height: 14px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #fff8b0, #f5ff00 60%, #b0b800); box-shadow: 0 0 8px var(--yellow); }
+.av-nav .coin-counter { display: flex; align-items: center; gap: 8px; font-family: var(--pixel); font-size: 9px; color: var(--yellow); text-decoration: none; white-space: nowrap; }
+.av-nav .coin-counter .coin { width: 14px; height: 14px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #fff8b0, #f5ff00 60%, #b0b800); box-shadow: 0 0 8px var(--yellow); flex-shrink: 0; }
+.av-nav .coin-counter .rank { color: var(--ink-faint); font-size: 8px; letter-spacing: 0.06em; }
+.av-nav .coin-counter .stars { color: var(--yellow); font-size: 10px; letter-spacing: 1px; }
+
+@media (max-width: 1100px) {
+  .av-nav .coin-counter .rank,
+  .av-nav .coin-counter .stars { display: none; }
+}
 .av-nav .auth-btn { margin-left: 16px; }
 .av-nav .hamburger { display: none; }
+.av-nav .music-toggle { margin-left: 12px; padding: 8px 12px; font-size: 14px; }
+.music-toggle[aria-pressed="true"] { color: var(--ink-faint); border-color: var(--ink-faint); }
+
+.music-toggle--floating {
+  display: none;
+  position: fixed;
+  top: 14px;
+  left: 14px;
+  z-index: 70;
+  padding: 8px 12px;
+  font-size: 14px;
+  background: rgba(10, 10, 15, 0.85);
+  backdrop-filter: blur(8px);
+}
 
 @media (max-width: 767px) {
   .av-nav.nav-hide-mobile,
@@ -179,6 +200,8 @@ a { color: inherit; text-decoration: none; }
   .av-mobile-backdrop.nav-hide-mobile {
     display: none !important;
   }
+
+  .music-toggle--floating { display: inline-flex; }
 
   /* Tetris is portrait (432×600); scale down to fit mobile screen */
   .tetris-game-wrapper { zoom: 0.58; }
@@ -194,7 +217,13 @@ a { color: inherit; text-decoration: none; }
   .av-nav { padding: 12px 16px; }
   .av-nav .links { display: none; }
   .av-nav .coin-counter { display: none; }
+  .av-nav .music-toggle { display: none; }
   .av-nav .hamburger { display: inline-flex; }
+}
+
+.av-mobile-panel .music-toggle {
+  align-self: flex-start;
+  margin-top: 8px;
 }
 
 .av-mobile-panel {
@@ -389,6 +418,17 @@ a { color: inherit; text-decoration: none; }
   border: 1px solid var(--line);
   z-index: 2;
 }
+.card .cover .played-badge {
+  position: absolute; right: 8px; top: 8px;
+  width: 20px; height: 20px;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--pixel); font-size: 10px;
+  background: rgba(0,0,0,0.6);
+  color: var(--green);
+  border: 1px solid var(--green);
+  box-shadow: 0 0 6px rgba(0,255,136,0.5);
+  z-index: 2;
+}
 .card .meta { display: flex; flex-direction: column; gap: 6px; }
 .card .title {
   font-family: var(--pixel);
@@ -415,6 +455,13 @@ a { color: inherit; text-decoration: none; }
 
 /* ===== Cover art generators (pure CSS) ===== */
 .cover-bg { position: absolute; inset: 0; }
+
+.cover-image {
+  background-color: var(--bg);
+  background-size: contain;
+  background-position: center;
+  background-repeat: no-repeat;
+}
 
 .cover-bricks { background:
   repeating-linear-gradient(90deg, #ff006e 0 32px, #ffae00 32px 64px, #00f5ff 64px 96px, #00ff88 96px 128px) 0 0/100% 32px,

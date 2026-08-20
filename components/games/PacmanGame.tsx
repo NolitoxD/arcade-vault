@@ -231,8 +231,6 @@ type Skin = {
   bg: string;
   hud: string;
   hudAccent: string;
-  pellet: string;
-  powerPellet: string;
   banner: string;
   drawWalls: (ctx: CanvasRenderingContext2D, m: ParsedMaze) => void;
   drawPacman: (
@@ -258,32 +256,35 @@ type Skin = {
     y: number,
     scale: number,
   ) => void;
+  drawPellet: (ctx: CanvasRenderingContext2D, cx: number, cy: number) => void;
+  drawPowerPellet: (
+    ctx: CanvasRenderingContext2D,
+    cx: number,
+    cy: number,
+  ) => void;
 };
-
-const CLASSIC_WALL = '#2121de';
-const CLASSIC_WALL_EDGE = '#4d4dff';
-const CLASSIC_DOOR = '#ffb8ff';
 
 function isHardWall(m: ParsedMaze, x: number, y: number): boolean {
   if (x < 0 || y < 0 || x >= m.cols || y >= m.rows) return true;
   return m.walls[y * m.cols + x] === 1;
 }
 
-function drawWallsClassic(ctx: CanvasRenderingContext2D, m: ParsedMaze) {
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = CLASSIC_WALL;
-
-  const inset = 2;
+// Traza el contorno redondeado de las celdas de muro (solo el borde que da a
+// pasillo, así los bloques de 2 celdas de grosor quedan como un contorno
+// único). Compartido por classic y neon: cada uno decide el número de pasadas
+// y el `inset` — el neon añade una segunda pasada más estrecha para las
+// "wall islands" (T2-b: la geometría plana de un solo trazo se nota regular).
+function traceWallOutline(
+  ctx: CanvasRenderingContext2D,
+  m: ParsedMaze,
+  inset: number,
+) {
   ctx.beginPath();
   for (let y = 0; y < m.rows; y++) {
     for (let x = 0; x < m.cols; x++) {
       if (m.walls[y * m.cols + x] !== 1) continue;
       const px = x * TILE;
       const py = y * TILE;
-      // Solo se traza el borde del bloque que da a pasillo: los bloques de
-      // 2 celdas de grosor quedan como el contorno redondeado del clásico.
       if (!isHardWall(m, x, y - 1)) {
         ctx.moveTo(px, py + inset);
         ctx.lineTo(px + TILE, py + inset);
@@ -302,14 +303,14 @@ function drawWallsClassic(ctx: CanvasRenderingContext2D, m: ParsedMaze) {
       }
     }
   }
-  ctx.stroke();
+}
 
-  ctx.strokeStyle = CLASSIC_WALL_EDGE;
-  ctx.lineWidth = 1;
-  ctx.stroke();
-
-  // Puerta de la casa
-  ctx.fillStyle = CLASSIC_DOOR;
+function drawDoor(
+  ctx: CanvasRenderingContext2D,
+  m: ParsedMaze,
+  color: string,
+) {
+  ctx.fillStyle = color;
   for (let i = 0; i < m.walls.length; i++) {
     if (m.walls[i] !== 2) continue;
     ctx.fillRect(
@@ -319,6 +320,37 @@ function drawWallsClassic(ctx: CanvasRenderingContext2D, m: ParsedMaze) {
       4,
     );
   }
+}
+
+// ── classic ──────────────────────────────────────────────────────────────────
+
+const CLASSIC_WALL = '#2121de';
+const CLASSIC_WALL_EDGE = '#4d4dff';
+const CLASSIC_DOOR = '#ffb8ff';
+const CLASSIC_PAC = '#ffe600';
+const CLASSIC_PELLET = '#ffb897';
+const CLASSIC_GHOST_COLORS: Record<GhostId, string> = {
+  blinky: '#ff0000',
+  pinky: '#ffb8ff',
+  inky: '#00ffff',
+  clyde: '#ffb852',
+};
+const CLASSIC_FRUIT_BODY = '#ff2d2d';
+const CLASSIC_FRUIT_STEM = '#3ad13a';
+
+function drawWallsClassic(ctx: CanvasRenderingContext2D, m: ParsedMaze) {
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = CLASSIC_WALL;
+  traceWallOutline(ctx, m, 2);
+  ctx.stroke();
+
+  ctx.strokeStyle = CLASSIC_WALL_EDGE;
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  drawDoor(ctx, m, CLASSIC_DOOR);
 }
 
 function drawPacmanClassic(
@@ -332,7 +364,7 @@ function drawPacmanClassic(
   if (radius <= 0) return;
   const ang = DIR_ANGLE[dir];
   const half = 0.02 + open * 0.3 * Math.PI;
-  ctx.fillStyle = '#ffe600';
+  ctx.fillStyle = CLASSIC_PAC;
   ctx.beginPath();
   ctx.moveTo(x, y);
   ctx.arc(x, y, radius, ang + half, ang - half);
@@ -362,27 +394,481 @@ function drawGhostBody(
   ctx.fill();
 }
 
+function drawGhostHighlight(ctx: CanvasRenderingContext2D, x: number, y: number) {
+  // Brillo CRT sutil en el domo (guideline retro: highlight, sin shadowBlur).
+  ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.arc(x, y - 1, 5, Math.PI * 1.15, Math.PI * 1.85);
+  ctx.stroke();
+}
+
 function drawGhostEyes(
   ctx: CanvasRenderingContext2D,
   x: number,
   y: number,
   dir: Dir,
+  eyeColor: string = '#ffffff',
+  pupilColor: string = '#2121de',
 ) {
   const dx = DIR_DX[dir] * 1.6;
   const dy = DIR_DY[dir] * 1.6;
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = eyeColor;
   ctx.beginPath();
   ctx.arc(x - 2.6, y - 2, 2.6, 0, Math.PI * 2);
   ctx.arc(x + 2.6, y - 2, 2.6, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = '#2121de';
+  ctx.fillStyle = pupilColor;
   ctx.beginPath();
   ctx.arc(x - 2.6 + dx, y - 2 + dy, 1.3, 0, Math.PI * 2);
   ctx.arc(x + 2.6 + dx, y - 2 + dy, 1.3, 0, Math.PI * 2);
   ctx.fill();
 }
 
-function drawGhostClassic(
+// Fábrica compartida por classic y retro: mismo cuerpo "flat fill", solo
+// cambian paleta, marcas de frightened y si lleva highlight CRT. El neon usa
+// su propio caché de sprites (más abajo) porque SÍ necesita glow horneado.
+function makeDrawGhostFlat(
+  colors: Record<GhostId, string>,
+  frightBody: string,
+  frightFlashBody: string,
+  frightMark: string,
+  frightFlashMark: string,
+  eyeColor: string,
+  pupilColor: string,
+  highlight: boolean,
+) {
+  return function drawGhost(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    id: GhostId,
+    dir: Dir,
+    mode: Mode,
+    flashing: boolean,
+  ) {
+    if (mode === 'eyes') {
+      drawGhostEyes(ctx, x, y, dir, eyeColor, pupilColor);
+      return;
+    }
+    if (mode === 'frightened') {
+      drawGhostBody(ctx, x, y, flashing ? frightFlashBody : frightBody);
+      if (highlight) drawGhostHighlight(ctx, x, y);
+      ctx.fillStyle = flashing ? frightFlashMark : frightMark;
+      ctx.fillRect(x - 3.4, y - 3, 2, 2);
+      ctx.fillRect(x + 1.4, y - 3, 2, 2);
+      ctx.fillRect(x - 4, y + 2, 8, 1.5);
+      return;
+    }
+    drawGhostBody(ctx, x, y, colors[id]);
+    if (highlight) drawGhostHighlight(ctx, x, y);
+    drawGhostEyes(ctx, x, y, dir, eyeColor, pupilColor);
+  };
+}
+
+function drawFruitClassic(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  scale: number,
+) {
+  const r = 3.4 * scale;
+  ctx.fillStyle = CLASSIC_FRUIT_BODY;
+  ctx.beginPath();
+  ctx.arc(x - 3 * scale, y + 2 * scale, r, 0, Math.PI * 2);
+  ctx.arc(x + 3 * scale, y + 3 * scale, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = CLASSIC_FRUIT_STEM;
+  ctx.lineWidth = 1.4 * scale;
+  ctx.beginPath();
+  ctx.moveTo(x - 3 * scale, y + 2 * scale);
+  ctx.lineTo(x + 1 * scale, y - 5 * scale);
+  ctx.lineTo(x + 3 * scale, y + 3 * scale);
+  ctx.stroke();
+}
+
+function drawPelletClassic(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+) {
+  ctx.fillStyle = CLASSIC_PELLET;
+  ctx.fillRect(cx - 1.5, cy - 1.5, 3, 3);
+}
+
+function drawPowerPelletClassic(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+) {
+  ctx.fillStyle = CLASSIC_PELLET;
+  ctx.beginPath();
+  ctx.arc(cx, cy, 4.5, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+// ── retro (CRT: colores saturados/pastel, sin shadowBlur) ────────────────────
+
+const RETRO_WALL = '#4d7cff';
+const RETRO_WALL_EDGE = 'rgba(255,255,255,0.22)';
+const RETRO_DOOR = '#ffb3ec';
+const RETRO_PAC = '#fff275';
+const RETRO_PELLET = '#ffdca8';
+const RETRO_GHOST_COLORS: Record<GhostId, string> = {
+  blinky: '#ff6b6b',
+  pinky: '#ffb3ec',
+  inky: '#8ff5ff',
+  clyde: '#ffcb85',
+};
+const RETRO_FRUIT_BODY = '#ff8fa3';
+const RETRO_FRUIT_STEM = '#8fe0a0';
+
+function drawWallsRetro(ctx: CanvasRenderingContext2D, m: ParsedMaze) {
+  for (let y = 0; y < m.rows; y++) {
+    for (let x = 0; x < m.cols; x++) {
+      if (m.walls[y * m.cols + x] !== 1) continue;
+      const px = x * TILE;
+      const py = y * TILE;
+      ctx.fillStyle = RETRO_WALL;
+      ctx.fillRect(px + 1, py + 1, TILE - 2, TILE - 2);
+      // Highlight CRT de 4px al tope del bloque, solo donde da a pasillo.
+      if (!isHardWall(m, x, y - 1)) {
+        ctx.fillStyle = RETRO_WALL_EDGE;
+        ctx.fillRect(px + 1, py + 1, TILE - 2, 4);
+      }
+      // Textura de junta (T2-b): las "wall islands" de bloques sólidos se
+      // ven muy regulares — una línea de sombra entre celdas de muro
+      // contiguas rompe la masa plana sin tocar la geometría del laberinto.
+      if (isHardWall(m, x, y - 1)) {
+        ctx.fillStyle = 'rgba(0,0,0,0.28)';
+        ctx.fillRect(px + 1, py, TILE - 2, 1);
+      }
+      if (isHardWall(m, x + 1, y)) {
+        ctx.fillStyle = 'rgba(0,0,0,0.2)';
+        ctx.fillRect(px + TILE - 1, py + 1, 1, TILE - 2);
+      }
+    }
+  }
+  drawDoor(ctx, m, RETRO_DOOR);
+}
+
+function drawPacmanRetro(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  dir: Dir,
+  open: number,
+  radius: number,
+) {
+  if (radius <= 0) return;
+  const ang = DIR_ANGLE[dir];
+  const half = 0.02 + open * 0.3 * Math.PI;
+  ctx.fillStyle = RETRO_PAC;
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.arc(x, y, radius, ang + half, ang - half);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+  ctx.lineWidth = Math.max(1, radius * 0.3);
+  ctx.beginPath();
+  ctx.arc(x, y - radius * 0.3, radius * 0.4, Math.PI * 1.1, Math.PI * 1.8);
+  ctx.stroke();
+}
+
+function drawFruitRetro(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  scale: number,
+) {
+  const r = 3.4 * scale;
+  ctx.fillStyle = RETRO_FRUIT_BODY;
+  ctx.beginPath();
+  ctx.arc(x - 3 * scale, y + 2 * scale, r, 0, Math.PI * 2);
+  ctx.arc(x + 3 * scale, y + 3 * scale, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.28)';
+  ctx.beginPath();
+  ctx.arc(x - 3 * scale - r * 0.3, y + 2 * scale - r * 0.3, r * 0.4, 0, Math.PI * 2);
+  ctx.arc(x + 3 * scale - r * 0.3, y + 3 * scale - r * 0.3, r * 0.4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = RETRO_FRUIT_STEM;
+  ctx.lineWidth = 1.4 * scale;
+  ctx.beginPath();
+  ctx.moveTo(x - 3 * scale, y + 2 * scale);
+  ctx.lineTo(x + 1 * scale, y - 5 * scale);
+  ctx.lineTo(x + 3 * scale, y + 3 * scale);
+  ctx.stroke();
+}
+
+function drawPelletRetro(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+) {
+  ctx.fillStyle = RETRO_PELLET;
+  ctx.fillRect(cx - 1.5, cy - 1.5, 3, 3);
+}
+
+function drawPowerPelletRetro(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+) {
+  ctx.fillStyle = RETRO_PELLET;
+  ctx.beginPath();
+  ctx.arc(cx, cy, 4.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.35)';
+  ctx.beginPath();
+  ctx.arc(cx - 1.3, cy - 1.3, 1.6, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+// ── neon (glow horneado — P7) ─────────────────────────────────────────────────
+// Los muros ya se hornean en `wallLayer()` (offscreen por maze/skin, más abajo
+// en el componente), así que `drawWallsNeon` puede usar shadowBlur sin más:
+// solo se ejecuta al rotar de maze o cambiar de skin, nunca en el hot path.
+// Pac-Man y la fruta se dibujan 1-2 veces por frame — shadowBlur en vivo ahí
+// es barato. Lo que SÍ hay que hornear: pellets (hasta ~240/pantalla) y los
+// 4 fantasmas (cuerpo con glow, repetido cada frame) — ambos van a caché de
+// sprite offscreen, igual que rivales/bidones en RoadFighterGame.
+
+const NEON_WALL = '#00f5ff';
+const NEON_DOOR = '#ff2bd6';
+const NEON_PAC = '#fff200';
+const NEON_FRUIT_GLOW = '#ff2b6e';
+const NEON_FRUIT_STEM = '#39ff14';
+
+function drawWallsNeon(ctx: CanvasRenderingContext2D, m: ParsedMaze) {
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  // Trazo principal, brillante.
+  ctx.shadowBlur = 6;
+  ctx.shadowColor = NEON_WALL;
+  ctx.strokeStyle = NEON_WALL;
+  ctx.lineWidth = 2;
+  traceWallOutline(ctx, m, 2);
+  ctx.stroke();
+
+  // Segunda línea interior, más fina y tenue: rompe el contorno único plano
+  // (T2-b) con un aspecto de "doble trazo" tipo circuito, sin tocar la
+  // geometría del laberinto.
+  ctx.shadowBlur = 3;
+  ctx.strokeStyle = 'rgba(0,245,255,0.5)';
+  ctx.lineWidth = 1;
+  traceWallOutline(ctx, m, 5);
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  ctx.shadowBlur = 6;
+  ctx.shadowColor = NEON_DOOR;
+  drawDoor(ctx, m, NEON_DOOR);
+  ctx.shadowBlur = 0;
+}
+
+function drawPacmanNeon(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  dir: Dir,
+  open: number,
+  radius: number,
+) {
+  if (radius <= 0) return;
+  const ang = DIR_ANGLE[dir];
+  const half = 0.02 + open * 0.3 * Math.PI;
+  ctx.shadowBlur = 10;
+  ctx.shadowColor = NEON_PAC;
+  ctx.fillStyle = 'rgba(255,242,0,0.85)';
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.arc(x, y, radius, ang + half, ang - half);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = NEON_PAC;
+  ctx.lineWidth = 1.4;
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+}
+
+function drawFruitNeon(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  scale: number,
+) {
+  const r = 3.4 * scale;
+  ctx.shadowBlur = 8;
+  ctx.shadowColor = NEON_FRUIT_GLOW;
+  ctx.fillStyle = 'rgba(255,43,110,0.75)';
+  ctx.beginPath();
+  ctx.arc(x - 3 * scale, y + 2 * scale, r, 0, Math.PI * 2);
+  ctx.arc(x + 3 * scale, y + 3 * scale, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = NEON_FRUIT_GLOW;
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = NEON_FRUIT_STEM;
+  ctx.lineWidth = 1.4 * scale;
+  ctx.beginPath();
+  ctx.moveTo(x - 3 * scale, y + 2 * scale);
+  ctx.lineTo(x + 1 * scale, y - 5 * scale);
+  ctx.lineTo(x + 3 * scale, y + 3 * scale);
+  ctx.stroke();
+}
+
+// Caché de sprites — pellets (P7): hasta ~240 dots/pantalla, así que el glow
+// se hornea UNA vez por tipo en un canvas offscreen; el hot path solo hace
+// drawImage centrado en cada celda (cero shadowBlur por pellet).
+const NEON_PELLET_GLOW = '#39ff14';
+let neonPelletSprite: HTMLCanvasElement | null = null;
+let neonPowerSprite: HTMLCanvasElement | null = null;
+
+function getNeonPelletSprite(): HTMLCanvasElement {
+  if (neonPelletSprite) return neonPelletSprite;
+  const pad = 6;
+  const size = 3 + pad * 2;
+  const el = document.createElement('canvas');
+  el.width = size;
+  el.height = size;
+  const c = el.getContext('2d')!;
+  c.shadowBlur = 6;
+  c.shadowColor = NEON_PELLET_GLOW;
+  c.fillStyle = '#c8ffcf';
+  c.fillRect(pad, pad, 3, 3);
+  neonPelletSprite = el;
+  return el;
+}
+
+function getNeonPowerSprite(): HTMLCanvasElement {
+  if (neonPowerSprite) return neonPowerSprite;
+  const pad = 8;
+  const r = 4.5;
+  const size = r * 2 + pad * 2;
+  const el = document.createElement('canvas');
+  el.width = size;
+  el.height = size;
+  const c = el.getContext('2d')!;
+  c.translate(size / 2, size / 2);
+  c.shadowBlur = 10;
+  c.shadowColor = NEON_PELLET_GLOW;
+  c.fillStyle = '#e4ffe8';
+  c.beginPath();
+  c.arc(0, 0, r, 0, Math.PI * 2);
+  c.fill();
+  neonPowerSprite = el;
+  return el;
+}
+
+function drawPelletNeon(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+) {
+  const spr = getNeonPelletSprite();
+  ctx.drawImage(spr, cx - spr.width / 2, cy - spr.height / 2);
+}
+
+function drawPowerPelletNeon(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+) {
+  const spr = getNeonPowerSprite();
+  ctx.drawImage(spr, cx - spr.width / 2, cy - spr.height / 2);
+}
+
+// Caché de sprites — fantasmas (P7): 4 cuerpos con glow repetidos cada frame
+// (misma lógica que los rivales de RoadFighterGame). Los ojos se dibujan en
+// vivo encima del sprite: son fills planos sin shadowBlur, coste despreciable.
+const NEON_GHOST_PALETTE: Record<GhostId, { glow: string; fill: string }> = {
+  blinky: { glow: '#ff1a4d', fill: 'rgba(255,26,77,0.55)' },
+  pinky: { glow: '#ff2bd6', fill: 'rgba(255,43,214,0.55)' },
+  inky: { glow: '#00faff', fill: 'rgba(0,250,255,0.55)' },
+  clyde: { glow: '#ff9500', fill: 'rgba(255,149,0,0.55)' },
+};
+const NEON_FRIGHT = { glow: '#2400ff', fill: 'rgba(36,0,255,0.55)' };
+const NEON_FRIGHT_FLASH = { glow: '#ffffff', fill: 'rgba(255,255,255,0.7)' };
+const NEON_EYE_COLOR = '#ffffff';
+const NEON_PUPIL_COLOR = '#1400ff';
+const NEON_FRIGHT_MARK = '#ffffff';
+const NEON_FRIGHT_FLASH_MARK = '#ff0040';
+
+const GHOST_SPR_PAD = 9;
+const GHOST_SPR_R = 7;
+const GHOST_SPR_SIZE = GHOST_SPR_R * 2 + GHOST_SPR_PAD * 2;
+
+function paintNeonGhostBody(
+  c: CanvasRenderingContext2D,
+  glow: string,
+  fill: string,
+) {
+  const cx = GHOST_SPR_SIZE / 2;
+  const cy = GHOST_SPR_SIZE / 2;
+  const r = GHOST_SPR_R;
+  const top = cy - 1;
+  c.shadowBlur = 8;
+  c.shadowColor = glow;
+  c.fillStyle = fill;
+  c.beginPath();
+  c.arc(cx, top, r, Math.PI, 0);
+  c.lineTo(cx + r, cy + r);
+  c.lineTo(cx + r * 0.6, cy + r - 3);
+  c.lineTo(cx + r * 0.2, cy + r);
+  c.lineTo(cx - r * 0.2, cy + r - 3);
+  c.lineTo(cx - r * 0.6, cy + r);
+  c.lineTo(cx - r, cy + r - 3);
+  c.lineTo(cx - r, top);
+  c.closePath();
+  c.fill();
+  c.strokeStyle = glow;
+  c.lineWidth = 1.2;
+  c.stroke();
+  c.shadowBlur = 0;
+}
+
+type NeonGhostSprites = {
+  normal: Record<GhostId, HTMLCanvasElement>;
+  frightened: HTMLCanvasElement;
+  frightenedFlash: HTMLCanvasElement;
+};
+
+let neonGhostSprites: NeonGhostSprites | null = null;
+
+function makeNeonGhostSprite(
+  paint: (c: CanvasRenderingContext2D) => void,
+): HTMLCanvasElement {
+  const el = document.createElement('canvas');
+  el.width = GHOST_SPR_SIZE;
+  el.height = GHOST_SPR_SIZE;
+  paint(el.getContext('2d')!);
+  return el;
+}
+
+function getNeonGhostSprites(): NeonGhostSprites {
+  if (neonGhostSprites) return neonGhostSprites;
+  const normal = {} as Record<GhostId, HTMLCanvasElement>;
+  (Object.keys(NEON_GHOST_PALETTE) as GhostId[]).forEach((id) => {
+    const { glow, fill } = NEON_GHOST_PALETTE[id];
+    normal[id] = makeNeonGhostSprite((c) => paintNeonGhostBody(c, glow, fill));
+  });
+  neonGhostSprites = {
+    normal,
+    frightened: makeNeonGhostSprite((c) =>
+      paintNeonGhostBody(c, NEON_FRIGHT.glow, NEON_FRIGHT.fill),
+    ),
+    frightenedFlash: makeNeonGhostSprite((c) =>
+      paintNeonGhostBody(c, NEON_FRIGHT_FLASH.glow, NEON_FRIGHT_FLASH.fill),
+    ),
+  };
+  return neonGhostSprites;
+}
+
+function drawGhostNeon(
   ctx: CanvasRenderingContext2D,
   x: number,
   y: number,
@@ -392,48 +878,25 @@ function drawGhostClassic(
   flashing: boolean,
 ) {
   if (mode === 'eyes') {
-    drawGhostEyes(ctx, x, y, dir);
+    drawGhostEyes(ctx, x, y, dir, NEON_EYE_COLOR, NEON_PUPIL_COLOR);
     return;
   }
+  const sprites = getNeonGhostSprites();
+  const half = GHOST_SPR_SIZE / 2;
   if (mode === 'frightened') {
-    drawGhostBody(ctx, x, y, flashing ? '#ffffff' : '#2121de');
-    ctx.fillStyle = flashing ? '#ff0000' : '#ffffff';
+    const spr = flashing ? sprites.frightenedFlash : sprites.frightened;
+    ctx.drawImage(spr, x - half, y - half);
+    ctx.fillStyle = flashing ? NEON_FRIGHT_FLASH_MARK : NEON_FRIGHT_MARK;
     ctx.fillRect(x - 3.4, y - 3, 2, 2);
     ctx.fillRect(x + 1.4, y - 3, 2, 2);
     ctx.fillRect(x - 4, y + 2, 8, 1.5);
     return;
   }
-  drawGhostBody(ctx, x, y, SKIN_GHOST_COLORS[id]);
-  drawGhostEyes(ctx, x, y, dir);
+  ctx.drawImage(sprites.normal[id], x - half, y - half);
+  drawGhostEyes(ctx, x, y, dir, NEON_EYE_COLOR, NEON_PUPIL_COLOR);
 }
 
-const SKIN_GHOST_COLORS: Record<GhostId, string> = {
-  blinky: '#ff0000',
-  pinky: '#ffb8ff',
-  inky: '#00ffff',
-  clyde: '#ffb852',
-};
-
-function drawFruitClassic(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  scale: number,
-) {
-  const r = 3.4 * scale;
-  ctx.fillStyle = '#ff2d2d';
-  ctx.beginPath();
-  ctx.arc(x - 3 * scale, y + 2 * scale, r, 0, Math.PI * 2);
-  ctx.arc(x + 3 * scale, y + 3 * scale, r, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = '#3ad13a';
-  ctx.lineWidth = 1.4 * scale;
-  ctx.beginPath();
-  ctx.moveTo(x - 3 * scale, y + 2 * scale);
-  ctx.lineTo(x + 1 * scale, y - 5 * scale);
-  ctx.lineTo(x + 3 * scale, y + 3 * scale);
-  ctx.stroke();
-}
+// ── Mapa de skins ──────────────────────────────────────────────────────────────
 
 const SKINS: Record<string, Skin> = {
   classic: {
@@ -441,13 +904,57 @@ const SKINS: Record<string, Skin> = {
     bg: '#000000',
     hud: '#ffffff',
     hudAccent: '#ffe600',
-    pellet: '#ffb897',
-    powerPellet: '#ffb897',
     banner: '#ffe600',
     drawWalls: drawWallsClassic,
     drawPacman: drawPacmanClassic,
-    drawGhost: drawGhostClassic,
+    drawGhost: makeDrawGhostFlat(
+      CLASSIC_GHOST_COLORS,
+      '#2121de',
+      '#ffffff',
+      '#ffffff',
+      '#ff0000',
+      '#ffffff',
+      '#2121de',
+      false,
+    ),
     drawFruit: drawFruitClassic,
+    drawPellet: drawPelletClassic,
+    drawPowerPellet: drawPowerPelletClassic,
+  },
+  retro: {
+    name: 'retro',
+    bg: '#000000',
+    hud: '#eaf6ff',
+    hudAccent: '#ffd166',
+    banner: '#ffd166',
+    drawWalls: drawWallsRetro,
+    drawPacman: drawPacmanRetro,
+    drawGhost: makeDrawGhostFlat(
+      RETRO_GHOST_COLORS,
+      '#5c5cff',
+      '#f5f5ff',
+      '#ffffff',
+      '#ff6b6b',
+      '#ffffff',
+      '#2a2a55',
+      true,
+    ),
+    drawFruit: drawFruitRetro,
+    drawPellet: drawPelletRetro,
+    drawPowerPellet: drawPowerPelletRetro,
+  },
+  neon: {
+    name: 'neon',
+    bg: '#000000',
+    hud: '#00f5ff',
+    hudAccent: '#ffe600',
+    banner: '#ffe600',
+    drawWalls: drawWallsNeon,
+    drawPacman: drawPacmanNeon,
+    drawGhost: drawGhostNeon,
+    drawFruit: drawFruitNeon,
+    drawPellet: drawPelletNeon,
+    drawPowerPellet: drawPowerPelletNeon,
   },
 };
 
@@ -629,6 +1136,11 @@ function PacmanGame({
   const skinRef = useRef<Skin>(SKINS[skinKey ?? 'classic'] ?? SKINS.classic);
   const stateRef = useRef<GameState | null>(null);
   if (stateRef.current === null) stateRef.current = initialState();
+  // T4-#5 (final-review): con paused=true el loop solo repinta una vez y
+  // queda "congelado" (pauseDrawn=true) hasta reanudar. Si el cambio de skin
+  // llega durante la pausa, hace falta invalidar ese flag desde fuera del
+  // closure del efecto de juego para forzar un repintado con el skin nuevo.
+  const pauseDrawnRef = useRef(false);
 
   useEffect(() => {
     pausedRef.current = paused;
@@ -636,6 +1148,7 @@ function PacmanGame({
 
   useEffect(() => {
     skinRef.current = SKINS[skinKey ?? 'classic'] ?? SKINS.classic;
+    pauseDrawnRef.current = false;
   }, [skinKey]);
 
   useEffect(() => {
@@ -1142,18 +1655,16 @@ function PacmanGame({
 
       ctx.drawImage(wallLayer(), 0, MAZE_Y);
 
-      // Pellets vivos (coste decreciente durante el nivel)
-      ctx.fillStyle = skin.pellet;
+      // Pellets vivos (coste decreciente durante el nivel). Cada skin decide
+      // cómo dibujarlos — el neon usa un sprite horneado (P7) en vez de
+      // shadowBlur en vivo, porque aquí sí hay ~240 por pantalla.
       for (const cell of s.pellets) {
-        ctx.fillRect(cellCX(cell) - 1.5, MAZE_Y + cellCY(cell) - 1.5, 3, 3);
+        skin.drawPellet(ctx, cellCX(cell), MAZE_Y + cellCY(cell));
       }
 
       if (s.blinkMs < POWER_BLINK_MS / 2) {
-        ctx.fillStyle = skin.powerPellet;
         for (const cell of s.powerPellets) {
-          ctx.beginPath();
-          ctx.arc(cellCX(cell), MAZE_Y + cellCY(cell), 4.5, 0, Math.PI * 2);
-          ctx.fill();
+          skin.drawPowerPellet(ctx, cellCX(cell), MAZE_Y + cellCY(cell));
         }
       }
 
@@ -1237,7 +1748,6 @@ function PacmanGame({
     // ── Loop ────────────────────────────────────────────────────────────────
     let rafId = 0;
     let last = performance.now();
-    let pauseDrawn = false;
     let overDrawn = false;
 
     function loop(ts: number) {
@@ -1245,14 +1755,14 @@ function PacmanGame({
       last = ts;
 
       if (pausedRef.current) {
-        if (!pauseDrawn) {
+        if (!pauseDrawnRef.current) {
           draw();
-          pauseDrawn = true;
+          pauseDrawnRef.current = true;
         }
         rafId = requestAnimationFrame(loop);
         return;
       }
-      pauseDrawn = false;
+      pauseDrawnRef.current = false;
 
       if (s.over) {
         if (!overDrawn) {

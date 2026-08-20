@@ -4,11 +4,42 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
 import { useUser } from '@/app/context/UserContext';
+import { useMusic } from '@/app/context/MusicContext';
+
+function getRank(played: number | null, total: number | null): string {
+  if (played === null) return 'INVITADO';
+  if (played === 0) return 'INVITADO';
+  if (total !== null && total > 0 && played >= total) return 'MAESTRO DEL VAULT';
+  if (played >= 6) return 'VETERANO';
+  if (played >= 3) return 'JUGADOR';
+  return 'NOVATO';
+}
+
+function getStars(played: number | null, total: number | null): string {
+  let filled = 0;
+  if (played !== null) {
+    if (total !== null && total > 0 && played >= total) filled = 3;
+    else if (played >= 6) filled = 2;
+    else if (played >= 3) filled = 1;
+  }
+  return '★'.repeat(filled) + '☆'.repeat(3 - filled);
+}
 
 export default function Nav() {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
-  const { username, avatarUrl, signOut } = useUser();
+  const { username, avatarUrl, signOut, user, gamesPlayed, catalogSize } =
+    useUser();
+  const { muted, toggleMuted } = useMusic();
+
+  const rank = getRank(gamesPlayed, catalogSize);
+  const stars = getStars(gamesPlayed, catalogSize);
+  const creditsLabel =
+    gamesPlayed === null
+      ? 'CRÉDITOS · --'
+      : `CRÉDITOS · ${String(gamesPlayed).padStart(2, '0')} / ${
+          catalogSize !== null ? String(catalogSize).padStart(2, '0') : '--'
+        }`;
 
   const isLibrary = pathname.startsWith('/games');
   const isHall = pathname === '/hall-of-fame';
@@ -50,10 +81,20 @@ export default function Nav() {
 
         <div className="spacer" />
 
-        <div className="coin-counter">
-          <span className="coin" />
-          <span>CRÉDITOS · 03</span>
-        </div>
+        {user ? (
+          <div className="coin-counter">
+            <span className="coin" />
+            <span>{creditsLabel}</span>
+            <span className="rank">{rank}</span>
+            <span className="stars">{stars}</span>
+          </div>
+        ) : (
+          <Link href="/auth" className="coin-counter">
+            <span className="coin" />
+            <span>{creditsLabel}</span>
+            <span className="rank">{rank}</span>
+          </Link>
+        )}
 
         {username ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -114,6 +155,16 @@ export default function Nav() {
         )}
 
         <button
+          type="button"
+          className="btn ghost music-toggle"
+          onClick={toggleMuted}
+          aria-label={muted ? 'Activar música' : 'Silenciar música'}
+          aria-pressed={muted}
+        >
+          {muted ? '♪̸' : '♪'}
+        </button>
+
+        <button
           className="btn ghost hamburger"
           onClick={() => setOpen(true)}
           aria-label="Menú"
@@ -121,6 +172,18 @@ export default function Nav() {
           ≡
         </button>
       </nav>
+
+      {isPlayPage && (
+        <button
+          type="button"
+          className="btn ghost music-toggle music-toggle--floating"
+          onClick={toggleMuted}
+          aria-label={muted ? 'Activar música' : 'Silenciar música'}
+          aria-pressed={muted}
+        >
+          {muted ? '♪̸' : '♪'}
+        </button>
+      )}
 
       <div
         className={`av-mobile-backdrop${open ? ' open' : ''}${isPlayPage ? ' nav-hide-mobile' : ''}`}
@@ -170,6 +233,15 @@ export default function Nav() {
           </Link>
         )}
         <div style={{ flex: 1 }} />
+        <button
+          type="button"
+          className="btn ghost music-toggle"
+          onClick={toggleMuted}
+          aria-label={muted ? 'Activar música' : 'Silenciar música'}
+          aria-pressed={muted}
+        >
+          {muted ? '♪̸' : '♪'} MÚSICA
+        </button>
         <div
           className="pixel"
           style={{
@@ -178,8 +250,13 @@ export default function Nav() {
             letterSpacing: '0.16em',
           }}
         >
-          CRÉDITOS · 03
+          {creditsLabel} · {rank}
         </div>
+        {user && (
+          <div style={{ fontSize: 13, color: 'var(--yellow)', letterSpacing: 3 }}>
+            {stars}
+          </div>
+        )}
       </aside>
     </>
   );
