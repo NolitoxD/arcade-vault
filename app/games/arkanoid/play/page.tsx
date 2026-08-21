@@ -3,27 +3,21 @@
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { createClient } from '@/lib/supabase/client';
 import { useUser } from '@/app/context/UserContext';
 import MobileGamepad from '@/components/MobileGamepad';
+import InstructionsContent from '@/components/InstructionsContent';
+import { useGameSkin } from '@/hooks/use-game-skin';
+import { getGame, getKeyMap } from '@/lib/games-registry';
 
 const ArkanoidGame = dynamic(() => import('@/components/games/ArkanoidGame'), {
   ssr: false,
 });
 
-const SKIN_OPTIONS = [
-  { key: 'classic', label: 'Classic' },
-  { key: 'retro', label: 'Retro' },
-  { key: 'neon', label: 'Neon' },
-];
-
-function getSavedSkin() {
-  if (typeof window === 'undefined') return 'classic';
-  return localStorage.getItem('arkanoid-skin') ?? 'classic';
-}
+const keyMap = getKeyMap('arkanoid');
 
 export default function ArkanoidPlay() {
-  const { user, username } = useUser();
+  const { username, saveScore } = useUser();
+  const { skinKey, options, change } = useGameSkin('arkanoid');
   const scoreRef = useRef(0);
   const livesRef = useRef(3);
   const levelRef = useRef(1);
@@ -35,16 +29,7 @@ export default function ArkanoidPlay() {
   const [name, setName] = useState('INVITADO');
   const [saved, setSaved] = useState(false);
   const [gameKey, setGameKey] = useState(0);
-  const [skinKey, setSkinKey] = useState('classic');
-
-  useEffect(() => {
-    setSkinKey(getSavedSkin());
-  }, []);
-
-  function changeSkin(key: string) {
-    setSkinKey(key);
-    localStorage.setItem('arkanoid-skin', key);
-  }
+  const [helpOpen, setHelpOpen] = useState(false);
 
   const handleScoreChange = useCallback((s: number) => {
     scoreRef.current = s;
@@ -93,8 +78,6 @@ export default function ArkanoidPlay() {
     setGameKey((k) => k + 1);
   }
 
-  const keyMap = { left: 'ArrowLeft', right: 'ArrowRight', a: ' ' };
-
   return (
     <div className="av-player fade-in">
       <div className="hidden md:block">
@@ -129,7 +112,7 @@ export default function ArkanoidPlay() {
               <div className="v">
                 <select
                   value={skinKey}
-                  onChange={(e) => changeSkin(e.target.value)}
+                  onChange={(e) => change(e.target.value)}
                   style={{
                     background: 'transparent',
                     border: '1px solid var(--ink-dim)',
@@ -140,9 +123,11 @@ export default function ArkanoidPlay() {
                     padding: '2px 4px',
                   }}
                 >
-                  {SKIN_OPTIONS.map((s) => (
-                    <option key={s.key} value={s.key}>
-                      {s.label}
+                  {options.map((s) => (
+                    <option key={s.key} value={s.key} disabled={s.locked}>
+                      {s.locked
+                        ? `🔒 ${s.label} · ${s.requiredCredits}`
+                        : s.label}
                     </option>
                   ))}
                 </select>
@@ -152,6 +137,13 @@ export default function ArkanoidPlay() {
           <div className="hud-actions">
             <button className="btn yellow" onClick={() => setPaused((p) => !p)}>
               {paused ? 'REANUDAR' : 'PAUSA'}
+            </button>
+            <button
+              className="btn cyan"
+              aria-label="Instrucciones"
+              onClick={() => setHelpOpen(true)}
+            >
+              ?
             </button>
             <button className="btn magenta" onClick={() => setOver(true)}>
               FIN
@@ -167,7 +159,7 @@ export default function ArkanoidPlay() {
         <div className="crt-screen crt-screen--scale-canvas">
           <ArkanoidGame
             key={gameKey}
-            paused={paused}
+            paused={paused || helpOpen}
             skinKey={skinKey}
             onScoreChange={handleScoreChange}
             onLivesChange={handleLivesChange}
@@ -210,7 +202,9 @@ export default function ArkanoidPlay() {
         paused={paused}
         onPauseToggle={() => setPaused((p) => !p)}
         skin={skinKey}
-        onSkinChange={changeSkin}
+        onSkinChange={change}
+        skinOptions={options}
+        onHelp={() => setHelpOpen(true)}
         backHref="/games/arkanoid"
       />
 
@@ -236,12 +230,10 @@ export default function ArkanoidPlay() {
                   onClick={async () => {
                     setSaved(true);
                     localStorage.setItem('av_player_name', name);
-                    const supabase = createClient();
-                    await supabase.from('scores').insert({
-                      game_id: 'arkanoid',
-                      player_name: name,
+                    await saveScore({
+                      gameId: 'arkanoid',
+                      playerName: name,
                       score: scoreRef.current,
-                      user_id: user?.id ?? null,
                     });
                   }}
                 >
@@ -261,6 +253,26 @@ export default function ArkanoidPlay() {
               <Link href="/games" className="btn magenta">
                 VOLVER AL VAULT
               </Link>
+            </div>
+          </div>
+        </div>
+      )}
+      {helpOpen && (
+        <div
+          className="modal-bd"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Instrucciones"
+        >
+          <div
+            className="modal"
+            style={{ textAlign: 'left', maxHeight: '90vh', overflowY: 'auto' }}
+          >
+            <InstructionsContent game={getGame('arkanoid')!} title="ARKANOID" />
+            <div className="actions">
+              <button className="btn cyan" onClick={() => setHelpOpen(false)}>
+                CERRAR
+              </button>
             </div>
           </div>
         </div>

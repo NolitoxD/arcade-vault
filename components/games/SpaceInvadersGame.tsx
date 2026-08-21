@@ -30,7 +30,7 @@ import { sfxSpaceInvaders } from '@/lib/sfx-space-invaders';
 interface SpaceInvadersGameProps {
   paused: boolean;
   muted?: boolean;
-  skin?: string;
+  skinKey?: string;
   onScoreChange: (score: number) => void;
   onLivesChange: (lives: number) => void;
   onLevelChange: (level: number) => void;
@@ -755,7 +755,7 @@ function initialState(): GameState {
 function SpaceInvadersGame({
   paused,
   muted = false,
-  skin = 'classic',
+  skinKey = 'classic',
   onScoreChange,
   onLivesChange,
   onLevelChange,
@@ -764,7 +764,7 @@ function SpaceInvadersGame({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const pausedRef = useRef(paused);
   const mutedRef = useRef(muted);
-  const skinRef = useRef<Skin>(SKINS[skin] ?? SKINS.classic);
+  const skinRef = useRef<Skin>(SKINS[skinKey] ?? SKINS.classic);
   const stateRef = useRef<GameState | null>(null);
   if (stateRef.current === null) stateRef.current = initialState();
 
@@ -778,8 +778,8 @@ function SpaceInvadersGame({
   }, [muted]);
 
   useEffect(() => {
-    skinRef.current = SKINS[skin] ?? SKINS.classic;
-  }, [skin]);
+    skinRef.current = SKINS[skinKey] ?? SKINS.classic;
+  }, [skinKey]);
 
   useEffect(() => {
     const canvas = canvasRef.current;

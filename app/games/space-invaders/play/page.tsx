@@ -3,25 +3,18 @@
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { createClient } from '@/lib/supabase/client';
 import { useUser } from '@/app/context/UserContext';
 import MobileGamepad from '@/components/MobileGamepad';
+import InstructionsContent from '@/components/InstructionsContent';
+import { useGameSkin } from '@/hooks/use-game-skin';
+import { getGame, getKeyMap } from '@/lib/games-registry';
 
 const SpaceInvadersGame = dynamic(
   () => import('@/components/games/SpaceInvadersGame'),
   { ssr: false },
 );
 
-const SKIN_OPTIONS = [
-  { key: 'classic', label: 'Classic' },
-  { key: 'retro', label: 'Retro' },
-  { key: 'neon', label: 'Neon' },
-];
-
-function getSavedSkin() {
-  if (typeof window === 'undefined') return 'classic';
-  return localStorage.getItem('space-invaders-skin') ?? 'classic';
-}
+const keyMap = getKeyMap('space-invaders');
 
 function getSavedMuted() {
   if (typeof window === 'undefined') return false;
@@ -71,7 +64,8 @@ function SpeakerIcon({ muted }: { muted: boolean }) {
 }
 
 export default function SpaceInvadersPlay() {
-  const { user, username } = useUser();
+  const { username, saveScore } = useUser();
+  const { skinKey, options, change } = useGameSkin('space-invaders');
   const scoreRef = useRef(0);
   const livesRef = useRef(3);
   const levelRef = useRef(1);
@@ -83,18 +77,12 @@ export default function SpaceInvadersPlay() {
   const [name, setName] = useState('INVITADO');
   const [saved, setSaved] = useState(false);
   const [gameKey, setGameKey] = useState(0);
-  const [skinKey, setSkinKey] = useState('classic');
+  const [helpOpen, setHelpOpen] = useState(false);
   const [muted, setMuted] = useState(false);
 
   useEffect(() => {
-    setSkinKey(getSavedSkin());
     setMuted(getSavedMuted());
   }, []);
-
-  function changeSkin(key: string) {
-    setSkinKey(key);
-    localStorage.setItem('space-invaders-skin', key);
-  }
 
   function toggleMuted() {
     setMuted((m) => {
@@ -152,12 +140,6 @@ export default function SpaceInvadersPlay() {
     setGameKey((k) => k + 1);
   }
 
-  const keyMap = {
-    left: 'ArrowLeft',
-    right: 'ArrowRight',
-    a: ' ',
-  };
-
   return (
     <div className="av-player fade-in">
       <div className="hidden md:block">
@@ -195,7 +177,7 @@ export default function SpaceInvadersPlay() {
               <div className="v">
                 <select
                   value={skinKey}
-                  onChange={(e) => changeSkin(e.target.value)}
+                  onChange={(e) => change(e.target.value)}
                   style={{
                     background: 'transparent',
                     border: '1px solid var(--ink-dim)',
@@ -206,9 +188,11 @@ export default function SpaceInvadersPlay() {
                     padding: '2px 4px',
                   }}
                 >
-                  {SKIN_OPTIONS.map((s) => (
-                    <option key={s.key} value={s.key}>
-                      {s.label}
+                  {options.map((s) => (
+                    <option key={s.key} value={s.key} disabled={s.locked}>
+                      {s.locked
+                        ? `🔒 ${s.label} · ${s.requiredCredits}`
+                        : s.label}
                     </option>
                   ))}
                 </select>
@@ -228,6 +212,13 @@ export default function SpaceInvadersPlay() {
             <button className="btn yellow" onClick={() => setPaused((p) => !p)}>
               {paused ? 'REANUDAR' : 'PAUSA'}
             </button>
+            <button
+              className="btn cyan"
+              aria-label="Instrucciones"
+              onClick={() => setHelpOpen(true)}
+            >
+              ?
+            </button>
             <button className="btn magenta" onClick={() => setOver(true)}>
               FIN
             </button>
@@ -245,9 +236,9 @@ export default function SpaceInvadersPlay() {
         >
           <SpaceInvadersGame
             key={gameKey}
-            paused={paused || over}
+            paused={paused || over || helpOpen}
             muted={muted}
-            skin={skinKey}
+            skinKey={skinKey}
             onScoreChange={handleScoreChange}
             onLevelChange={handleLevelChange}
             onLivesChange={handleLivesChange}
@@ -289,7 +280,9 @@ export default function SpaceInvadersPlay() {
         paused={paused || over}
         onPauseToggle={() => setPaused((p) => !p)}
         skin={skinKey}
-        onSkinChange={changeSkin}
+        onSkinChange={change}
+        skinOptions={options}
+        onHelp={() => setHelpOpen(true)}
         backHref="/games/space-invaders"
       />
 
@@ -315,12 +308,10 @@ export default function SpaceInvadersPlay() {
                   onClick={async () => {
                     setSaved(true);
                     localStorage.setItem('av_player_name', name);
-                    const supabase = createClient();
-                    await supabase.from('scores').insert({
-                      game_id: 'space-invaders',
-                      player_name: name,
+                    await saveScore({
+                      gameId: 'space-invaders',
+                      playerName: name,
                       score: scoreRef.current,
-                      user_id: user?.id ?? null,
                     });
                   }}
                 >
@@ -334,12 +325,38 @@ export default function SpaceInvadersPlay() {
               <button className="btn" onClick={restart}>
                 JUGAR DE NUEVO
               </button>
-              <Link href="/games/space-invaders#leaderboard" className="btn cyan">
+              <Link
+                href="/games/space-invaders#leaderboard"
+                className="btn cyan"
+              >
                 VER LEADERBOARD
               </Link>
               <Link href="/games" className="btn magenta">
                 VOLVER AL VAULT
               </Link>
+            </div>
+          </div>
+        </div>
+      )}
+      {helpOpen && (
+        <div
+          className="modal-bd"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Instrucciones"
+        >
+          <div
+            className="modal"
+            style={{ textAlign: 'left', maxHeight: '90vh', overflowY: 'auto' }}
+          >
+            <InstructionsContent
+              game={getGame('space-invaders')!}
+              title="SPACE INVADERS"
+            />
+            <div className="actions">
+              <button className="btn cyan" onClick={() => setHelpOpen(false)}>
+                CERRAR
+              </button>
             </div>
           </div>
         </div>

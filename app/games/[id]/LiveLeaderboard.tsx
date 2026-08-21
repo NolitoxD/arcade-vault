@@ -1,10 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { getGame } from '@/lib/games-registry';
 import { createClient } from '@/lib/supabase/client';
 import type { ScoreRow } from '@/lib/supabase/types';
 
-const REALTIME_GAMES = ['pong', 'road-fighter', 'pacman', 'space-invaders'];
 const TOP_LIMIT = 10;
 
 function formatDate(iso: string) {
@@ -22,7 +22,7 @@ export default function LiveLeaderboard({
   const [scores, setScores] = useState(initialScores);
 
   useEffect(() => {
-    if (!REALTIME_GAMES.includes(gameId)) return;
+    if (!getGame(gameId)?.realtime) return;
     const supabase = createClient();
     const channel = supabase
       .channel(`scores-${gameId}`)

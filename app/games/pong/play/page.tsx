@@ -3,24 +3,17 @@
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { createClient } from '@/lib/supabase/client';
 import { useUser } from '@/app/context/UserContext';
 import MobileGamepad from '@/components/MobileGamepad';
+import InstructionsContent from '@/components/InstructionsContent';
+import { useGameSkin } from '@/hooks/use-game-skin';
+import { getGame, getKeyMap } from '@/lib/games-registry';
 
 const PongGame = dynamic(() => import('@/components/games/PongGame'), {
   ssr: false,
 });
 
-const SKIN_OPTIONS = [
-  { key: 'classic', label: 'Classic' },
-  { key: 'retro', label: 'Retro' },
-  { key: 'neon', label: 'Neon' },
-];
-
-function getSavedSkin() {
-  if (typeof window === 'undefined') return 'classic';
-  return localStorage.getItem('pong-skin') ?? 'classic';
-}
+const keyMap = getKeyMap('pong');
 
 const FULL_HEARTS =
   '<span style="color:var(--green)">♥</span>' +
@@ -36,7 +29,8 @@ interface VersusResult {
 }
 
 export default function PongPlay() {
-  const { user, username } = useUser();
+  const { username, saveScore } = useUser();
+  const { skinKey, options, change } = useGameSkin('pong');
   const scoreRef = useRef(0);
   const livesRef = useRef(3);
   const levelRef = useRef(1);
@@ -51,18 +45,9 @@ export default function PongPlay() {
   const [saved, setSaved] = useState(false);
   const [versusResult, setVersusResult] = useState<VersusResult | null>(null);
   const [gameKey, setGameKey] = useState(0);
-  const [skinKey, setSkinKey] = useState('classic');
+  const [helpOpen, setHelpOpen] = useState(false);
   const [fastBall, setFastBall] = useState(false);
   const [smallPaddles, setSmallPaddles] = useState(false);
-
-  useEffect(() => {
-    setSkinKey(getSavedSkin());
-  }, []);
-
-  function changeSkin(key: string) {
-    setSkinKey(key);
-    localStorage.setItem('pong-skin', key);
-  }
 
   const handleScoreChange = useCallback((s: number) => {
     scoreRef.current = s;
@@ -145,8 +130,6 @@ export default function PongPlay() {
     setMode(m);
   }
 
-  const keyMap = { up: 'ArrowUp', down: 'ArrowDown' };
-
   return (
     <div className="av-player fade-in">
       {mode !== null && (
@@ -196,7 +179,7 @@ export default function PongPlay() {
                 <div className="v">
                   <select
                     value={skinKey}
-                    onChange={(e) => changeSkin(e.target.value)}
+                    onChange={(e) => change(e.target.value)}
                     style={{
                       background: 'transparent',
                       border: '1px solid var(--ink-dim)',
@@ -207,9 +190,11 @@ export default function PongPlay() {
                       padding: '2px 4px',
                     }}
                   >
-                    {SKIN_OPTIONS.map((s) => (
-                      <option key={s.key} value={s.key}>
-                        {s.label}
+                    {options.map((s) => (
+                      <option key={s.key} value={s.key} disabled={s.locked}>
+                        {s.locked
+                          ? `🔒 ${s.label} · ${s.requiredCredits}`
+                          : s.label}
                       </option>
                     ))}
                   </select>
@@ -222,6 +207,13 @@ export default function PongPlay() {
                 onClick={() => setPaused((p) => !p)}
               >
                 {paused ? 'REANUDAR' : 'PAUSA'}
+              </button>
+              <button
+                className="btn cyan"
+                aria-label="Instrucciones"
+                onClick={() => setHelpOpen(true)}
+              >
+                ?
               </button>
               <button
                 className="btn magenta"
@@ -247,7 +239,7 @@ export default function PongPlay() {
           {mode !== null && (
             <PongGame
               key={`${mode}-${gameKey}`}
-              paused={paused}
+              paused={paused || helpOpen}
               mode={mode}
               skinKey={skinKey}
               fastBall={fastBall}
@@ -278,7 +270,10 @@ export default function PongPlay() {
                   ELIGE MODO DE JUEGO
                 </div>
                 <div className="flex flex-col items-center gap-2 md:gap-3 mt-3 md:mt-[22px]">
-                  <button className="btn cyan" onClick={() => selectMode('solo')}>
+                  <button
+                    className="btn cyan"
+                    onClick={() => selectMode('solo')}
+                  >
                     1 JUGADOR vs CPU
                   </button>
                   <div className="hidden md:block">
@@ -319,9 +314,7 @@ export default function PongPlay() {
                       checked={fastBall}
                       onChange={(e) => setFastBall(e.target.checked)}
                     />
-                    <span aria-hidden="true">
-                      [{fastBall ? 'X' : ' '}]
-                    </span>
+                    <span aria-hidden="true">[{fastBall ? 'X' : ' '}]</span>
                     BOLA RÁPIDA
                   </label>
                   <label
@@ -342,9 +335,7 @@ export default function PongPlay() {
                       checked={smallPaddles}
                       onChange={(e) => setSmallPaddles(e.target.checked)}
                     />
-                    <span aria-hidden="true">
-                      [{smallPaddles ? 'X' : ' '}]
-                    </span>
+                    <span aria-hidden="true">[{smallPaddles ? 'X' : ' '}]</span>
                     PALAS PEQUEÑAS
                   </label>
                 </div>
@@ -399,7 +390,9 @@ export default function PongPlay() {
           paused={paused}
           onPauseToggle={() => setPaused((p) => !p)}
           skin={skinKey}
-          onSkinChange={changeSkin}
+          onSkinChange={change}
+          skinOptions={options}
+          onHelp={() => setHelpOpen(true)}
           backHref="/games/pong"
         />
       )}
@@ -447,12 +440,10 @@ export default function PongPlay() {
                       onClick={async () => {
                         setSaved(true);
                         localStorage.setItem('av_player_name', name);
-                        const supabase = createClient();
-                        await supabase.from('scores').insert({
-                          game_id: 'pong',
-                          player_name: name,
+                        await saveScore({
+                          gameId: 'pong',
+                          playerName: name,
                           score: scoreRef.current,
-                          user_id: user?.id ?? null,
                         });
                       }}
                     >
@@ -478,6 +469,26 @@ export default function PongPlay() {
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+      {helpOpen && (
+        <div
+          className="modal-bd"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Instrucciones"
+        >
+          <div
+            className="modal"
+            style={{ textAlign: 'left', maxHeight: '90vh', overflowY: 'auto' }}
+          >
+            <InstructionsContent game={getGame('pong')!} title="PONG" />
+            <div className="actions">
+              <button className="btn cyan" onClick={() => setHelpOpen(false)}>
+                CERRAR
+              </button>
+            </div>
           </div>
         </div>
       )}

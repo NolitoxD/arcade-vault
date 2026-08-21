@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { isGameId } from '@/lib/games-registry';
 import { createClient } from '@/lib/supabase/server';
 import type { GameRow, ScoreRow } from '@/lib/supabase/types';
 import LiveLeaderboard from './LiveLeaderboard';
@@ -86,6 +87,11 @@ export default async function GameDetail({
             <Link href={`/games/${id}/play`} className="btn xl pulse">
               ▶ JUGAR AHORA
             </Link>
+            {isGameId(id) && (
+              <Link href={`/games/${id}/instructions`} className="btn ghost">
+                INSTRUCCIONES
+              </Link>
+            )}
             <Link href="/games" className="btn ghost lg">
               VOLVER AL VAULT
             </Link>

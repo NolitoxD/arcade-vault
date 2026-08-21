@@ -3,25 +3,18 @@
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { createClient } from '@/lib/supabase/client';
 import { useUser } from '@/app/context/UserContext';
 import MobileGamepad from '@/components/MobileGamepad';
+import InstructionsContent from '@/components/InstructionsContent';
+import { useGameSkin } from '@/hooks/use-game-skin';
+import { getGame, getKeyMap } from '@/lib/games-registry';
 
 const RoadFighterGame = dynamic(
   () => import('@/components/games/RoadFighterGame'),
   { ssr: false },
 );
 
-const SKIN_OPTIONS = [
-  { key: 'classic', label: 'Classic' },
-  { key: 'retro', label: 'Retro' },
-  { key: 'neon', label: 'Neon' },
-];
-
-function getSavedSkin() {
-  if (typeof window === 'undefined') return 'classic';
-  return localStorage.getItem('road-fighter-skin') ?? 'classic';
-}
+const keyMap = getKeyMap('road-fighter');
 
 const FULL_HEARTS =
   '<span style="color:var(--green)">♥</span>' +
@@ -29,7 +22,8 @@ const FULL_HEARTS =
   '<span style="color:var(--green)">♥</span>';
 
 export default function RoadFighterPlay() {
-  const { user, username } = useUser();
+  const { username, saveScore } = useUser();
+  const { skinKey, options, change } = useGameSkin('road-fighter');
   const scoreRef = useRef(0);
   const livesRef = useRef(3);
   const levelRef = useRef(1);
@@ -41,16 +35,7 @@ export default function RoadFighterPlay() {
   const [name, setName] = useState('INVITADO');
   const [saved, setSaved] = useState(false);
   const [gameKey, setGameKey] = useState(0);
-  const [skinKey, setSkinKey] = useState('classic');
-
-  useEffect(() => {
-    setSkinKey(getSavedSkin());
-  }, []);
-
-  function changeSkin(key: string) {
-    setSkinKey(key);
-    localStorage.setItem('road-fighter-skin', key);
-  }
+  const [helpOpen, setHelpOpen] = useState(false);
 
   const handleScoreChange = useCallback((s: number) => {
     scoreRef.current = s;
@@ -105,13 +90,6 @@ export default function RoadFighterPlay() {
     setGameKey((k) => k + 1);
   }
 
-  const keyMap = {
-    up: 'ArrowUp',
-    down: 'ArrowDown',
-    left: 'ArrowLeft',
-    right: 'ArrowRight',
-  };
-
   return (
     <div className="av-player fade-in">
       <div className="hidden md:block">
@@ -149,7 +127,7 @@ export default function RoadFighterPlay() {
               <div className="v">
                 <select
                   value={skinKey}
-                  onChange={(e) => changeSkin(e.target.value)}
+                  onChange={(e) => change(e.target.value)}
                   style={{
                     background: 'transparent',
                     border: '1px solid var(--ink-dim)',
@@ -160,9 +138,11 @@ export default function RoadFighterPlay() {
                     padding: '2px 4px',
                   }}
                 >
-                  {SKIN_OPTIONS.map((s) => (
-                    <option key={s.key} value={s.key}>
-                      {s.label}
+                  {options.map((s) => (
+                    <option key={s.key} value={s.key} disabled={s.locked}>
+                      {s.locked
+                        ? `🔒 ${s.label} · ${s.requiredCredits}`
+                        : s.label}
                     </option>
                   ))}
                 </select>
@@ -172,6 +152,13 @@ export default function RoadFighterPlay() {
           <div className="hud-actions">
             <button className="btn yellow" onClick={() => setPaused((p) => !p)}>
               {paused ? 'REANUDAR' : 'PAUSA'}
+            </button>
+            <button
+              className="btn cyan"
+              aria-label="Instrucciones"
+              onClick={() => setHelpOpen(true)}
+            >
+              ?
             </button>
             <button className="btn magenta" onClick={() => setOver(true)}>
               FIN
@@ -190,7 +177,7 @@ export default function RoadFighterPlay() {
         >
           <RoadFighterGame
             key={gameKey}
-            paused={paused}
+            paused={paused || helpOpen}
             skinKey={skinKey}
             onScoreChange={handleScoreChange}
             onLevelChange={handleLevelChange}
@@ -233,7 +220,9 @@ export default function RoadFighterPlay() {
         paused={paused}
         onPauseToggle={() => setPaused((p) => !p)}
         skin={skinKey}
-        onSkinChange={changeSkin}
+        onSkinChange={change}
+        skinOptions={options}
+        onHelp={() => setHelpOpen(true)}
         backHref="/games/road-fighter"
       />
 
@@ -259,12 +248,10 @@ export default function RoadFighterPlay() {
                   onClick={async () => {
                     setSaved(true);
                     localStorage.setItem('av_player_name', name);
-                    const supabase = createClient();
-                    await supabase.from('scores').insert({
-                      game_id: 'road-fighter',
-                      player_name: name,
+                    await saveScore({
+                      gameId: 'road-fighter',
+                      playerName: name,
                       score: scoreRef.current,
-                      user_id: user?.id ?? null,
                     });
                   }}
                 >
@@ -284,6 +271,29 @@ export default function RoadFighterPlay() {
               <Link href="/games" className="btn magenta">
                 VOLVER AL VAULT
               </Link>
+            </div>
+          </div>
+        </div>
+      )}
+      {helpOpen && (
+        <div
+          className="modal-bd"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Instrucciones"
+        >
+          <div
+            className="modal"
+            style={{ textAlign: 'left', maxHeight: '90vh', overflowY: 'auto' }}
+          >
+            <InstructionsContent
+              game={getGame('road-fighter')!}
+              title="ROAD FIGHTER"
+            />
+            <div className="actions">
+              <button className="btn cyan" onClick={() => setHelpOpen(false)}>
+                CERRAR
+              </button>
             </div>
           </div>
         </div>

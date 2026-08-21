@@ -7,7 +7,7 @@ import styles from './MobileGamepad.module.css';
 const CYAN = '#00f5ff';
 const MAGENTA = '#ff006e';
 
-interface KeyMap {
+export interface KeyMap {
   up?: string;
   down?: string;
   left?: string;
@@ -16,20 +16,23 @@ interface KeyMap {
   b?: string;
 }
 
+export interface SkinOptionProp {
+  key: string;
+  label: string;
+  locked?: boolean;
+  requiredCredits?: number;
+}
+
 interface MobileGamepadProps {
   keyMap: KeyMap;
   paused: boolean;
   onPauseToggle: () => void;
   skin: string;
   onSkinChange: (skin: string) => void;
+  skinOptions: SkinOptionProp[];
+  onHelp?: () => void;
   backHref: string;
 }
-
-const SKIN_OPTIONS = [
-  { key: 'classic', label: 'Classic' },
-  { key: 'retro', label: 'Retro' },
-  { key: 'neon', label: 'Neon' },
-];
 
 function keyToCode(key: string): string {
   if (key === ' ') return 'Space';
@@ -219,6 +222,8 @@ export default function MobileGamepad({
   onPauseToggle,
   skin,
   onSkinChange,
+  skinOptions,
+  onHelp,
   backHref,
 }: MobileGamepadProps) {
   const btnSize = 44;
@@ -383,6 +388,34 @@ export default function MobileGamepad({
             {paused ? '▶ REANUDAR' : '⏸ PAUSA'}
           </button>
 
+          {onHelp && (
+            <button
+              style={{
+                width: 36,
+                height: 36,
+                flexShrink: 0,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: 'rgba(0,245,255,0.06)',
+                border: '1px solid rgba(0,245,255,0.25)',
+                borderRadius: 8,
+                color: '#a0f0ff',
+                fontFamily: 'inherit',
+                fontSize: 14,
+                fontWeight: 700,
+                cursor: 'pointer',
+                WebkitTapHighlightColor: 'transparent',
+                touchAction: 'manipulation',
+                padding: 0,
+              }}
+              onClick={onHelp}
+              aria-label="Instrucciones"
+            >
+              ?
+            </button>
+          )}
+
           <select
             value={skin}
             onChange={(e) => onSkinChange(e.target.value)}
@@ -400,9 +433,9 @@ export default function MobileGamepad({
             }}
             aria-label="Selector de skin"
           >
-            {SKIN_OPTIONS.map((s) => (
-              <option key={s.key} value={s.key}>
-                {s.label}
+            {skinOptions.map((s) => (
+              <option key={s.key} value={s.key} disabled={s.locked}>
+                {s.locked ? `🔒 ${s.label} · ${s.requiredCredits}` : s.label}
               </option>
             ))}
           </select>

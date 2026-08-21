@@ -5,39 +5,21 @@ import { usePathname } from 'next/navigation';
 import { useState } from 'react';
 import { useUser } from '@/app/context/UserContext';
 import { useMusic } from '@/app/context/MusicContext';
-
-function getRank(played: number | null, total: number | null): string {
-  if (played === null) return 'INVITADO';
-  if (played === 0) return 'INVITADO';
-  if (total !== null && total > 0 && played >= total) return 'MAESTRO DEL VAULT';
-  if (played >= 6) return 'VETERANO';
-  if (played >= 3) return 'JUGADOR';
-  return 'NOVATO';
-}
-
-function getStars(played: number | null, total: number | null): string {
-  let filled = 0;
-  if (played !== null) {
-    if (total !== null && total > 0 && played >= total) filled = 3;
-    else if (played >= 6) filled = 2;
-    else if (played >= 3) filled = 1;
-  }
-  return '★'.repeat(filled) + '☆'.repeat(3 - filled);
-}
+import { getStars } from '@/lib/credits';
+import RankBadge from '@/components/RankBadge';
 
 export default function Nav() {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
-  const { username, avatarUrl, signOut, user, gamesPlayed, catalogSize } =
+  const { username, avatarUrl, signOut, user, credits, catalogSize, rank } =
     useUser();
   const { muted, toggleMuted } = useMusic();
 
-  const rank = getRank(gamesPlayed, catalogSize);
-  const stars = getStars(gamesPlayed, catalogSize);
+  const stars = getStars(credits);
   const creditsLabel =
-    gamesPlayed === null
+    credits === null
       ? 'CRÉDITOS · --'
-      : `CRÉDITOS · ${String(gamesPlayed).padStart(2, '0')} / ${
+      : `CRÉDITOS · ${String(credits).padStart(2, '0')} / ${
           catalogSize !== null ? String(catalogSize).padStart(2, '0') : '--'
         }`;
 
@@ -134,6 +116,7 @@ export default function Nav() {
                 </span>
               )}
             </div>
+            <RankBadge rank={rank} />
             <span
               style={{
                 fontSize: 12,
@@ -218,9 +201,17 @@ export default function Nav() {
         {username ? (
           <button
             className="btn ghost"
-            style={{ textAlign: 'left', padding: 0, marginTop: 8 }}
+            style={{
+              textAlign: 'left',
+              padding: 0,
+              marginTop: 8,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+            }}
             onClick={handleSignOut}
           >
+            <RankBadge rank={rank} />
             CERRAR SESIÓN ({username})
           </button>
         ) : (

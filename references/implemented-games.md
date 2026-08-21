@@ -10,3 +10,4 @@
 | `pong`      | PONG      | SPORTS    | blue   | Golpea la pelota más rápido de lo que tu rival puede reaccionar. |
 | `road-fighter` | ROAD FIGHTER | RACING | red  | Esquiva el tráfico a toda velocidad antes de que se agote el depósito. |
 | `pacman`    | PAC-MAN   | MAZE      | yellow | Devora todos los puntos del laberinto sin que te atrapen los fantasmas. |
+| `space-invaders` | SPACE INVADERS | SHOOTER | green | Destruye oleadas de alienígenas antes de que lleguen a la Tierra. |
