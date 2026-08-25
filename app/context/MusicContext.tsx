@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
 
 const MUTED_STORAGE_KEY = 'av_music_muted';
@@ -10,11 +10,13 @@ const TRACK_SRC = '/arcade-theme.mp3';
 interface MusicContextValue {
   muted: boolean;
   toggleMuted: () => void;
+  setTrackOverride: (src: string | null) => void;
 }
 
 const MusicContext = createContext<MusicContextValue>({
   muted: false,
   toggleMuted: () => {},
+  setTrackOverride: () => {},
 });
 
 export function MusicProvider({ children }: { children: React.ReactNode }) {
@@ -22,6 +24,7 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
   const [muted, setMuted] = useState(false);
   const [gestureDone, setGestureDone] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const trackOverrideRef = useRef<string | null>(null);
 
   useEffect(() => {
     const stored = localStorage.getItem(MUTED_STORAGE_KEY);
@@ -51,7 +54,7 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
     }
 
     if (!audioRef.current) {
-      const audio = new Audio(TRACK_SRC);
+      const audio = new Audio(trackOverrideRef.current ?? TRACK_SRC);
       audio.loop = true;
       audio.volume = 0.35;
       audio.preload = 'none';
@@ -72,8 +75,22 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
     setMuted((prev) => !prev);
   }
 
+  const setTrackOverride = useCallback((src: string | null) => {
+    if (trackOverrideRef.current === src) return;
+    trackOverrideRef.current = src;
+
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    const wasPlaying = !audio.paused;
+    audio.src = src ?? TRACK_SRC;
+    audio.loop = true;
+    audio.volume = 0.35;
+    if (wasPlaying) audio.play().catch(() => {});
+  }, []);
+
   return (
-    <MusicContext.Provider value={{ muted, toggleMuted }}>
+    <MusicContext.Provider value={{ muted, toggleMuted, setTrackOverride }}>
       {children}
     </MusicContext.Provider>
   );

@@ -4,6 +4,7 @@ import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useUser } from '@/app/context/UserContext';
+import { useMusic } from '@/app/context/MusicContext';
 import MobileGamepad from '@/components/MobileGamepad';
 import InstructionsContent from '@/components/InstructionsContent';
 import { useGameSkin } from '@/hooks/use-game-skin';
@@ -17,6 +18,7 @@ const keyMap = getKeyMap('snake');
 
 export default function SnakePlay() {
   const { username, saveScore } = useUser();
+  const { setTrackOverride } = useMusic();
   const { skinKey, options, change } = useGameSkin('snake');
   const scoreRef = useRef(0);
   const levelRef = useRef(1);
@@ -51,6 +53,11 @@ export default function SnakePlay() {
       scoreEl.current.textContent = finalScore.toLocaleString('es-ES');
     setOver(true);
   }, []);
+
+  useEffect(() => {
+    setTrackOverride('/snake-theme.mp3');
+    return () => setTrackOverride(null);
+  }, [setTrackOverride]);
 
   useEffect(() => {
     if (over) {

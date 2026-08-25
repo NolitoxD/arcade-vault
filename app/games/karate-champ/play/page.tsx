@@ -10,18 +10,60 @@ import InstructionsContent from '@/components/InstructionsContent';
 import { useGameSkin } from '@/hooks/use-game-skin';
 import { getGame, getKeyMap } from '@/lib/games-registry';
 
-const FroggerGame = dynamic(() => import('@/components/games/FroggerGame'), {
-  ssr: false,
-});
+const KarateChampGame = dynamic(
+  () => import('@/components/games/KarateChampGame'),
+  { ssr: false },
+);
 
-const keyMap = getKeyMap('frogger');
+const keyMap = getKeyMap('karate-champ');
 
-export default function FroggerPlay() {
+function getSavedMuted() {
+  if (typeof window === 'undefined') return false;
+  return localStorage.getItem('av_sfx_muted') === 'true';
+}
+
+// Internally-generated markup only (no user input reaches this string), same
+// pattern as the hearts HUD in space-invaders/road-fighter play pages.
+function combatMarkup(alive: boolean) {
+  return `<span style="color:${alive ? 'var(--green)' : 'var(--ink-dim)'}">●</span>`;
+}
+
+const FULL_COMBAT = combatMarkup(true);
+
+function SpeakerIcon({ muted }: { muted: boolean }) {
+  return (
+    <svg
+      width={16}
+      height={16}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <polygon points="4 9 9 9 13 5 13 19 9 15 4 15 4 9" />
+      {muted ? (
+        <>
+          <line x1="17" y1="9" x2="22" y2="14" />
+          <line x1="22" y1="9" x2="17" y2="14" />
+        </>
+      ) : (
+        <>
+          <path d="M17 8a5 5 0 0 1 0 8" />
+          <path d="M19.5 5.5a9 9 0 0 1 0 13" />
+        </>
+      )}
+    </svg>
+  );
+}
+
+export default function KarateChampPlay() {
   const { username, saveScore } = useUser();
   const { setTrackOverride } = useMusic();
-  const { skinKey, options, change } = useGameSkin('frogger');
+  const { skinKey, options, change } = useGameSkin('karate-champ');
   const scoreRef = useRef(0);
-  const livesRef = useRef(3);
+  const livesRef = useRef(1);
   const levelRef = useRef(1);
   const scoreEl = useRef<HTMLSpanElement>(null);
   const livesEl = useRef<HTMLSpanElement>(null);
@@ -32,6 +74,24 @@ export default function FroggerPlay() {
   const [saved, setSaved] = useState(false);
   const [gameKey, setGameKey] = useState(0);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [muted, setMuted] = useState(false);
+
+  useEffect(() => {
+    setMuted(getSavedMuted());
+  }, []);
+
+  useEffect(() => {
+    setTrackOverride('/karate-champ-theme.mp3');
+    return () => setTrackOverride(null);
+  }, [setTrackOverride]);
+
+  function toggleMuted() {
+    setMuted((m) => {
+      const next = !m;
+      localStorage.setItem('av_sfx_muted', String(next));
+      return next;
+    });
+  }
 
   const handleScoreChange = useCallback((s: number) => {
     scoreRef.current = s;
@@ -46,12 +106,7 @@ export default function FroggerPlay() {
   const handleLivesChange = useCallback((l: number) => {
     livesRef.current = l;
     if (livesEl.current) {
-      livesEl.current.innerHTML = Array.from({ length: 3 })
-        .map(
-          (_, i) =>
-            `<span style="color:${i < l ? 'var(--green)' : 'var(--ink-dim)'}">♥</span>`,
-        )
-        .join('');
+      livesEl.current.innerHTML = combatMarkup(l > 0);
     }
   }, []);
   const handleGameOver = useCallback((finalScore: number) => {
@@ -60,11 +115,6 @@ export default function FroggerPlay() {
       scoreEl.current.textContent = finalScore.toLocaleString('es-ES');
     setOver(true);
   }, []);
-
-  useEffect(() => {
-    setTrackOverride('/frogger-theme.mp3');
-    return () => setTrackOverride(null);
-  }, [setTrackOverride]);
 
   useEffect(() => {
     if (over) {
@@ -79,13 +129,10 @@ export default function FroggerPlay() {
 
   function restart() {
     scoreRef.current = 0;
-    livesRef.current = 3;
+    livesRef.current = 1;
     levelRef.current = 1;
     if (scoreEl.current) scoreEl.current.textContent = '0';
-    if (livesEl.current)
-      livesEl.current.innerHTML = Array.from({ length: 3 })
-        .map(() => `<span style="color:var(--green)">♥</span>`)
-        .join('');
+    if (livesEl.current) livesEl.current.innerHTML = FULL_COMBAT;
     if (levelEl.current) levelEl.current.textContent = '01';
     setPaused(false);
     setOver(false);
@@ -106,27 +153,22 @@ export default function FroggerPlay() {
               </div>
             </div>
             <div className="hud-stat">
-              <div className="l">Puntuación</div>
+              <div className="l">Puntos</div>
               <div className="v">
                 <span ref={scoreEl}>0</span>
               </div>
             </div>
             <div className="hud-stat lives">
-              <div className="l">Vidas</div>
+              <div className="l">Combate</div>
               <div className="v">
                 <span
                   ref={livesEl}
-                  dangerouslySetInnerHTML={{
-                    __html:
-                      '<span style="color:var(--green)">♥</span>' +
-                      '<span style="color:var(--green)">♥</span>' +
-                      '<span style="color:var(--green)">♥</span>',
-                  }}
+                  dangerouslySetInnerHTML={{ __html: FULL_COMBAT }}
                 />
               </div>
             </div>
             <div className="hud-stat level">
-              <div className="l">Nivel</div>
+              <div className="l">Rival</div>
               <div className="v">
                 <span ref={levelEl}>01</span>
               </div>
@@ -157,6 +199,15 @@ export default function FroggerPlay() {
             </div>
           </div>
           <div className="hud-actions">
+            <button
+              className="btn ghost"
+              onClick={toggleMuted}
+              aria-label={muted ? 'Activar sonido' : 'Silenciar sonido'}
+              aria-pressed={muted}
+              style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+            >
+              <SpeakerIcon muted={muted} />
+            </button>
             <button className="btn yellow" onClick={() => setPaused((p) => !p)}>
               {paused ? 'REANUDAR' : 'PAUSA'}
             </button>
@@ -170,21 +221,22 @@ export default function FroggerPlay() {
             <button className="btn magenta" onClick={() => setOver(true)}>
               FIN
             </button>
-            <Link href="/games/frogger" className="btn ghost">
+            <Link href="/games/karate-champ" className="btn ghost">
               SALIR
             </Link>
           </div>
         </div>
       </div>
 
-      <div className="crt w-full max-w-[800px] mx-auto">
+      <div className="crt w-full max-w-[640px] mx-auto">
         <div
           className="crt-screen crt-screen--scale-canvas"
-          style={{ aspectRatio: '8 / 7' }}
+          style={{ aspectRatio: '8 / 5' }}
         >
-          <FroggerGame
+          <KarateChampGame
             key={gameKey}
-            paused={paused || helpOpen}
+            paused={paused || over || helpOpen}
+            muted={muted}
             skinKey={skinKey}
             onScoreChange={handleScoreChange}
             onLevelChange={handleLevelChange}
@@ -217,20 +269,20 @@ export default function FroggerPlay() {
         </div>
         <div className="crt-bottom">
           <span className="led">SEÑAL OK</span>
-          <span>FROGGER · CRT-83 · 60 HZ</span>
+          <span>KARATE CHAMP · CRT-80 · 60 HZ</span>
           <span>CARGA · 1MB</span>
         </div>
       </div>
 
       <MobileGamepad
         keyMap={keyMap}
-        paused={paused}
+        paused={paused || over}
         onPauseToggle={() => setPaused((p) => !p)}
         skin={skinKey}
         onSkinChange={change}
         skinOptions={options}
         onHelp={() => setHelpOpen(true)}
-        backHref="/games/frogger"
+        backHref="/games/karate-champ"
       />
 
       {over && (
@@ -256,7 +308,7 @@ export default function FroggerPlay() {
                     setSaved(true);
                     localStorage.setItem('av_player_name', name);
                     await saveScore({
-                      gameId: 'frogger',
+                      gameId: 'karate-champ',
                       playerName: name,
                       score: scoreRef.current,
                     });
@@ -272,7 +324,10 @@ export default function FroggerPlay() {
               <button className="btn" onClick={restart}>
                 JUGAR DE NUEVO
               </button>
-              <Link href="/games/frogger#leaderboard" className="btn cyan">
+              <Link
+                href="/games/karate-champ#leaderboard"
+                className="btn cyan"
+              >
                 VER LEADERBOARD
               </Link>
               <Link href="/games" className="btn magenta">
@@ -293,7 +348,10 @@ export default function FroggerPlay() {
             className="modal"
             style={{ textAlign: 'left', maxHeight: '90vh', overflowY: 'auto' }}
           >
-            <InstructionsContent game={getGame('frogger')!} title="FROGGER" />
+            <InstructionsContent
+              game={getGame('karate-champ')!}
+              title="KARATE CHAMP"
+            />
             <div className="actions">
               <button className="btn cyan" onClick={() => setHelpOpen(false)}>
                 CERRAR

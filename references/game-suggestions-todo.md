@@ -24,7 +24,7 @@
 
 | ID  | Título | Spec | Fecha aceptado |
 | --- | ------ | ---- | -------------- |
-| `karate-champ` | KARATE CHAMP | `specs/25-karate-champ.md` | 2026-08-25 |
+
 
 
 ## ✅ Implementados
@@ -39,6 +39,7 @@
 | `pong`      | PONG      | SPORTS    | 2026-08-13 |
 | `road-fighter` | ROAD FIGHTER | RACING | 2026-08-17 |
 | `space-invaders` | SPACE INVADERS | SHOOTER | 2026-08-20 |
+| `karate-champ` | KARATE CHAMP | FIGHTING | 2026-08-25 |
 | `pacman`    | PAC-MAN   | MAZE      | 2026-08-19 |
 
 ## ❌ Descartados

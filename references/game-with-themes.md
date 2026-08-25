@@ -15,10 +15,30 @@
 | road-fighter | ✅   | ✅    | ✅   | —           | sí                 | 2026-08-14           |
 | pacman    | ✅      | ✅    | ✅   | —           | sí                 | 2026-08-19           |
 | space-invaders | ✅ | ✅    | ✅   | —           | sí                 | 2026-08-20           |
+| karate-champ | ✅   | ✅    | ✅   | —           | sí                 | 2026-08-25           |
 
 Leyenda: `✅` aplicado y verificado · `🟡` en progreso · `—` pendiente
 
 ## Notas
+
+- **karate-champ** (2026-08-25): componente ya traía la estructura de skins (prop `skinKey`, mapa
+  `SKINS` con solo `classic`, fallback `SKINS[skinKey] ?? SKINS.classic`, selector ya cableado vía
+  registro central en `app/games/karate-champ/play/page.tsx` — no tocado). Adición pura de `retro`
+  y `neon`. Los luchadores son siluetas 2 colores horneadas por pose (`bakePose`, 20 poses × 2
+  facing, cacheadas por `skin.name` en `spriteCache`): se generalizó `bakePose` con `opts`
+  opcionales, mismo patrón que `bakeSprite` de Space Invaders — `highlight` para retro (pasada
+  extra con `globalCompositeOperation: 'source-atop'`, recorta el brillo blanco 45% al tercio
+  superior de la silueta real, sin blur) y `glowColor/glowBlur` para neon (pasada con `shadowBlur`
+  horneada UNA vez en el canvas offscreen, con padding simétrico vía `c.translate(pad, pad)`; el
+  hot path — `drawFighter`/`drawBonus` — solo hace `drawImage`, centrando en `spr.width/height`
+  reales para mantener pies en `FLOOR_Y` y centro horizontal en `f.x` sin importar el padding).
+  Elementos de baja frecuencia (línea del tatami, banner, timer/nivel del HUD — unos pocos trazos
+  por frame, nunca por-píxel) llevan `shadowBlur` EN VIVO seteado y reseteado a mano tras cada
+  trazo (mismo patrón que `PacmanGame`/`SpaceInvadersGame`), sin `save/restore` y sin crear canvas
+  en el bucle. Paletas: retro CRT pastel dojo (gi jugador crema `#fff3d6`, gi CPU salmón `#ffab91`,
+  piel `#f2c9a0`, suelo `#8a6a52`, línea dorada pastel `#ffe08a`); neon eléctrico sobre negro puro
+  `#000000` (gi jugador cian `#00e5ff`, gi CPU magenta `#ff00e5`, piel amarillo eléctrico `#f5ff00`,
+  línea del tatami cian `#00eaff`, acentos HUD/banner magenta `#ff00e5` con halo cian).
 
 - **space-invaders** (2026-08-20): componente ya traía la estructura de skins (prop `skin`, mapa
   `SKINS` con solo `classic`, fallback `SKINS[skin] ?? SKINS.classic`, selector ya cableado en
