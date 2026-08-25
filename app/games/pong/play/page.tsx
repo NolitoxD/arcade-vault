@@ -192,9 +192,7 @@ export default function PongPlay() {
                   >
                     {options.map((s) => (
                       <option key={s.key} value={s.key} disabled={s.locked}>
-                        {s.locked
-                          ? `🔒 ${s.label} · ${s.requiredCredits}`
-                          : s.label}
+                        {s.locked ? s.lockedLabel : s.label}
                       </option>
                     ))}
                   </select>

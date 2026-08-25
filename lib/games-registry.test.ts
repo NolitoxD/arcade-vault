@@ -4,9 +4,9 @@ import { GAMES, GAME_IDS, getGame, getKeyMap, getSkinOptions, isGameId } from '.
 const KEYMAP_SLOTS = ['up', 'down', 'left', 'right', 'a', 'b'];
 
 describe('games registry', () => {
-  it('has exactly the 9 implemented games', () => {
+  it('has exactly the 10 implemented games', () => {
     expect(GAME_IDS.sort()).toEqual([
-      'arkanoid', 'asteroids', 'frogger', 'pacman', 'pong',
+      'arkanoid', 'asteroids', 'frogger', 'karate-champ', 'pacman', 'pong',
       'road-fighter', 'snake', 'space-invaders', 'tetris',
     ]);
     expect(isGameId('pacman')).toBe(true);
@@ -43,10 +43,26 @@ describe('games registry', () => {
     expect(getSkinOptions('pacman').map((s) => `${s.key}:${s.tier}`)).toEqual([
       'classic:base', 'retro:retro', 'neon:neon',
     ]);
+    expect(getSkinOptions('karate-champ').map((s) => `${s.key}:${s.tier}`)).toEqual([
+      'classic:base', 'retro:retro', 'neon:neon',
+    ]);
   });
   it('flags the realtime games', () => {
     expect(GAME_IDS.filter((id) => GAMES[id].realtime).sort()).toEqual([
-      'pacman', 'pong', 'road-fighter', 'space-invaders',
+      'karate-champ', 'pacman', 'pong', 'road-fighter', 'space-invaders',
     ]);
+  });
+  it('karate-champ has the full keyMap and touch labels for both buttons', () => {
+    const { keyMap, a, b } = GAMES['karate-champ'].controls.touch;
+    expect(keyMap).toEqual({
+      up: 'ArrowUp',
+      down: 'ArrowDown',
+      left: 'ArrowLeft',
+      right: 'ArrowRight',
+      a: 'j',
+      b: 'k',
+    });
+    expect(a).toBe('PATADA');
+    expect(b).toBe('PUÑO');
   });
 });

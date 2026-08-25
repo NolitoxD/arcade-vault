@@ -18,13 +18,13 @@
 | `columns`        | COLUMNS           | PUZZLE     | violet | Alinea 3 joyas del mismo color en columnas que caen sin parar.                               | Variante de Tetris con detección en 4 direcciones; sin rotaciones complejas, factibilidad alta.       | 2026-05-20 |
 | `out-run`        | OUT RUN           | RACING     | pink   | Conduce tu Ferrari por carreteras ramificadas antes de que el tiempo expire.                 | Racing pseudo-3D icónico; trapezoides en canvas 2D, factibilidad media.                               | 2026-05-20 |
 | `pole-position`  | POLE POSITION     | RACING     | silver | Clasifica en pole y gana la carrera en un circuito de Fórmula 1 retro.                       | Racing pseudo-3D + IA de rivales; más complejo que Road Fighter, factibilidad media.                  | 2026-05-20 |
-| `karate-champ`   | KARATE CHAMP      | FIGHTING   | gold   | Ejecuta técnicas de karate precisas para puntuar antes de que el árbitro detenga el combate. | Introduce FIGHTING; sistema de poses por combinación de teclas, factibilidad alta.                    | 2026-05-20 |
 | `street-fighter` | STREET FIGHTER II | FIGHTING   | red    | Elige tu luchador y derrota al oponente con combos antes de que acabe el tiempo.             | Fighting icónico; hitboxes por frame + combos, más complejo, factibilidad media.                      | 2026-05-20 |
 
 ## 🟢 Aceptados / en desarrollo
 
 | ID  | Título | Spec | Fecha aceptado |
 | --- | ------ | ---- | -------------- |
+| `karate-champ` | KARATE CHAMP | `specs/25-karate-champ.md` | 2026-08-25 |
 
 
 ## ✅ Implementados

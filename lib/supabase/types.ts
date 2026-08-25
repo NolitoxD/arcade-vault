@@ -3,9 +3,9 @@ export interface GameRow {
   title: string;
   short: string;
   long: string;
-  cat: 'ARCADE' | 'PUZZLE' | 'SHOOTER' | 'SPORTS' | 'RACING' | 'MAZE';
+  cat: 'ARCADE' | 'PUZZLE' | 'SHOOTER' | 'SPORTS' | 'RACING' | 'MAZE' | 'FIGHTING';
   cover: string;
-  color: 'cyan' | 'magenta' | 'yellow' | 'green' | 'blue' | 'red';
+  color: 'cyan' | 'magenta' | 'yellow' | 'green' | 'blue' | 'red' | 'gold';
   created_at: string;
 }
 

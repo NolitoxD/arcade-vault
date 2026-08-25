@@ -10,7 +10,8 @@ export type GameId =
   | 'pong'
   | 'road-fighter'
   | 'pacman'
-  | 'space-invaders';
+  | 'space-invaders'
+  | 'karate-champ';
 
 export type SkinDef = { key: string; label: string; tier: SkinTier };
 
@@ -255,6 +256,44 @@ export const GAMES: Record<GameId, GameMeta> = {
         'Los escudos se desgastan',
         'El bloque acelera al quedar pocos',
         'Caza el UFO para puntuación extra',
+      ],
+    },
+    realtime: true,
+  },
+  'karate-champ': {
+    id: 'karate-champ',
+    skins: CLASSIC_SKINS,
+    controls: {
+      keyboard: [
+        { keys: ['←', '→', 'A', 'D'], action: 'Moverse / esquivar' },
+        { keys: ['↑', '↓', 'W', 'S'], action: 'Modificador de técnica' },
+        {
+          keys: ['J', 'Espacio'],
+          action: 'Patada (combinar con dirección)',
+          special: true,
+        },
+        { keys: ['K'], action: 'Puño (combinar con dirección)', special: true },
+      ],
+      touch: {
+        keyMap: {
+          up: 'ArrowUp',
+          down: 'ArrowDown',
+          left: 'ArrowLeft',
+          right: 'ArrowRight',
+          a: 'j',
+          b: 'k',
+        },
+        a: 'PATADA',
+        b: 'PUÑO',
+      },
+    },
+    instructions: {
+      goal: 'Puntúa con técnicas de karate limpias antes de que lo haga tu rival: las difíciles valen un punto entero, las rápidas medio. Gana el combate a 2 puntos y escala la lista infinita de aspirantes.',
+      tips: [
+        'Cada técnica tiene su distancia: la voladora cruza el tatami, el puñetazo exige cuerpo a cuerpo',
+        'El rival bloquea por alturas — varía alto/medio/bajo',
+        'Cada 3 rivales, fase bonus: rompe tablas pulsando en la zona verde',
+        'Sin prisa: fallar una técnica te deja vendido durante la recuperación',
       ],
     },
     realtime: true,

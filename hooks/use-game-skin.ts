@@ -9,7 +9,11 @@ import {
   type SkinDef,
 } from '@/lib/games-registry';
 
-export type SkinOption = SkinDef & { locked: boolean; requiredCredits: number };
+export type SkinOption = SkinDef & {
+  locked: boolean;
+  requiredCredits: number;
+  lockedLabel: string;
+};
 
 export function useGameSkin(id: GameId): {
   skinKey: string;
@@ -24,11 +28,15 @@ export function useGameSkin(id: GameId): {
 
   const options = useMemo<SkinOption[]>(
     () =>
-      skins.map((skin) => ({
-        ...skin,
-        locked: !isUnlocked(skin.tier, credits),
-        requiredCredits: requiredCredits(skin.tier),
-      })),
+      skins.map((skin) => {
+        const needed = requiredCredits(skin.tier);
+        return {
+          ...skin,
+          locked: !isUnlocked(skin.tier, credits),
+          requiredCredits: needed,
+          lockedLabel: `🔒 ${skin.label.toUpperCase()} · ${needed} créditos`,
+        };
+      }),
     [skins, credits],
   );
 

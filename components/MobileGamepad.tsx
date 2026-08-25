@@ -21,6 +21,7 @@ export interface SkinOptionProp {
   label: string;
   locked?: boolean;
   requiredCredits?: number;
+  lockedLabel?: string;
 }
 
 interface MobileGamepadProps {
@@ -435,7 +436,7 @@ export default function MobileGamepad({
           >
             {skinOptions.map((s) => (
               <option key={s.key} value={s.key} disabled={s.locked}>
-                {s.locked ? `🔒 ${s.label} · ${s.requiredCredits}` : s.label}
+                {s.locked ? (s.lockedLabel ?? s.label) : s.label}
               </option>
             ))}
           </select>
