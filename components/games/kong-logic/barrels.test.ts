@@ -1,0 +1,99 @@
+import { describe, expect, it } from 'vitest';
+import { GIRDERS, LADDERS } from './level';
+import {
+  MAX_BARRELS, spawnBarrel, advanceBarrel, atGirderEnd, dropToNextGirder,
+  shouldTakeLadder, enterLadder, descendLadder, openEdgeDir,
+} from './barrels';
+
+const pool = () => Array.from({ length: MAX_BARRELS }, () => ({
+  x: 0, y: 0, girder: 0, dir: 1 as const, active: false, onLadder: null,
+}));
+
+describe('barrel pool', () => {
+  it('reuses inactive slots and refuses when full', () => {
+    const p = pool();
+    for (let i = 0; i < MAX_BARRELS; i++) expect(spawnBarrel(p)).not.toBeNull();
+    expect(spawnBarrel(p)).toBeNull();
+    p[3].active = false;
+    expect(spawnBarrel(p)).toBe(p[3]);
+  });
+});
+
+describe('rolling', () => {
+  it('advances along the girder and sits on its slope', () => {
+    const p = pool();
+    const b = spawnBarrel(p)!;
+    const x0 = b.x;
+    advanceBarrel(b, 100, 120);
+    expect(b.x).not.toBe(x0);
+    const g = GIRDERS[b.girder];
+    expect(b.y).toBeCloseTo(g.y0 + ((g.y1 - g.y0) * (b.x - g.x0)) / (g.x1 - g.x0), 0);
+  });
+  it('covers more x-distance downhill than uphill on the same girder', () => {
+    const p = pool();
+    const bDown = spawnBarrel(p)!;
+    bDown.girder = 1;
+    bDown.x = 300;
+    bDown.dir = -1;
+    const bUp = spawnBarrel(p)!;
+    bUp.girder = 1;
+    bUp.x = 300;
+    bUp.dir = 1;
+    advanceBarrel(bDown, 100, 120);
+    advanceBarrel(bUp, 100, 120);
+    const distDown = Math.abs(bDown.x - 300);
+    const distUp = Math.abs(bUp.x - 300);
+    expect(distDown).toBeGreaterThan(distUp);
+  });
+  it('detects the end of a girder and drops reversing direction', () => {
+    const p = pool();
+    const b = spawnBarrel(p)!;
+    b.girder = 3;
+    b.x = GIRDERS[3].x1 + 10;
+    b.dir = 1;
+    expect(atGirderEnd(b)).toBe(true);
+    dropToNextGirder(b);
+    expect(b.girder).toBe(2);
+    expect(b.dir).toBe(-1);
+    expect(b.active).toBe(true);
+  });
+  it('deactivates when dropping below the bottom girder', () => {
+    const p = pool();
+    const b = spawnBarrel(p)!;
+    b.girder = 0;
+    dropToNextGirder(b);
+    expect(b.active).toBe(false);
+  });
+});
+
+describe('ladders', () => {
+  it('takes a ladder only when the roll passes the chance', () => {
+    expect(shouldTakeLadder(0.4, () => 0.1)).toBe(true);
+    expect(shouldTakeLadder(0.4, () => 0.9)).toBe(false);
+    expect(shouldTakeLadder(0, () => 0)).toBe(false);
+  });
+  it('descends a ladder and lands on the lower girder', () => {
+    const p = pool();
+    const b = spawnBarrel(p)!;
+    const l = LADDERS.find((x) => x.from === 2)!;
+    b.girder = l.to;
+    b.x = l.x;
+    enterLadder(b, l);
+    expect(b.onLadder).toBe(l);
+    for (let i = 0; i < 200 && b.onLadder; i++) descendLadder(b, 16, 150);
+    expect(b.onLadder).toBeNull();
+    expect(b.girder).toBe(l.from);
+  });
+  it('reorients toward the open edge after descending and eventually reaches it', () => {
+    const p = pool();
+    const b = spawnBarrel(p)!;
+    const l = LADDERS.find((x) => x.from === 2)!;
+    b.girder = l.to;
+    b.x = l.x;
+    enterLadder(b, l);
+    for (let i = 0; i < 200 && b.onLadder; i++) descendLadder(b, 16, 150);
+    expect(b.dir).toBe(openEdgeDir(b.girder));
+    for (let i = 0; i < 500 && !atGirderEnd(b); i++) advanceBarrel(b, 16, 150);
+    expect(atGirderEnd(b)).toBe(true);
+  });
+});

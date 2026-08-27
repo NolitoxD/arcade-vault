@@ -11,7 +11,8 @@ export type GameId =
   | 'road-fighter'
   | 'pacman'
   | 'space-invaders'
-  | 'karate-champ';
+  | 'karate-champ'
+  | 'kong';
 
 export type SkinDef = { key: string; label: string; tier: SkinTier };
 
@@ -294,6 +295,41 @@ export const GAMES: Record<GameId, GameMeta> = {
         'El rival bloquea por alturas — varía alto/medio/bajo',
         'Cada 3 rivales, fase bonus: rompe tablas pulsando en la zona verde',
         'Sin prisa: fallar una técnica te deja vendido durante la recuperación',
+      ],
+    },
+    realtime: true,
+  },
+  kong: {
+    id: 'kong',
+    skins: CLASSIC_SKINS,
+    controls: {
+      keyboard: [
+        { keys: ['←', '→', 'A', 'D'], action: 'Correr por la viga' },
+        { keys: ['↑', '↓', 'W', 'S'], action: 'Trepar escaleras' },
+        {
+          keys: ['Espacio', 'J'],
+          action: 'Saltar (100 pts por barril saltado)',
+          special: true,
+        },
+      ],
+      touch: {
+        keyMap: {
+          up: 'ArrowUp',
+          down: 'ArrowDown',
+          left: 'ArrowLeft',
+          right: 'ArrowRight',
+          a: ' ',
+        },
+        a: 'SALTAR',
+      },
+    },
+    instructions: {
+      goal: 'Sube el zigzag de vigas hasta el trofeo dorado esquivando los barriles de Kong: salta lo que ruede hacia ti, trepa rápido y no te entretengas — el bonus de tiempo cae cada segundo.',
+      tips: [
+        'Saltar un barril da 100 puntos — saltar en el sitio también cuenta si te pasa por debajo',
+        'El martillo destruye barriles 8 segundos, pero no deja saltar ni trepar',
+        'Las escaleras rotas suben pero no bajan — y los barriles no las usan',
+        'Cada trofeo endurece a Kong: más barriles, más rápidos y más listos',
       ],
     },
     realtime: true,
