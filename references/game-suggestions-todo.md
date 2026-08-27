@@ -10,7 +10,6 @@
 | `galaga`         | GALAGA            | SHOOTER    | purple | Repele formaciones enemigas que se lanzan en picado sobre tu nave.                           | Shooter con patrones de vuelo Bezier; más dinámico que Space Invaders, factibilidad media.            | 2026-05-20 |
 | `ice-hockey`     | ICE HOCKEY        | SPORTS     | cyan   | Controla tu equipo en una pista helada y marca más goles que el rival en 90 segundos.        | Cubre SPORTS con multi-sprite; lógica de posesión del disco, factibilidad media.                      | 2026-05-20 |
 | `tennis`         | TENNIS            | SPORTS     | lime   | Devuelve cada golpe con precisión de ángulo antes de que la pelota bote dos veces.           | Variante de SPORTS con pseudo-perspectiva 3D; más profundidad visual que Pong, factibilidad media.    | 2026-05-20 |
-| `kong`           | DONKEY KONG       | PLATFORMER | red    | Sube escaleras y salta barriles rodantes para rescatar a la princesa en la cima.             | Introduce categoría PLATFORMER; física de salto + plataformas, factibilidad media.                    | 2026-05-20 |
 | `minesweeper`    | MINESWEEPER       | STRATEGY   | gray   | Despeja el campo de minas usando lógica antes de pisar una.                                  | Introduce STRATEGY; grid simple, flood-fill, pura lógica de tablero, factibilidad alta.               | 2026-05-20 |
 | `battleship`     | BATTLESHIP        | STRATEGY   | navy   | Hunde la flota enemiga antes de que destruyan la tuya.                                       | Segunda cobertura STRATEGY; dos grids, IA hunting-mode, factibilidad media.                           | 2026-05-20 |
 | `2048`           | 2048              | PUZZLE     | amber  | Desliza y fusiona fichas hasta alcanzar el número 2048.                                      | Puzzle moderno icónico; grid 4×4, animaciones de merge simples, factibilidad alta.                    | 2026-05-20 |
@@ -40,6 +39,7 @@
 | `road-fighter` | ROAD FIGHTER | RACING | 2026-08-17 |
 | `space-invaders` | SPACE INVADERS | SHOOTER | 2026-08-20 |
 | `karate-champ` | KARATE CHAMP | FIGHTING | 2026-08-25 |
+| `kong` | KONG | PLATFORMER | 2026-08-27 |
 | `pacman`    | PAC-MAN   | MAZE      | 2026-08-19 |
 
 ## ❌ Descartados
