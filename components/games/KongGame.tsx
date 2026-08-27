@@ -102,6 +102,15 @@ const BARREL_PX = 2;
 const HAMMER_PX = 2;
 const TROPHY_PX = 2;
 
+// Logical (unpadded) sprite pixel sizes — every pose/frame per category
+// shares the same row/col grid (verified against the maps below), so these
+// are fixed. Used to compensate the glow padding added by bakeSprite for
+// neon (see BakeOpts) while keeping feet/center anchors exact.
+const PLAYER_SPR_W = 16 * PLAYER_PX;
+const KONG_SPR_W = 24 * KONG_PX;
+const BARREL_SPR_W = 8 * BARREL_PX;
+const HAMMER_SPR_W = 10 * HAMMER_PX;
+
 const POSE_RUN0 = 0;
 const POSE_RUN1 = 1;
 const POSE_RUN2 = 2;
@@ -360,29 +369,61 @@ const TROPHY_MAP = [
   '..TTTTTTTT..',
 ];
 
+// retro: highlight sólido (sin shadowBlur) recortado a la silueta real vía
+// composite 'source-atop' (mismo patrón que SpaceInvadersGame/KarateChampGame).
+// neon: pasada extra con shadowBlur horneada UNA vez en el canvas offscreen —
+// el hot path (drawPlayer, drawImage de Kong/barriles/martillo) nunca setea
+// shadowBlur ni crea canvases por frame.
+type BakeOpts = {
+  highlight?: boolean;
+  glowColor?: string;
+  glowBlur?: number;
+};
+
 function bakeSprite(
   rows: readonly string[],
   px: number,
   palette: Record<string, string>,
   flip: boolean,
+  opts?: BakeOpts,
 ): HTMLCanvasElement {
   const w = rows[0].length;
   const h = rows.length;
+  const pad = opts?.glowColor ? Math.ceil(opts.glowBlur ?? 6) : 0;
   const el = document.createElement('canvas');
-  el.width = w * px;
-  el.height = h * px;
+  el.width = w * px + pad * 2;
+  el.height = h * px + pad * 2;
   const c = el.getContext('2d')!;
-  for (let y = 0; y < h; y++) {
-    const row = rows[y];
-    for (let x = 0; x < w; x++) {
-      const ch = row[flip ? w - 1 - x : x];
-      if (ch === '.') continue;
-      const color = palette[ch];
-      if (!color) continue;
-      c.fillStyle = color;
-      c.fillRect(x * px, y * px, px, px);
+
+  function fillPixels() {
+    for (let y = 0; y < h; y++) {
+      const row = rows[y];
+      for (let x = 0; x < w; x++) {
+        const ch = row[flip ? w - 1 - x : x];
+        if (ch === '.') continue;
+        const color = palette[ch];
+        if (!color) continue;
+        c.fillStyle = color;
+        c.fillRect(pad + x * px, pad + y * px, px, px);
+      }
     }
   }
+
+  if (opts?.glowColor) {
+    c.shadowBlur = opts.glowBlur ?? 6;
+    c.shadowColor = opts.glowColor;
+    fillPixels();
+    c.shadowBlur = 0;
+  }
+  fillPixels();
+
+  if (opts?.highlight) {
+    c.globalCompositeOperation = 'source-atop';
+    c.fillStyle = 'rgba(255,255,255,0.45)';
+    c.fillRect(0, 0, el.width, Math.ceil(h * px * 0.32) + pad);
+    c.globalCompositeOperation = 'source-over';
+  }
+
   return el;
 }
 
@@ -432,6 +473,56 @@ const SKINS: Record<string, Skin> = {
     hammerHandle: '#c87830',
     trophy: '#ffd700',
   },
+  // CRT pastel: colores saturados/pastel sin shadowBlur, highlight sólido
+  // horneado en el sprite (opts.highlight en bakeSprite). Girder salmón,
+  // escaleras cian pastel — misma pareja cromática que classic, aclarada.
+  retro: {
+    name: 'retro',
+    bg: '#1c1330',
+    girder: '#ff9ecf',
+    girderTop: '#ffe3f2',
+    rivet: '#fff3ff',
+    ladder: '#8ff0ff',
+    ladderBroken: '#4a9aab',
+    hud: '#fef6e4',
+    hudAccent: '#ffd97a',
+    timerLow: '#ff8a80',
+    playerBody: '#fff3d6',
+    playerAccent: '#8ff0ff',
+    kongBody: '#c9946a',
+    kongAccent: '#ffd9b3',
+    barrel: '#ffc98a',
+    barrelDark: '#c98a52',
+    hammerHead: '#ffe08a',
+    hammerHandle: '#c9946a',
+    trophy: '#ffe08a',
+  },
+  // Eléctrico sobre negro puro: glow horneado en sprites (bakeSprite) y en el
+  // backdrop de nivel (girders/escaleras, baked una vez por rebuild — nunca
+  // en el RAF loop). HUD/banner llevan shadowBlur EN VIVO reseteado a mano
+  // (mismo patrón que PacmanGame/SpaceInvadersGame/KarateChampGame: unos
+  // pocos fillText/fillRect por frame, nunca por-píxel).
+  neon: {
+    name: 'neon',
+    bg: '#000000',
+    girder: '#ff00e5',
+    girderTop: '#ff6df0',
+    rivet: '#ffd400',
+    ladder: '#00f5ff',
+    ladderBroken: '#0088a0',
+    hud: '#eafcff',
+    hudAccent: '#ffd400',
+    timerLow: '#ff2d55',
+    playerBody: '#00f5ff',
+    playerAccent: '#ffd400',
+    kongBody: '#ff00e5',
+    kongAccent: '#ffd400',
+    barrel: '#ffd400',
+    barrelDark: '#c9a200',
+    hammerHead: '#ffd400',
+    hammerHandle: '#00f5ff',
+    trophy: '#ffd400',
+  },
 };
 
 type KongSprites = {
@@ -448,17 +539,29 @@ const spriteCache: Record<string, KongSprites> = {};
 function getSprites(skin: Skin): KongSprites {
   const cached = spriteCache[skin.name];
   if (cached) return cached;
+  const isRetro = skin.name === 'retro';
+  const isNeon = skin.name === 'neon';
+  const glow = (color: string): BakeOpts => ({
+    highlight: isRetro,
+    glowColor: isNeon ? color : undefined,
+    glowBlur: 6,
+  });
   const playerPal = {
     W: skin.playerBody,
     C: skin.playerAccent,
     H: skin.hammerHead,
     h: skin.hammerHandle,
   };
+  const playerOpts = glow(skin.playerBody);
   const playerR: HTMLCanvasElement[] = [];
   const playerL: HTMLCanvasElement[] = [];
   for (let i = 0; i < PLAYER_POSES.length; i++) {
-    playerR.push(bakeSprite(PLAYER_POSES[i], PLAYER_PX, playerPal, false));
-    playerL.push(bakeSprite(PLAYER_POSES[i], PLAYER_PX, playerPal, true));
+    playerR.push(
+      bakeSprite(PLAYER_POSES[i], PLAYER_PX, playerPal, false, playerOpts),
+    );
+    playerL.push(
+      bakeSprite(PLAYER_POSES[i], PLAYER_PX, playerPal, true, playerOpts),
+    );
   }
   const kongPal = { K: skin.kongBody, F: skin.kongAccent };
   const barrelPal = { R: skin.barrel, r: skin.barrelDark };
@@ -466,15 +569,33 @@ function getSprites(skin: Skin): KongSprites {
     playerR,
     playerL,
     kong: [
-      bakeSprite(KONG_IDLE_MAP, KONG_PX, kongPal, false),
-      bakeSprite(KONG_THROW_MAP, KONG_PX, kongPal, false),
+      bakeSprite(KONG_IDLE_MAP, KONG_PX, kongPal, false, glow(skin.kongBody)),
+      bakeSprite(
+        KONG_THROW_MAP,
+        KONG_PX,
+        kongPal,
+        false,
+        glow(skin.kongBody),
+      ),
     ],
     barrel: [
-      bakeSprite(BARREL0_MAP, BARREL_PX, barrelPal, false),
-      bakeSprite(BARREL1_MAP, BARREL_PX, barrelPal, false),
+      bakeSprite(BARREL0_MAP, BARREL_PX, barrelPal, false, glow(skin.barrel)),
+      bakeSprite(BARREL1_MAP, BARREL_PX, barrelPal, false, glow(skin.barrel)),
     ],
-    hammer: bakeSprite(HAMMER_MAP, HAMMER_PX, playerPal, false),
-    trophy: bakeSprite(TROPHY_MAP, TROPHY_PX, { T: skin.trophy }, false),
+    hammer: bakeSprite(
+      HAMMER_MAP,
+      HAMMER_PX,
+      playerPal,
+      false,
+      glow(skin.hammerHead),
+    ),
+    trophy: bakeSprite(
+      TROPHY_MAP,
+      TROPHY_PX,
+      { T: skin.trophy },
+      false,
+      glow(skin.trophy),
+    ),
   };
   spriteCache[skin.name] = sprites;
   return sprites;
@@ -483,6 +604,13 @@ function getSprites(skin: Skin): KongSprites {
 // ── Level backdrop (baked once per level/skin; the hot path only drawImages) ──
 
 function drawGirderInto(c: CanvasRenderingContext2D, skin: Skin, g: Girder) {
+  // Baked once per level rebuild (never in the RAF loop), so a live
+  // shadowBlur here is cheap — reset immediately after the fill.
+  const glow = skin.name === 'neon';
+  if (glow) {
+    c.shadowBlur = 8;
+    c.shadowColor = skin.girder;
+  }
   c.fillStyle = skin.girder;
   c.beginPath();
   c.moveTo(g.x0, g.y0);
@@ -491,6 +619,7 @@ function drawGirderInto(c: CanvasRenderingContext2D, skin: Skin, g: Girder) {
   c.lineTo(g.x0, g.y0 + GIRDER_T);
   c.closePath();
   c.fill();
+  if (glow) c.shadowBlur = 0;
   // top edge highlight
   c.strokeStyle = skin.girderTop;
   c.lineWidth = 2;
@@ -517,11 +646,18 @@ function drawLadderInto(
   const yBot = girderYAt(GIRDERS[l.from], l.x) + GIRDER_T;
   const xL = l.x - 8;
   const xR = l.x + 5;
+  // Baked once per level rebuild — safe to set/reset shadowBlur here.
+  const glow = skin.name === 'neon';
+  if (glow) {
+    c.shadowBlur = 6;
+    c.shadowColor = skin.ladder;
+  }
   c.fillStyle = skin.ladder;
   if (!isBroken) {
     c.fillRect(xL, yTop, 3, yBot - yTop);
     c.fillRect(xR, yTop, 3, yBot - yTop);
     for (let y = yTop + 5; y < yBot - 2; y += 9) c.fillRect(xL, y, 16, 2);
+    if (glow) c.shadowBlur = 0;
     return;
   }
   // Broken: rails and rungs stop around a visible mid gap, dashed hint inside
@@ -535,6 +671,7 @@ function drawLadderInto(
     if (y > gapTop - 2 && y < gapBot) continue;
     c.fillRect(xL, y, 16, 2);
   }
+  if (glow) c.shadowBlur = 0;
   c.fillStyle = skin.ladderBroken;
   for (let y = gapTop + 2; y < gapBot - 2; y += 8) {
     c.fillRect(xL, y, 3, 3);
@@ -1022,7 +1159,10 @@ function KongGame({
       if (p.state === 'dead' && s.phaseMs % 240 < 100) return; // blink
       const arr = p.facing === 1 ? sprites.playerR : sprites.playerL;
       const spr = arr[playerPoseIndex()];
-      ctx.drawImage(spr, p.x - spr.width / 2, p.y - spr.height);
+      // Neon sprites carry symmetric glow padding; compensate so feet stay
+      // planted on the girder and the sprite stays horizontally centered.
+      const pad = (spr.width - PLAYER_SPR_W) / 2;
+      ctx.drawImage(spr, p.x - spr.width / 2, p.y - spr.height + pad);
     }
 
     function drawBanner(skinNow: Skin) {
@@ -1030,11 +1170,23 @@ function KongGame({
       ctx.textBaseline = 'middle';
       ctx.textAlign = 'center';
       ctx.fillStyle = skinNow.hudAccent;
+      if (skinNow.name === 'neon') {
+        ctx.shadowBlur = 14;
+        ctx.shadowColor = skinNow.hudAccent;
+        ctx.fillText(BANNERS[s.banner], CANVAS_W / 2, 380);
+        ctx.shadowBlur = 0;
+        return;
+      }
       ctx.fillText(BANNERS[s.banner], CANVAS_W / 2, 380);
     }
 
+    // Only a handful of fillText/fillRect calls per frame (never per-pixel),
+    // so a live shadowBlur set-and-reset here is cheap — same pattern as
+    // PacmanGame/SpaceInvadersGame/KarateChampGame. No canvas is ever created
+    // in this function.
     function drawHud(skinNow: Skin) {
       ctx.textBaseline = 'middle';
+      const isNeon = skinNow.name === 'neon';
 
       // Score TL
       ctx.font = 'bold 16px monospace';
@@ -1048,14 +1200,26 @@ function KongGame({
       if (secs > 90) secs = 90;
       ctx.font = 'bold 20px monospace';
       ctx.textAlign = 'center';
-      ctx.fillStyle = secs < TIMER_LOW_S ? skinNow.timerLow : skinNow.hudAccent;
+      const timerColor =
+        secs < TIMER_LOW_S ? skinNow.timerLow : skinNow.hudAccent;
+      ctx.fillStyle = timerColor;
+      if (isNeon) {
+        ctx.shadowBlur = 8;
+        ctx.shadowColor = timerColor;
+      }
       ctx.fillText(TIMER_TEXT[secs], CANVAS_W / 2, 20);
+      if (isNeon) ctx.shadowBlur = 0;
 
       // Level BR
       ctx.font = 'bold 16px monospace';
       ctx.textAlign = 'right';
       ctx.fillStyle = skinNow.hudAccent;
+      if (isNeon) {
+        ctx.shadowBlur = 8;
+        ctx.shadowColor = skinNow.hudAccent;
+      }
       ctx.fillText(levelText, CANVAS_W - 12, CANVAS_H - 16);
+      if (isNeon) ctx.shadowBlur = 0;
 
       // Lives BL as mini player icons
       for (let i = 0; i < s.lives; i++) {
@@ -1081,20 +1245,22 @@ function KongGame({
       for (let i = 0; i < HAMMER_POS.length; i++) {
         if (s.hammerTaken[i]) continue;
         const h = HAMMER_POS[i];
+        const hPad = (sprites.hammer.width - HAMMER_SPR_W) / 2;
         ctx.drawImage(
           sprites.hammer,
           h.x - sprites.hammer.width / 2,
-          h.y - sprites.hammer.height,
+          h.y - sprites.hammer.height + hPad,
         );
       }
 
       // Kong: throw pose while spawning, chest-beat bob otherwise
       const kongSpr = s.kongThrowMs > 0 ? sprites.kong[1] : sprites.kong[0];
       const bob = s.kongThrowMs > 0 ? 0 : s.animMs % 900 < 450 ? 0 : 2;
+      const kongPad = (kongSpr.width - KONG_SPR_W) / 2;
       ctx.drawImage(
         kongSpr,
         KONG.x - kongSpr.width / 2,
-        KONG_FOOT_Y - kongSpr.height + bob,
+        KONG_FOOT_Y - kongSpr.height + kongPad + bob,
       );
 
       // Barrels (rotation frame from position — no per-frame state)
@@ -1102,7 +1268,9 @@ function KongGame({
         const b = s.pool[i];
         if (!b.active) continue;
         const f = ((Math.abs(b.x) / 14) | 0) & 1;
-        ctx.drawImage(sprites.barrel[f], b.x - 8, b.y - BARREL_H);
+        const spr = sprites.barrel[f];
+        const bPad = (spr.width - BARREL_SPR_W) / 2;
+        ctx.drawImage(spr, b.x - spr.width / 2, b.y - spr.height + bPad);
       }
 
       drawPlayer(sprites);

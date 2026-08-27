@@ -16,10 +16,34 @@
 | pacman    | ✅      | ✅    | ✅   | —           | sí                 | 2026-08-19           |
 | space-invaders | ✅ | ✅    | ✅   | —           | sí                 | 2026-08-20           |
 | karate-champ | ✅   | ✅    | ✅   | —           | sí                 | 2026-08-25           |
+| kong      | ✅      | ✅    | ✅   | —           | sí                 | 2026-08-27           |
 
 Leyenda: `✅` aplicado y verificado · `🟡` en progreso · `—` pendiente
 
 ## Notas
+
+- **kong** (2026-08-27): componente ya traía la estructura de skins (prop `skinKey`, mapa `SKINS`
+  con solo `classic`, fallback `SKINS[skinKey] ?? SKINS.classic`, selector ya cableado vía registro
+  central en `app/games/kong/play/page.tsx` — no tocado). Adición pura de `retro` y `neon`. Sprites
+  (jugador 8 poses × 2 facing, Kong 2 poses, barril 2 frames, martillo, trofeo) van pre-bakeados a
+  canvas offscreen y cacheados por `skin.name` en `spriteCache` (ya existía); se generalizó
+  `bakeSprite` con `opts` opcionales — `highlight` para retro (pasada extra vía
+  `globalCompositeOperation: 'source-atop'`, recorta el brillo blanco 45% al tercio superior sin
+  bleed, sin padding) y `glowColor/glowBlur` para neon (pasada con `shadowBlur` horneada UNA vez en
+  el offscreen, con padding simétrico; el hot path — `drawPlayer` y los `drawImage` de Kong/barriles/
+  martillo en `draw()` — solo compensa el padding con `pad = (spr.width - LOGICAL_W) / 2` restado del
+  ancla de pies/centro, mismo patrón que `KarateChampGame.drawFighter`, nunca setea shadowBlur ni crea
+  canvas por frame). El backdrop de nivel (`bakeLevelCanvas`, vigas + escaleras) ya se cacheaba por
+  `bakedSkinName !== skinNow.name` — invalidación confirmada correcta para cambio de skin, sin
+  cambios; `drawGirderInto`/`drawLadderInto` añaden glow neon con shadowBlur en vivo pero SOLO se
+  invocan durante el rebuild del backdrop (una vez por nivel/skin), nunca en el RAF loop. HUD/banner
+  (timer, nivel, banner de trofeo/reintento) llevan shadowBlur en vivo seteado y reseteado a mano tras
+  cada trazo (mismo patrón que PacmanGame/SpaceInvadersGame/KarateChampGame — unos pocos
+  fillText/fillRect por frame, nunca por-píxel). Paletas: retro CRT pastel (girder salmón `#ff9ecf`,
+  escalera cian pastel `#8ff0ff`, jugador crema `#fff3d6`, Kong marrón pastel `#c9946a`, barril
+  naranja pastel `#ffc98a`, trofeo dorado pastel `#ffe08a`); neon eléctrico sobre negro puro
+  `#000000` (girder magenta `#ff00e5`, escalera cian `#00f5ff`, jugador cian `#00f5ff`, Kong magenta
+  `#ff00e5`, barril/martillo/trofeo amarillo `#ffd400`).
 
 - **karate-champ** (2026-08-25): componente ya traía la estructura de skins (prop `skinKey`, mapa
   `SKINS` con solo `classic`, fallback `SKINS[skinKey] ?? SKINS.classic`, selector ya cableado vía
