@@ -82,10 +82,7 @@ const BANNER_RETRY = 1;
 
 // Pre-built timer strings: the HUD never allocates a string per frame
 const TIMER_TEXT: string[] = [];
-for (let i = 0; i <= 90; i++) TIMER_TEEXT_PUSH(i);
-function TIMER_TEEXT_PUSH(i: number) {
-  TIMER_TEXT.push(String(i));
-}
+for (let i = 0; i <= 90; i++) TIMER_TEXT.push(String(i));
 
 // Derived static positions (pure math over level.ts constants)
 const HAMMER_POS = HAMMERS.map((h) => ({
