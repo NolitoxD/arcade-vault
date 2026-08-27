@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { CANVAS_W, GIRDERS, LADDERS, girderYAt } from './level';
-import { RUN_SPEED, GRAVITY, JUMP_VY, stepPlayer } from './player';
+import { RUN_SPEED, GRAVITY, JUMP_VY, stepPlayer, type Player } from './player';
 
 const idle = { left: false, right: false, up: false, down: false, jump: false };
-const fresh = () => ({
+const fresh = (): Player => ({
   x: GIRDERS[0].x0 + 60, y: girderYAt(GIRDERS[0], GIRDERS[0].x0 + 60), vy: 0,
   girder: 0, state: 'run' as const, facing: 1 as const, hammerMs: 0, climbing: null, fellFrom: 0,
 });
