@@ -282,8 +282,3 @@ export function traceShot(b: Board, angle: number, out: Float32Array, maxPts: nu
 
   return n;
 }
-
-// Keep CELLS referenced for consumers importing everything from the grid
-// through this module's re-export surface during type-checking.
-export type { Board };
-export { CELLS };
