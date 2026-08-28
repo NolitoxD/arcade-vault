@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { CELLS, DEATH_ROW, countBubbles, createBoard, idx } from './grid';
-import { MAGIC_BOMB, MAGIC_RAY, MAPS, configFor, parseMap, type MapConfig } from './maps';
+import {
+  LAST_MAP,
+  MAGIC_ANCHOR,
+  MAGIC_BOMB,
+  MAGIC_PURGE,
+  MAGIC_RAY,
+  MAPS,
+  configFor,
+  parseMap,
+  type MapConfig,
+} from './maps';
 import { checkMap, checkMapsProgression } from './map-invariants';
 
 const board = createBoard();
@@ -40,6 +50,17 @@ describe('configFor', () => {
 });
 
 describe('map invariants', () => {
+  it('ships the eight maps with the agreed magic pairing', () => {
+    expect(MAPS).toHaveLength(LAST_MAP);
+    expect(MAPS.map((m) => m.map)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(MAPS.map((m) => m.magic)).toEqual([
+      MAGIC_BOMB, MAGIC_BOMB, MAGIC_RAY, MAGIC_RAY,
+      MAGIC_PURGE, MAGIC_PURGE, MAGIC_ANCHOR, MAGIC_ANCHOR,
+    ]);
+    expect(MAPS.map((m) => m.colors.length)).toEqual([3, 3, 4, 4, 5, 5, 6, 6]);
+    expect(MAPS.map((m) => m.dropEvery)).toEqual([12, 10, 9, 8, 7, 6, 6, 5]);
+  });
+
   it('reports no problems for every published map', () => {
     MAPS.forEach((cfg) => {
       expect({ map: cfg.map, problems: checkMap(cfg, parsed(cfg)) })
