@@ -1,4 +1,4 @@
-import { CANVAS_W, GIRDERS, LADDERS, girderYAt, ladderAt, type Ladder } from './level';
+import { CANVAS_W, girderYAt, type Ladder, type Layout } from './level';
 
 export const RUN_SPEED = 130;
 export const GRAVITY = 1400;
@@ -30,8 +30,18 @@ export type Input = {
 
 const LADDER_TOLERANCE = 8;
 
-function moveOnGirder(p: Player, input: Input, dt: number): void {
-  const g = GIRDERS[p.girder];
+// Mirrors level.ts's ladderAt, but searches the layout's own ladders instead
+// of the module-level LADDERS constant, so climbing stays correct once maps
+// 2-5 get their own geometry (Task 8).
+function findLadderFrom(layout: Layout, girderIndex: number, x: number, tolerance: number): Ladder | null {
+  for (const l of layout.ladders) {
+    if (l.from === girderIndex && Math.abs(l.x - x) <= tolerance) return l;
+  }
+  return null;
+}
+
+function moveOnGirder(layout: Layout, p: Player, input: Input, dt: number): void {
+  const g = layout.girders[p.girder];
   if (input.left) {
     p.x -= RUN_SPEED * dt;
     p.facing = -1;
@@ -43,7 +53,7 @@ function moveOnGirder(p: Player, input: Input, dt: number): void {
   p.y = girderYAt(g, p.x);
 }
 
-function stepAirborne(p: Player, input: Input, dt: number): void {
+function stepAirborne(layout: Layout, p: Player, input: Input, dt: number): void {
   if (input.left) {
     p.x -= RUN_SPEED * dt;
     p.facing = -1;
@@ -58,7 +68,7 @@ function stepAirborne(p: Player, input: Input, dt: number): void {
   if (p.vy <= 0) return;
   let landing: number | null = null;
   let landY = Infinity;
-  for (const g of GIRDERS) {
+  for (const g of layout.girders) {
     if (p.x < g.x0 || p.x > g.x1) continue;
     const gy = girderYAt(g, p.x);
     if (gy >= prevY && gy <= p.y && gy < landY) {
@@ -73,14 +83,14 @@ function stepAirborne(p: Player, input: Input, dt: number): void {
   p.state = landY - p.fellFrom > FALL_DEATH_PX ? 'dead' : 'run';
 }
 
-function arriveAtGirder(p: Player, girderIndex: number): void {
+function arriveAtGirder(layout: Layout, p: Player, girderIndex: number): void {
   p.girder = girderIndex;
-  p.y = girderYAt(GIRDERS[girderIndex], p.x);
+  p.y = girderYAt(layout.girders[girderIndex], p.x);
   p.state = 'run';
   p.climbing = null;
 }
 
-function stepClimb(p: Player, input: Input, dt: number): void {
+function stepClimb(layout: Layout, p: Player, input: Input, dt: number): void {
   const ladder = p.climbing;
   if (!ladder) {
     p.state = 'run';
@@ -88,10 +98,10 @@ function stepClimb(p: Player, input: Input, dt: number): void {
   }
   if (input.up) {
     p.y -= CLIMB_SPEED * dt;
-    if (p.y <= girderYAt(GIRDERS[ladder.to], ladder.x)) arriveAtGirder(p, ladder.to);
+    if (p.y <= girderYAt(layout.girders[ladder.to], ladder.x)) arriveAtGirder(layout, p, ladder.to);
   } else if (input.down) {
     p.y += CLIMB_SPEED * dt;
-    if (p.y >= girderYAt(GIRDERS[ladder.from], ladder.x)) arriveAtGirder(p, ladder.from);
+    if (p.y >= girderYAt(layout.girders[ladder.from], ladder.x)) arriveAtGirder(layout, p, ladder.from);
   }
 }
 
@@ -102,16 +112,16 @@ function enterLadder(p: Player, ladder: Ladder): void {
   p.vy = 0;
 }
 
-function tryClimbUp(p: Player): boolean {
-  const ladder = ladderAt(p.x, p.girder, LADDER_TOLERANCE);
+function tryClimbUp(layout: Layout, p: Player): boolean {
+  const ladder = findLadderFrom(layout, p.girder, p.x, LADDER_TOLERANCE);
   if (!ladder) return false;
   enterLadder(p, ladder);
   return true;
 }
 
-function tryClimbDown(p: Player, brokenSet: Set<number>): boolean {
-  for (let i = 0; i < LADDERS.length; i++) {
-    const l = LADDERS[i];
+function tryClimbDown(layout: Layout, p: Player, brokenSet: Set<number>): boolean {
+  for (let i = 0; i < layout.ladders.length; i++) {
+    const l = layout.ladders[i];
     if (l.to !== p.girder || Math.abs(l.x - p.x) > LADDER_TOLERANCE) continue;
     if (brokenSet.has(i)) return false;
     enterLadder(p, l);
@@ -120,7 +130,7 @@ function tryClimbDown(p: Player, brokenSet: Set<number>): boolean {
   return false;
 }
 
-export function stepPlayer(p: Player, input: Input, dtMs: number, brokenSet: Set<number>): void {
+export function stepPlayer(layout: Layout, p: Player, input: Input, dtMs: number, brokenSet: Set<number>): void {
   const dt = dtMs / 1000;
   switch (p.state) {
     case 'dead':
@@ -131,24 +141,24 @@ export function stepPlayer(p: Player, input: Input, dtMs: number, brokenSet: Set
         p.hammerMs = 0;
         p.state = 'run';
       }
-      moveOnGirder(p, input, dt);
+      moveOnGirder(layout, p, input, dt);
       return;
     case 'climb':
-      stepClimb(p, input, dt);
+      stepClimb(layout, p, input, dt);
       return;
     case 'jump':
-      stepAirborne(p, input, dt);
+      stepAirborne(layout, p, input, dt);
       return;
     case 'run':
       if (input.jump) {
         p.vy = JUMP_VY;
         p.state = 'jump';
         p.fellFrom = p.y;
-        stepAirborne(p, input, dt);
+        stepAirborne(layout, p, input, dt);
         return;
       }
-      if (input.up && tryClimbUp(p)) return;
-      if (input.down && tryClimbDown(p, brokenSet)) return;
-      moveOnGirder(p, input, dt);
+      if (input.up && tryClimbUp(layout, p)) return;
+      if (input.down && tryClimbDown(layout, p, brokenSet)) return;
+      moveOnGirder(layout, p, input, dt);
   }
 }

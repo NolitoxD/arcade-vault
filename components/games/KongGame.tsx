@@ -23,6 +23,7 @@ import {
   HAMMERS,
   KONG,
   LADDERS,
+  layoutFor,
   PLAYER_SPAWN,
   TROPHY,
   TROPHY_REACH_ABOVE,
@@ -30,6 +31,7 @@ import {
   TROPHY_REACH_X,
   type Girder,
   type Ladder,
+  type Layout,
 } from './kong-logic/level';
 import { stepPlayer, type Input, type Player } from './kong-logic/player';
 import {
@@ -934,7 +936,7 @@ function KongGame({
       report();
     }
 
-    function updateBarrels(dtMs: number) {
+    function updateBarrels(layout: Layout, dtMs: number) {
       const cfg = configFor(s.level);
       const speed = cfg[1];
       const chance = cfg[2];
@@ -943,12 +945,12 @@ function KongGame({
         if (!b.active) continue;
         s.prevBX[i] = b.x;
         if (b.onLadder !== null) {
-          descendLadder(b, dtMs, speed);
+          descendLadder(layout, b, dtMs, speed);
           continue;
         }
-        advanceBarrel(b, dtMs, speed);
-        if (atGirderEnd(b)) {
-          dropToNextGirder(b);
+        advanceBarrel(layout, b, dtMs, speed);
+        if (atGirderEnd(layout, b)) {
+          dropToNextGirder(layout, b);
           s.ladderLatch[i] = -1;
           continue;
         }
@@ -971,7 +973,7 @@ function KongGame({
         } else if (s.ladderLatch[i] !== found) {
           s.ladderLatch[i] = found;
           if (!brokenSet.has(found) && shouldTakeLadder(chance, Math.random)) {
-            enterLadder(b, LADDERS[found]);
+            enterLadder(layout, b, LADDERS[found]);
           }
         }
       }
@@ -981,16 +983,17 @@ function KongGame({
       s.levelMs += dtMs;
       s.animMs = (s.animMs + dtMs) % 3_600_000;
       const cfg = configFor(s.level);
+      const layout = layoutFor(s.level);
 
       // Kong throw cadence
       if (s.kongThrowMs > 0) s.kongThrowMs = Math.max(0, s.kongThrowMs - dtMs);
       s.spawnMs -= dtMs;
       if (s.spawnMs <= 0) {
-        if (spawnBarrel(s.pool) !== null) s.kongThrowMs = KONG_THROW_POSE_MS;
+        if (spawnBarrel(s.pool, layout) !== null) s.kongThrowMs = KONG_THROW_POSE_MS;
         s.spawnMs = cfg[0];
       }
 
-      updateBarrels(dtMs);
+      updateBarrels(layout, dtMs);
 
       // Player
       const p = s.player;
@@ -1002,7 +1005,7 @@ function KongGame({
       jumpQueued = false;
       const prevPx = p.x;
       const prevState = p.state;
-      stepPlayer(p, input, dtMs, brokenSet);
+      stepPlayer(layoutFor(s.level), p, input, dtMs, brokenSet);
       if (p.x < PLAYER_HALF) p.x = PLAYER_HALF;
       if (p.x > CANVAS_W - PLAYER_HALF) p.x = CANVAS_W - PLAYER_HALF;
 
