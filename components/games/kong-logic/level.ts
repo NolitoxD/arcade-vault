@@ -117,9 +117,13 @@ export function brokenLadderSet(layout: Layout, level: number): Set<number> {
 }
 
 const TROPHY = { x: 300, y: 100 };
+// Hammer 1's x was 120 (box 110-130), which sat under Kong's 72px sprite at
+// x: 90 (box 54-126) — Kong draws on top and hid it entirely. Moved to 145
+// (box 135-155), clear of Kong's box by 9px; nothing else about map 1
+// changed, per instruction not to touch its shipped geometry otherwise.
 const HAMMERS: { x: number; girder: number }[] = [
   { x: 460, girder: 2 },
-  { x: 120, girder: 4 },
+  { x: 145, girder: 4 },
 ];
 const PLAYER_SPAWN = { x: 520, girder: 0 };
 
@@ -164,13 +168,23 @@ const LAYOUT_1: Layout = {
 // girders make every floor completely covered by the one below, so the only
 // vertical gap that can ever matter is the adjacent-floor one, which is kept
 // under FALL_DEATH_PX (see the girder tables below).
+// Girder spacing across maps 2-5 lives in a narrow window, not just under a
+// ceiling: FALL_DEATH_PX (90) is the top, but there is also a floor — the
+// apex of a standing jump (JUMP_VY^2 / (2*GRAVITY) from player.ts, ~66px).
+// Below that, a floor "gap" is climbable by jumping straight up, which
+// makes every ladder on that floor optional and quietly breaks the
+// escalating-difficulty design. Each map below picks its own T (slope
+// amplitude) and center-to-center spacing so min/max gap both land inside
+// (apex, FALL_DEATH_PX) with a few pixels of margin on both sides — see
+// level-invariants.ts's checkGirderGaps, which enforces this floor and
+// ceiling for every shipped map except map 1 (untouched legacy geometry).
 const GIRDERS_2: Girder[] = [
-  { index: 0, x0: 0, x1: 600, y0: 630, y1: 646 },
-  { index: 1, x0: 0, x1: 600, y0: 574, y1: 558 },
-  { index: 2, x0: 0, x1: 600, y0: 486, y1: 502 },
-  { index: 3, x0: 0, x1: 600, y0: 430, y1: 414 },
-  { index: 4, x0: 0, x1: 600, y0: 342, y1: 358 },
-  { index: 5, x0: 0, x1: 600, y0: 286, y1: 270 },
+  { index: 0, x0: 0, x1: 600, y0: 611, y1: 619 },
+  { index: 1, x0: 0, x1: 600, y0: 541, y1: 533 },
+  { index: 2, x0: 0, x1: 600, y0: 455, y1: 463 },
+  { index: 3, x0: 0, x1: 600, y0: 385, y1: 377 },
+  { index: 4, x0: 0, x1: 600, y0: 299, y1: 307 },
+  { index: 5, x0: 0, x1: 600, y0: 229, y1: 221 },
 ];
 
 const LADDERS_2: Ladder[] = [
@@ -190,7 +204,7 @@ const LAYOUT_2: Layout = {
   girders: GIRDERS_2,
   ladders: LADDERS_2,
   kong: { x: 100, girder: 5 },
-  trophy: { x: 430, y: 225 },
+  trophy: { x: 430, y: 180 },
   hammers: [
     { x: 200, girder: 2 },
     { x: 480, girder: 4 },
@@ -199,58 +213,64 @@ const LAYOUT_2: Layout = {
 };
 
 const GIRDERS_3: Girder[] = [
-  { index: 0, x0: 0, x1: 600, y0: 632, y1: 644 },
-  { index: 1, x0: 0, x1: 600, y0: 568, y1: 556 },
-  { index: 2, x0: 0, x1: 600, y0: 480, y1: 492 },
-  { index: 3, x0: 0, x1: 600, y0: 416, y1: 404 },
-  { index: 4, x0: 0, x1: 600, y0: 328, y1: 340 },
-  { index: 5, x0: 0, x1: 600, y0: 264, y1: 252 },
+  { index: 0, x0: 0, x1: 600, y0: 608, y1: 612 },
+  { index: 1, x0: 0, x1: 600, y0: 532, y1: 528 },
+  { index: 2, x0: 0, x1: 600, y0: 448, y1: 452 },
+  { index: 3, x0: 0, x1: 600, y0: 372, y1: 368 },
+  { index: 4, x0: 0, x1: 600, y0: 288, y1: 292 },
+  { index: 5, x0: 0, x1: 600, y0: 212, y1: 208 },
 ];
 
+// Ladders and hammers below are deliberately NOT mirrored near-edge pairs
+// (that pattern — e.g. x 30/570 on every floor — made maps 3-5 read as the
+// same map with a paint job). Each floor's pair sits at its own x, and the
+// pattern differs map to map, alongside a different slope amplitude (T) per
+// map: 3 is a gentle tilt, 4 is nearly flat, 5 is a moderate tilt again but
+// with the widest ladder spread of the three.
 const LADDERS_3: Ladder[] = [
-  { x: 60, from: 0, to: 1, broken: false },
-  { x: 540, from: 0, to: 1, broken: false },
-  { x: 100, from: 1, to: 2, broken: false },
-  { x: 500, from: 1, to: 2, broken: false },
-  { x: 150, from: 2, to: 3, broken: false },
-  { x: 480, from: 2, to: 3, broken: false },
-  { x: 90, from: 3, to: 4, broken: false },
-  { x: 520, from: 3, to: 4, broken: false },
-  { x: 130, from: 4, to: 5, broken: false },
-  { x: 470, from: 4, to: 5, broken: false },
+  { x: 90, from: 0, to: 1, broken: false },
+  { x: 380, from: 0, to: 1, broken: false },
+  { x: 250, from: 1, to: 2, broken: false },
+  { x: 520, from: 1, to: 2, broken: false },
+  { x: 60, from: 2, to: 3, broken: false },
+  { x: 340, from: 2, to: 3, broken: false },
+  { x: 430, from: 3, to: 4, broken: false },
+  { x: 560, from: 3, to: 4, broken: false },
+  { x: 120, from: 4, to: 5, broken: false },
+  { x: 300, from: 4, to: 5, broken: false },
 ];
 
 const LAYOUT_3: Layout = {
   girders: GIRDERS_3,
   ladders: LADDERS_3,
   kong: { x: 480, girder: 5, ledge: 0 },
-  trophy: { x: 200, y: 215 },
+  trophy: { x: 200, y: 168 },
   hammers: [
-    { x: 520, girder: 1 },
-    { x: 80, girder: 3 },
+    { x: 460, girder: 1 },
+    { x: 140, girder: 3 },
   ],
   playerSpawn: { x: 300, girder: 0 },
 };
 
 const GIRDERS_4: Girder[] = [
-  { index: 0, x0: 0, x1: 600, y0: 633, y1: 643 },
-  { index: 1, x0: 0, x1: 600, y0: 565, y1: 555 },
-  { index: 2, x0: 0, x1: 600, y0: 477, y1: 487 },
-  { index: 3, x0: 0, x1: 600, y0: 409, y1: 399 },
-  { index: 4, x0: 0, x1: 600, y0: 321, y1: 331 },
-  { index: 5, x0: 0, x1: 600, y0: 253, y1: 243 },
+  { index: 0, x0: 0, x1: 600, y0: 604, y1: 606 },
+  { index: 1, x0: 0, x1: 600, y0: 524, y1: 522 },
+  { index: 2, x0: 0, x1: 600, y0: 440, y1: 442 },
+  { index: 3, x0: 0, x1: 600, y0: 360, y1: 358 },
+  { index: 4, x0: 0, x1: 600, y0: 276, y1: 278 },
+  { index: 5, x0: 0, x1: 600, y0: 196, y1: 194 },
 ];
 
 const LADDERS_4: Ladder[] = [
-  { x: 40, from: 0, to: 1, broken: false },
-  { x: 560, from: 0, to: 1, broken: false },
-  { x: 70, from: 1, to: 2, broken: false },
-  { x: 530, from: 1, to: 2, broken: false },
-  { x: 60, from: 2, to: 3, broken: false },
-  { x: 540, from: 2, to: 3, broken: false },
-  { x: 80, from: 3, to: 4, broken: false },
-  { x: 520, from: 3, to: 4, broken: false },
-  { x: 50, from: 4, to: 5, broken: false },
+  { x: 200, from: 0, to: 1, broken: false },
+  { x: 480, from: 0, to: 1, broken: false },
+  { x: 90, from: 1, to: 2, broken: false },
+  { x: 560, from: 1, to: 2, broken: false },
+  { x: 310, from: 2, to: 3, broken: false },
+  { x: 430, from: 2, to: 3, broken: false },
+  { x: 60, from: 3, to: 4, broken: false },
+  { x: 250, from: 3, to: 4, broken: false },
+  { x: 380, from: 4, to: 5, broken: false },
   { x: 550, from: 4, to: 5, broken: false },
 ];
 
@@ -258,44 +278,44 @@ const LAYOUT_4: Layout = {
   girders: GIRDERS_4,
   ladders: LADDERS_4,
   kong: { x: 300, girder: 5, ledge: 1 },
-  trophy: { x: 100, y: 205 },
+  trophy: { x: 100, y: 152 },
   hammers: [
-    { x: 550, girder: 2 },
-    { x: 60, girder: 4 },
+    { x: 520, girder: 2 },
+    { x: 90, girder: 4 },
   ],
   playerSpawn: { x: 550, girder: 0 },
 };
 
 const GIRDERS_5: Girder[] = [
-  { index: 0, x0: 0, x1: 600, y0: 634, y1: 642 },
-  { index: 1, x0: 0, x1: 600, y0: 562, y1: 554 },
-  { index: 2, x0: 0, x1: 600, y0: 474, y1: 482 },
-  { index: 3, x0: 0, x1: 600, y0: 402, y1: 394 },
-  { index: 4, x0: 0, x1: 600, y0: 314, y1: 322 },
-  { index: 5, x0: 0, x1: 600, y0: 242, y1: 234 },
+  { index: 0, x0: 0, x1: 600, y0: 612, y1: 618 },
+  { index: 1, x0: 0, x1: 600, y0: 539, y1: 533 },
+  { index: 2, x0: 0, x1: 600, y0: 454, y1: 460 },
+  { index: 3, x0: 0, x1: 600, y0: 381, y1: 375 },
+  { index: 4, x0: 0, x1: 600, y0: 296, y1: 302 },
+  { index: 5, x0: 0, x1: 600, y0: 223, y1: 217 },
 ];
 
 const LADDERS_5: Ladder[] = [
-  { x: 30, from: 0, to: 1, broken: false },
-  { x: 570, from: 0, to: 1, broken: false },
-  { x: 60, from: 1, to: 2, broken: false },
-  { x: 540, from: 1, to: 2, broken: false },
-  { x: 50, from: 2, to: 3, broken: false },
-  { x: 550, from: 2, to: 3, broken: false },
-  { x: 70, from: 3, to: 4, broken: false },
-  { x: 530, from: 3, to: 4, broken: false },
-  { x: 40, from: 4, to: 5, broken: false },
-  { x: 560, from: 4, to: 5, broken: false },
+  { x: 140, from: 0, to: 1, broken: false },
+  { x: 560, from: 0, to: 1, broken: false },
+  { x: 310, from: 1, to: 2, broken: false },
+  { x: 470, from: 1, to: 2, broken: false },
+  { x: 70, from: 2, to: 3, broken: false },
+  { x: 400, from: 2, to: 3, broken: false },
+  { x: 230, from: 3, to: 4, broken: false },
+  { x: 540, from: 3, to: 4, broken: false },
+  { x: 90, from: 4, to: 5, broken: false },
+  { x: 460, from: 4, to: 5, broken: false },
 ];
 
 const LAYOUT_5: Layout = {
   girders: GIRDERS_5,
   ladders: LADDERS_5,
   kong: { x: 160, girder: 5 },
-  trophy: { x: 470, y: 190 },
+  trophy: { x: 470, y: 176 },
   hammers: [
-    { x: 550, girder: 1 },
-    { x: 60, girder: 3 },
+    { x: 330, girder: 1 },
+    { x: 520, girder: 3 },
   ],
   playerSpawn: { x: 520, girder: 0 },
 };

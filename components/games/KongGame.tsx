@@ -983,9 +983,15 @@ function KongGame({
       report();
     }
 
+    // Shared by the trophy-pickup check (both the "another map to go" and
+    // "that was the last map" branches award it) and startClear — same
+    // score, whether or not the run continues.
+    function trophyBonus(): number {
+      return SCORE_LEVEL + timeBonus(Math.max(0, LEVEL_TIME_MS - s.levelMs));
+    }
+
     function startClear() {
-      s.score +=
-        SCORE_LEVEL + timeBonus(Math.max(0, LEVEL_TIME_MS - s.levelMs));
+      s.score += trophyBonus();
       s.level += 1;
       sfxKong.play('level_clear');
       s.phase = 'clear';
@@ -1158,8 +1164,7 @@ function KongGame({
       const dyT = p.y - layout.trophy.y;
       if (Math.abs(p.x - layout.trophy.x) < TROPHY_REACH_X && dyT > TROPHY_REACH_ABOVE && dyT < TROPHY_REACH_BELOW) {
         if (s.level === LAST_LEVEL) {
-          s.score +=
-            SCORE_LEVEL + timeBonus(Math.max(0, LEVEL_TIME_MS - s.levelMs));
+          s.score += trophyBonus();
           sfxKong.play('level_clear');
           doVictory();
         } else {

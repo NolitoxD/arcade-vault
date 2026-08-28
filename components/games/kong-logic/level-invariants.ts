@@ -1,5 +1,11 @@
 import { brokenLadderSet, girderYAt, TROPHY_REACH_ABOVE, TROPHY_REACH_BELOW, TROPHY_REACH_X, type Layout } from './level';
-import { FALL_DEATH_PX } from './player';
+import { FALL_DEATH_PX, GRAVITY, JUMP_VY } from './player';
+
+// Height a standing jump reaches above its takeoff point (kinematics: peak
+// speed reaches 0 after JUMP_VY / GRAVITY seconds, having covered
+// JUMP_VY^2 / (2*GRAVITY)). Derived from the two real physics constants
+// instead of a hardcoded number so this stays correct if either is retuned.
+const JUMP_APEX = (JUMP_VY * JUMP_VY) / (2 * GRAVITY);
 
 function isTrophyReachable(layout: Layout): boolean {
   const topGirder = layout.girders[layout.girders.length - 1];
@@ -30,11 +36,13 @@ function floorsWithoutExit(layout: Layout, level: number): string[] {
 
 // Walks the x-range shared by every pair of adjacent girders (not just its
 // endpoints — both girders are sloped, so the worst point can land anywhere
-// in between) and flags a pair whose vertical separation ever exceeds
-// FALL_DEATH_PX. Imported straight from player.ts rather than a hardcoded
-// 90 so this check can never drift out of sync with the actual physics: if
-// someone retunes FALL_DEATH_PX, this invariant re-evaluates against the
-// new value automatically.
+// in between) and flags a pair whose vertical separation ever leaves the
+// window (JUMP_APEX, FALL_DEATH_PX): too far apart (>FALL_DEATH_PX) kills a
+// fall between them, too close (<JUMP_APEX) means the gap can be climbed by
+// jumping straight up, which turns every ladder on that floor optional and
+// quietly defeats the difficulty design. Both bounds come from player.ts's
+// real constants rather than hardcoded numbers, so this stays in sync if
+// the physics is ever retuned.
 function checkGirderGaps(layout: Layout): string[] {
   const problems: string[] = [];
   const girders = layout.girders;
@@ -43,13 +51,15 @@ function checkGirderGaps(layout: Layout): string[] {
     const upper = girders[i + 1];
     const x0 = Math.max(lower.x0, upper.x0);
     const x1 = Math.min(lower.x1, upper.x1);
+    let tooFar = false;
+    let tooClose = false;
     for (let x = x0; x <= x1; x++) {
       const gap = girderYAt(lower, x) - girderYAt(upper, x);
-      if (gap > FALL_DEATH_PX) {
-        problems.push(`girders ${i}-${i + 1} too far apart`);
-        break;
-      }
+      if (gap > FALL_DEATH_PX) tooFar = true;
+      if (gap < JUMP_APEX) tooClose = true;
     }
+    if (tooFar) problems.push(`girders ${i}-${i + 1} too far apart`);
+    if (tooClose) problems.push(`girders ${i}-${i + 1} too close`);
   }
   return problems;
 }

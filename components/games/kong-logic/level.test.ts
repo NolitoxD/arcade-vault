@@ -141,7 +141,7 @@ describe('layouts', () => {
     expect(l.kong).toEqual({ x: 90, girder: 4 });
     expect(l.hammers).toEqual([
       { x: 460, girder: 2 },
-      { x: 120, girder: 4 },
+      { x: 145, girder: 4 },
     ]);
     expect(l.playerSpawn).toEqual({ x: 520, girder: 0 });
   });
@@ -260,5 +260,16 @@ describe('layout invariants', () => {
       girders: base.girders.map((g, i) => (i === 1 ? { ...g, y0: g.y0 - 200, y1: g.y1 - 200 } : g)),
     };
     expect(checkLayout(tooFar, 2)).toContain('girders 0-1 too far apart');
+  });
+
+  it('detects two adjacent girders separated by less than the jump apex', () => {
+    // Same idea, opposite direction: collapse girder 1 onto girder 0's own
+    // height so the "gap" between them is climbable by jumping in place.
+    const base = LAYOUTS[1];
+    const tooClose = {
+      ...base,
+      girders: base.girders.map((g, i) => (i === 1 ? { ...g, y0: base.girders[0].y0, y1: base.girders[0].y1 } : g)),
+    };
+    expect(checkLayout(tooClose, 2)).toContain('girders 0-1 too close');
   });
 });

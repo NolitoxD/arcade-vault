@@ -24,10 +24,13 @@ describe('barrel pool', () => {
 describe('spawning', () => {
   it('spawns barrels from Kong girder, not always from the top one', () => {
     const p = pool();
-    const customLayout = { ...layoutFor(1), kong: { x: 90, girder: 4 } };
+    // girder: 2 (not layoutFor(1)'s own girder: 4) so this actually exercises
+    // spawnBarrel reading kong.girder/kong.x off the given layout, rather than
+    // happening to match layoutFor(1)'s defaults.
+    const customLayout = { ...layoutFor(1), kong: { x: 300, girder: 2 } };
     const b = spawnBarrel(p, customLayout)!;
-    expect(b.girder).toBe(4);
-    expect(b.x).toBe(90);
+    expect(b.girder).toBe(2);
+    expect(b.x).toBe(300);
   });
 });
 
