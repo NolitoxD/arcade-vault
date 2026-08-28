@@ -4,6 +4,7 @@ import {
   LEVEL_CONFIG, configFor, brokenLadderSet, HAMMERS, TROPHY, KONG, PLAYER_SPAWN,
   LAYOUTS, layoutFor, TROPHY_REACH_X, TROPHY_REACH_ABOVE, TROPHY_REACH_BELOW,
 } from './level';
+import { checkLayout } from './level-invariants';
 
 describe('screen geometry', () => {
   it('has 6 girders stacked bottom-to-top with alternating slope', () => {
@@ -102,5 +103,49 @@ describe('trophy reach', () => {
     expect(TROPHY_REACH_X).toBe(22);
     expect(TROPHY_REACH_ABOVE).toBe(-34);
     expect(TROPHY_REACH_BELOW).toBe(60);
+  });
+});
+
+describe('layout invariants', () => {
+  it('reports no problems for every shipped layout', () => {
+    LAYOUTS.forEach((layout, i) => {
+      const broken = configFor(i + 1)[3];
+      expect({ map: i + 1, problems: checkLayout(layout, broken) })
+        .toEqual({ map: i + 1, problems: [] });
+    });
+  });
+
+  it('detects an unreachable trophy', () => {
+    const broken = { ...LAYOUTS[0], trophy: { x: 300, y: -500 } };
+    expect(checkLayout(broken, 0)).toContain('trophy unreachable');
+  });
+
+  it('detects a floor with no way up once ladders are broken', () => {
+    const oneLadder = {
+      ...LAYOUTS[0],
+      ladders: LAYOUTS[0].ladders.filter((l) => l.from !== 2 || l.x === 180),
+    };
+    expect(checkLayout(oneLadder, 3)).toContain('floor 2 has no exit');
+  });
+
+  it('detects kong not standing on a real girder', () => {
+    const broken = { ...LAYOUTS[0], kong: { x: 90, girder: 99 } };
+    expect(checkLayout(broken, 0)).toContain('kong has no girder');
+  });
+
+  it('detects a hammer off its girder', () => {
+    const broken = {
+      ...LAYOUTS[0],
+      hammers: [{ x: 9999, girder: 2 }, LAYOUTS[0].hammers[1]],
+    };
+    expect(checkLayout(broken, 0)).toContain('hammer 0 off girder');
+  });
+
+  it('detects an invalid spawn (off girder or inside trophy reach)', () => {
+    const offGirder = { ...LAYOUTS[0], playerSpawn: { x: 9999, girder: 0 } };
+    expect(checkLayout(offGirder, 0)).toContain('spawn invalid');
+
+    const onTrophy = { ...LAYOUTS[0], playerSpawn: { x: TROPHY.x, girder: 5 } };
+    expect(checkLayout(onTrophy, 0)).toContain('spawn invalid');
   });
 });
