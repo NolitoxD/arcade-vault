@@ -12,7 +12,8 @@ export type GameId =
   | 'pacman'
   | 'space-invaders'
   | 'karate-champ'
-  | 'kong';
+  | 'kong'
+  | 'bubble';
 
 export type SkinDef = { key: string; label: string; tier: SkinTier };
 
@@ -330,6 +331,41 @@ export const GAMES: Record<GameId, GameMeta> = {
         'El martillo destruye barriles 8 segundos, pero no deja saltar ni trepar',
         'Las escaleras rotas suben pero no bajan — y los barriles no las usan',
         'Cada trofeo endurece a Kong: más barriles, más rápidos y más listos',
+      ],
+    },
+    realtime: true,
+  },
+  bubble: {
+    id: 'bubble',
+    skins: CLASSIC_SKINS,
+    controls: {
+      keyboard: [
+        { keys: ['←', '→', 'A', 'D'], action: 'Apuntar el cañón' },
+        { keys: ['Espacio', 'J'], action: 'Disparar', special: true },
+        {
+          keys: ['↓', 'S'],
+          action: 'Cambiar por la burbuja siguiente',
+          special: true,
+        },
+      ],
+      touch: {
+        keyMap: {
+          left: 'ArrowLeft',
+          right: 'ArrowRight',
+          a: ' ',
+          b: 'ArrowDown',
+        },
+        a: 'DISPARAR',
+        b: 'CAMBIAR',
+      },
+    },
+    instructions: {
+      goal: 'Junta 3 o más burbujas del mismo color para reventarlas y derriba todo lo que quede colgando: el techo baja cada pocos disparos y si el racimo cruza la línea roja pierdes una vida. Vacía los 8 mapas para terminar el juego.',
+      tips: [
+        'Rebota en las paredes laterales para llegar a los huecos imposibles — el techo no rebota',
+        'Lo que puntúa de verdad es desprender: revienta el enganche y arrastra el racimo entero',
+        'Cada mapa esconde una burbuja mágica: hay que reventarla dentro de un grupo de 3, no vale tocarla',
+        'Con ↓ cambias la burbuja actual por la siguiente antes de disparar',
       ],
     },
     realtime: true,

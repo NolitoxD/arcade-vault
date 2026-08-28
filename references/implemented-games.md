@@ -11,3 +11,6 @@
 | `road-fighter` | ROAD FIGHTER | RACING | red  | Esquiva el tráfico a toda velocidad antes de que se agote el depósito. |
 | `pacman`    | PAC-MAN   | MAZE      | yellow | Devora todos los puntos del laberinto sin que te atrapen los fantasmas. |
 | `space-invaders` | SPACE INVADERS | SHOOTER | green | Destruye oleadas de alienígenas antes de que lleguen a la Tierra. |
+| `karate-champ` | KARATE CHAMP | FIGHTING | gold | Ejecuta técnicas de karate precisas para puntuar antes que tu rival. |
+| `kong`      | KONG      | PLATFORMER | red | Esquiva los barriles y escala las vigas hasta el trofeo. |
+| `bubble`    | BUBBLE    | PUZZLE    | magenta | Agrupa tres burbujas del mismo color y derriba el racimo entero. |

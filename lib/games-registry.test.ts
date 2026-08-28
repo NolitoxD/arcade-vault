@@ -4,10 +4,10 @@ import { GAMES, GAME_IDS, getGame, getKeyMap, getSkinOptions, isGameId } from '.
 const KEYMAP_SLOTS = ['up', 'down', 'left', 'right', 'a', 'b'];
 
 describe('games registry', () => {
-  it('has exactly the 11 implemented games', () => {
+  it('has exactly the 12 implemented games', () => {
     expect(GAME_IDS.sort()).toEqual([
-      'arkanoid', 'asteroids', 'frogger', 'karate-champ', 'kong', 'pacman', 'pong',
-      'road-fighter', 'snake', 'space-invaders', 'tetris',
+      'arkanoid', 'asteroids', 'bubble', 'frogger', 'karate-champ', 'kong', 'pacman',
+      'pong', 'road-fighter', 'snake', 'space-invaders', 'tetris',
     ]);
     expect(isGameId('pacman')).toBe(true);
     expect(isGameId('galaga')).toBe(false);
@@ -49,10 +49,13 @@ describe('games registry', () => {
     expect(getSkinOptions('kong').map((s) => `${s.key}:${s.tier}`)).toEqual([
       'classic:base', 'retro:retro', 'neon:neon',
     ]);
+    expect(getSkinOptions('bubble').map((s) => `${s.key}:${s.tier}`)).toEqual([
+      'classic:base', 'retro:retro', 'neon:neon',
+    ]);
   });
   it('flags the realtime games', () => {
     expect(GAME_IDS.filter((id) => GAMES[id].realtime).sort()).toEqual([
-      'karate-champ', 'kong', 'pacman', 'pong', 'road-fighter', 'space-invaders',
+      'bubble', 'karate-champ', 'kong', 'pacman', 'pong', 'road-fighter', 'space-invaders',
     ]);
   });
   it('karate-champ has the full keyMap and touch labels for both buttons', () => {
@@ -79,5 +82,16 @@ describe('games registry', () => {
     });
     expect(a).toBe('SALTAR');
     expect(b).toBeUndefined();
+  });
+  it('bubble has the aim/fire keyMap and touch labels for both buttons', () => {
+    const { keyMap, a, b } = GAMES.bubble.controls.touch;
+    expect(keyMap).toEqual({
+      left: 'ArrowLeft',
+      right: 'ArrowRight',
+      a: ' ',
+      b: 'ArrowDown',
+    });
+    expect(a).toBe('DISPARAR');
+    expect(b).toBe('CAMBIAR');
   });
 });
