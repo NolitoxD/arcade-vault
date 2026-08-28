@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { COLS, DEATH_ROW, createBoard, idx, isEmptyBoard, type Board } from './grid';
-import { MAGIC_ANCHOR, MAGIC_BOMB, MAGIC_PURGE, MAGIC_RAY, type MapConfig } from './maps';
+import { MAGIC_ANCHOR, MAGIC_BOMB, MAGIC_PURGE, MAGIC_RAY, type MagicId, type MapConfig } from './maps';
 import { createBag, refreshPalette, type Bag } from './bag';
 import { SCORE_MAGIC, SCORE_MAP, SCORE_VICTORY } from './scoring';
 import {
@@ -11,7 +11,7 @@ import {
 const rand = () => 0;
 const out = createResolveOut();
 
-function scene(rows: string[], magic = MAGIC_BOMB, dropEvery = 99): { b: Board; cfg: MapConfig; bag: Bag } {
+function scene(rows: string[], magic: MagicId = MAGIC_BOMB, dropEvery = 99): { b: Board; cfg: MapConfig; bag: Bag } {
   const b = createBoard();
   rows.forEach((row, r) => {
     for (let c = 0; c < COLS; c++) {
@@ -28,7 +28,10 @@ function scene(rows: string[], magic = MAGIC_BOMB, dropEvery = 99): { b: Board; 
 
 describe('resolveShot — popping', () => {
   it('pops a group of three and scores it', () => {
-    const { b, cfg, bag } = scene(['111.......']);
+    // Witness bubble at (0,9): its own colour, its own row-0 anchor, untouched by
+    // the pop — keeps the board non-empty so this test isolates the pop score
+    // from the map-clear bonus (see the dedicated map-clear test below).
+    const { b, cfg, bag } = scene(['111......2']);
     const run = createRun();
     resolveShot(b, cfg, run, bag, idx(0, 2), rand, out);
     expect(out.poppedN).toBe(3);
@@ -48,14 +51,17 @@ describe('resolveShot — popping', () => {
   });
 
   it('drops everything the pop disconnected and scores the cascade', () => {
-    const { b, cfg, bag } = scene(['111.......', '..2.......', '..2.......']);
+    // Same witness as above, at (0,9): stays connected to the ceiling on its own,
+    // so the board survives the pop+cascade and this test isolates the cascade
+    // score from the map-clear bonus (see the dedicated map-clear test below).
+    const { b, cfg, bag } = scene(['111......2', '..2.......', '..2.......']);
     const run = createRun();
     resolveShot(b, cfg, run, bag, idx(0, 2), rand, out);
     expect(out.poppedN).toBe(3);
     expect(out.fallenN).toBe(2);
     expect(Array.from(out.fallenColor.subarray(0, 2))).toEqual([2, 2]);
     expect(run.score).toBe(30 + 20 + 40);
-    expect(isEmptyBoard(b)).toBe(true);
+    expect(isEmptyBoard(b)).toBe(false); // only the untouched witness at (0,9) remains
   });
 });
 
@@ -148,6 +154,20 @@ describe('resolveShot — outcomes', () => {
     expect(out.outcome).toBe(OUTCOME_MAP_CLEAR);
     expect(out.ceilingDropped).toBe(false);
     expect(run.score).toBe(30 + SCORE_MAP);
+  });
+
+  it('clears the map via a cascade too: the bonus rides on top of the pop and cascade score', () => {
+    // No witness this time: the pop empties row 0 and the cascade takes the last
+    // two hanging bubbles with it, so the board legitimately reaches empty here.
+    const { b, cfg, bag } = scene(['111.......', '..2.......', '..2.......'], MAGIC_BOMB, 1);
+    const run = createRun();
+    resolveShot(b, cfg, run, bag, idx(0, 2), rand, out);
+    expect(out.poppedN).toBe(3);
+    expect(out.fallenN).toBe(2);
+    expect(isEmptyBoard(b)).toBe(true);
+    expect(out.outcome).toBe(OUTCOME_MAP_CLEAR);
+    expect(out.ceilingDropped).toBe(false);
+    expect(run.score).toBe(30 + 20 + 40 + SCORE_MAP);
   });
 
   it('ends in victory when the last map is cleared', () => {

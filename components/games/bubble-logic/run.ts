@@ -105,14 +105,19 @@ export function resolveShot(
   out.parityAtPop = b.parity;
 
   // 1. Group of the same colour touching the just-anchored cell.
-  out.poppedN = findGroup(b, cell, out.popped);
+  const groupN = findGroup(b, cell, out.popped);
 
-  let magicCell = -1;
-  let magicColor = 0;
+  // A group under 3 skips popping, magic detonation, and the floating pass
+  // entirely (out.poppedN stays 0) — but the shot still counts for the
+  // ceiling and can itself cross the death line, below.
+  if (groupN >= 3) {
+    out.poppedN = groupN;
 
-  // 2. Pop it if it reaches the threshold, capturing colour (and the magic
-  // bubble's own colour, for the Purge) before any cell is emptied.
-  if (out.poppedN >= 3) {
+    let magicCell = -1;
+    let magicColor = 0;
+
+    // 2. Pop it, capturing colour (and the magic bubble's own colour, for
+    // the Purge) before any cell is emptied.
     for (let i = 0; i < out.poppedN; i++) {
       const j = out.popped[i];
       const color = b.color[j];
@@ -129,32 +134,32 @@ export function resolveShot(
       b.magic[j] = 0;
     }
     out.gained += popScore(out.poppedN);
-  }
 
-  // 3. Detonate the magic bubble caught in the pop, after the pop and before
-  // the floating pass, so its holes can generate cascades.
-  if (out.magicHit !== 0) {
-    out.gained += SCORE_MAGIC;
-    if (out.magicHit === MAGIC_ANCHOR) {
-      run.anchorShots = ANCHOR_SHOTS;
-    } else {
-      magicSnapshot.set(b.color);
-      out.magicClearedN = applyMagic(b, out.magicHit, magicCell, magicColor, out.magicCleared);
-      for (let i = 0; i < out.magicClearedN; i++) {
-        out.magicClearedColor[i] = magicSnapshot[out.magicCleared[i]];
+    // 3. Detonate the magic bubble caught in the pop, after the pop and
+    // before the floating pass, so its holes can generate cascades.
+    if (out.magicHit !== 0) {
+      out.gained += SCORE_MAGIC;
+      if (out.magicHit === MAGIC_ANCHOR) {
+        run.anchorShots = ANCHOR_SHOTS;
+      } else {
+        magicSnapshot.set(b.color);
+        out.magicClearedN = applyMagic(b, out.magicHit, magicCell, magicColor, out.magicCleared);
+        for (let i = 0; i < out.magicClearedN; i++) {
+          out.magicClearedColor[i] = magicSnapshot[out.magicCleared[i]];
+        }
       }
     }
-  }
 
-  // 4. Anything left disconnected from the ceiling falls.
-  out.fallenN = findFloating(b, out.fallen);
-  for (let i = 0; i < out.fallenN; i++) {
-    const j = out.fallen[i];
-    out.fallenColor[i] = b.color[j];
-    b.color[j] = 0;
-    b.magic[j] = 0;
+    // 4. Anything left disconnected from the ceiling falls.
+    out.fallenN = findFloating(b, out.fallen);
+    for (let i = 0; i < out.fallenN; i++) {
+      const j = out.fallen[i];
+      out.fallenColor[i] = b.color[j];
+      b.color[j] = 0;
+      b.magic[j] = 0;
+    }
+    out.gained += cascadeScore(out.fallenN);
   }
-  out.gained += cascadeScore(out.fallenN);
 
   // 5. Bag upkeep — always, even on a shot with no pop.
   refreshPalette(bag, b);
