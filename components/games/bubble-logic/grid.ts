@@ -99,3 +99,27 @@ export function isEmptyBoard(b: Board): boolean {
   for (let i = 0; i < CELLS; i++) if (b.color[i] !== 0) return false;
   return true;
 }
+
+// Shifts the whole board down one row and flips parity, so every row keeps the same
+// cell count and the hex offset lives only in `parity` — never in per-row array length.
+export function dropCeiling(
+  b: Board,
+  palette: Uint8Array,
+  paletteLen: number,
+  rand: () => number,
+): boolean {
+  if (anyAtOrBelow(b, ROWS - 1)) return true;
+
+  b.color.copyWithin(COLS, 0, CELLS - COLS);
+  b.magic.copyWithin(COLS, 0, CELLS - COLS);
+  b.color.fill(0, 0, COLS);
+  b.magic.fill(0, 0, COLS);
+
+  for (let c = 0; c < COLS; c++) {
+    b.color[c] = palette[Math.floor(rand() * paletteLen)];
+  }
+
+  b.parity = b.parity === 0 ? 1 : 0;
+
+  return anyAtOrBelow(b, DEATH_ROW);
+}

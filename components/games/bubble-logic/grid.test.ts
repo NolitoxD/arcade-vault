@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
-  CELLS, COLS, ROWS, R, PLAY_W, ROW_H, ROW0_Y, DEATH_LINE_Y,
-  cellX, cellY, colOf, createBoard, idx, neighbors, pixelToCell, rowOf, rowShifted,
+  CELLS, COLS, ROWS, R, PLAY_W, ROW_H, ROW0_Y, DEATH_LINE_Y, DEATH_ROW,
+  anyAtOrBelow, cellX, cellY, colOf, countBubbles, createBoard, dropCeiling, idx,
+  neighbors, pixelToCell, rowOf, rowShifted,
 } from './grid';
+import type { Board } from './grid';
 
 const nb = new Int16Array(6);
 const nb2 = new Int16Array(6);
@@ -146,5 +148,66 @@ describe('board container', () => {
     expect(rowShifted(1, 0)).toBe(true);
     expect(rowShifted(0, 1)).toBe(true);
     expect(rowShifted(1, 1)).toBe(false);
+  });
+});
+
+const PALETTE = Uint8Array.from([1, 2, 3]);
+const rand = () => 0; // deterministic: always palette[0]
+
+function boardWithRows(rows: number[][]): Board {
+  const b = createBoard();
+  rows.forEach((row, r) => row.forEach((v, c) => { b.color[idx(r, c)] = v; }));
+  return b;
+}
+
+describe('dropCeiling', () => {
+  it('shifts every bubble down exactly one row and keeps the magic layer aligned', () => {
+    const b = createBoard();
+    b.color[idx(0, 3)] = 2;
+    b.magic[idx(0, 3)] = 4;
+    dropCeiling(b, PALETTE, 3, rand);
+    expect(b.color[idx(1, 3)]).toBe(2);
+    expect(b.magic[idx(1, 3)]).toBe(4);
+    expect(b.magic[idx(0, 3)]).toBe(0);
+  });
+
+  it('toggles parity on every drop', () => {
+    const b = createBoard();
+    b.color[idx(0, 0)] = 1;
+    expect(b.parity).toBe(0);
+    dropCeiling(b, PALETTE, 3, rand);
+    expect(b.parity).toBe(1);
+    dropCeiling(b, PALETTE, 3, rand);
+    expect(b.parity).toBe(0);
+  });
+
+  it('preserves the bubble count plus the freshly seeded row', () => {
+    const b = boardWithRows([[1, 1, 2, 2, 3, 3, 1, 1, 2, 2], [0, 0, 1, 1, 0, 0, 2, 2, 0, 0]]);
+    const before = countBubbles(b);
+    dropCeiling(b, PALETTE, 3, rand);
+    expect(countBubbles(b)).toBe(before + COLS);
+  });
+
+  it('seeds the new row 0 only with live palette colours', () => {
+    const b = createBoard();
+    b.color[idx(0, 0)] = 1;
+    dropCeiling(b, Uint8Array.from([5, 6]), 2, () => 0.99);
+    for (let c = 0; c < COLS; c++) expect([5, 6]).toContain(b.color[idx(0, c)]);
+  });
+
+  it('refuses to drop and reports the map lost when the last row is occupied', () => {
+    const b = createBoard();
+    b.color[idx(ROWS - 1, 4)] = 1;
+    const snapshot = Uint8Array.from(b.color);
+    expect(dropCeiling(b, PALETTE, 3, rand)).toBe(true);
+    expect(Array.from(b.color)).toEqual(Array.from(snapshot));
+    expect(b.parity).toBe(0);
+  });
+
+  it('reports the map lost when the drop pushes a bubble onto the death row', () => {
+    const b = createBoard();
+    b.color[idx(DEATH_ROW - 1, 2)] = 1;
+    expect(dropCeiling(b, PALETTE, 3, rand)).toBe(true);
+    expect(anyAtOrBelow(b, DEATH_ROW)).toBe(true);
   });
 });
