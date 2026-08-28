@@ -8,6 +8,7 @@ import {
   applyPoint,
   matchWinner,
   OPPONENT_BONUS,
+  ROUND_LIMIT_MS,
   SCORE_PER_POINT,
   timeBonus,
   type MatchState,
@@ -47,7 +48,6 @@ const MIN_GAP = 32;
 
 // ── Tuning ────────────────────────────────────────────────────────────────────
 
-const ROUND_LIMIT_MS = 30_000;
 const PLAYER_SPEED = 190;
 const CPU_SPEED = 150;
 const LUNGE_SPEED = 260;
@@ -69,13 +69,13 @@ const BANNER_GOLDEN = 3;
 
 const GOLDEN_TIMER_TEXT = 'ORO';
 const BONUS_LABELS = ['TABLA 1/3', 'TABLA 2/3', 'TABLA 3/3'] as const;
-const BONUS_HIT_TEXT = ['+1000', '+2000', '+4000'] as const;
+const BONUS_HIT_TEXT = BOARD_SCORES.map((score) => `+${score}`);
 const BONUS_MISS_TEXT = 'FALLO';
 const BONUS_HELP_TEXT = 'PULSA A EN LA ZONA VERDE';
 
 // Pre-built timer strings: the HUD never allocates a string per frame
 const TIMER_TEXT: string[] = [];
-for (let i = 0; i <= 30; i++) TIMER_TEXT.push(String(i));
+for (let i = 0; i <= ROUND_LIMIT_MS / 1000; i++) TIMER_TEXT.push(String(i));
 
 // ── Poses (pre-baked 2-color pixel figures, Space Invaders sprite pattern) ────
 

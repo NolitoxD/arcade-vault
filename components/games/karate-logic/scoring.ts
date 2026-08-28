@@ -14,7 +14,7 @@ export type MatchState = {
 };
 
 const MATCH_POINTS = 2;
-const ROUND_LIMIT_MS = 30_000;
+export const ROUND_LIMIT_MS = 30_000;
 
 export function applyPoint(
   state: MatchState,

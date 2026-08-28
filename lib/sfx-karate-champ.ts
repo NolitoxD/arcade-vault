@@ -18,7 +18,6 @@ const GAME_OVER_FREQUENCIES = [392, 370, 349, 330, 311];
 export class KarateChampSFX {
   private ctx: AudioContext | null = null;
   private masterGain: GainNode | null = null;
-  private muted = false;
 
   init(): void {
     if (this.ctx) return;
@@ -296,7 +295,6 @@ export class KarateChampSFX {
   }
 
   setMuted(muted: boolean): void {
-    this.muted = muted;
     if (!this.ctx || !this.masterGain) return;
     this.masterGain.gain.setTargetAtTime(muted ? 0 : MASTER_GAIN, this.ctx.currentTime, 0.01);
   }

@@ -18,7 +18,6 @@ export class SpaceInvadersSFX {
   private ufoNode: OscillatorNode | null = null;
   private ufoLfo: OscillatorNode | null = null;
   private masterGain: GainNode | null = null;
-  private muted = false;
   private marchStep = 0;
 
   init(): void {
@@ -273,7 +272,6 @@ export class SpaceInvadersSFX {
   }
 
   setMuted(muted: boolean): void {
-    this.muted = muted;
     if (!this.ctx || !this.masterGain) return;
     this.masterGain.gain.setTargetAtTime(muted ? 0 : MASTER_GAIN, this.ctx.currentTime, 0.01);
   }

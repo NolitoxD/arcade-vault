@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Course material, not app code: starter games and templates shipped with
+    // the lessons. Linting them only produces noise that hides real findings.
+    "references/**",
   ]),
 ]);
 
