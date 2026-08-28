@@ -1,4 +1,4 @@
-import { CANVAS_W, girderYAt, type Ladder, type Layout } from './level';
+import { CANVAS_W, girderYAt, ladderAt, type Ladder, type Layout } from './level';
 
 export const RUN_SPEED = 130;
 export const GRAVITY = 1400;
@@ -29,16 +29,6 @@ export type Input = {
 };
 
 const LADDER_TOLERANCE = 8;
-
-// Mirrors level.ts's ladderAt, but searches the layout's own ladders instead
-// of the module-level LADDERS constant, so climbing stays correct once maps
-// 2-5 get their own geometry (Task 8).
-function findLadderFrom(layout: Layout, girderIndex: number, x: number, tolerance: number): Ladder | null {
-  for (const l of layout.ladders) {
-    if (l.from === girderIndex && Math.abs(l.x - x) <= tolerance) return l;
-  }
-  return null;
-}
 
 function moveOnGirder(layout: Layout, p: Player, input: Input, dt: number): void {
   const g = layout.girders[p.girder];
@@ -113,7 +103,7 @@ function enterLadder(p: Player, ladder: Ladder): void {
 }
 
 function tryClimbUp(layout: Layout, p: Player): boolean {
-  const ladder = findLadderFrom(layout, p.girder, p.x, LADDER_TOLERANCE);
+  const ladder = ladderAt(layout, p.x, p.girder, LADDER_TOLERANCE);
   if (!ladder) return false;
   enterLadder(p, ladder);
   return true;

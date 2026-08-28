@@ -896,6 +896,12 @@ a { color: inherit; text-decoration: none; }
   text-shadow: 0 0 12px rgba(255,0,110,0.7);
   letter-spacing: 0.12em;
 }
+.modal--victory {
+  border-color: var(--green);
+  box-shadow: 0 0 30px rgba(0,255,136,0.4), inset 0 0 16px rgba(0,255,136,0.18);
+}
+.modal--victory::before { border-color: rgba(0,255,136,0.4); }
+.modal--victory h2 { color: var(--green); text-shadow: 0 0 12px rgba(0,255,136,0.7); }
 .modal .final {
   font-family: var(--pixel);
   font-size: 36px;

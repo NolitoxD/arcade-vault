@@ -1,4 +1,5 @@
-import { girderYAt, TROPHY_REACH_ABOVE, TROPHY_REACH_BELOW, TROPHY_REACH_X, type Layout } from './level';
+import { brokenLadderSet, girderYAt, TROPHY_REACH_ABOVE, TROPHY_REACH_BELOW, TROPHY_REACH_X, type Layout } from './level';
+import { FALL_DEATH_PX } from './player';
 
 function isTrophyReachable(layout: Layout): boolean {
   const topGirder = layout.girders[layout.girders.length - 1];
@@ -10,19 +11,45 @@ function isTrophyReachable(layout: Layout): boolean {
   return false;
 }
 
-// Worst-case check, not a replay of brokenLadderSet: that function's per-floor guard
-// ("skip if this is the floor's last unbroken ladder") is only proven safe for the
-// canonical layout's hand-picked BROKEN_LADDER_ORDER. Task 8 draws 4 new maps with their
-// own ladder geometry, and nothing guarantees their breaking order (or a future rewrite
-// of brokenLadderSet) preserves that same guard. So instead of trusting any particular
-// selection order, we assume the adversarial case: if a floor's own ladder count is <=
-// the number of ladders the map can break, that floor can be left with zero exits.
-function floorsWithoutExit(layout: Layout, brokenLadders: number): string[] {
+// Exact check: runs the real brokenLadderSet for this layout/level and looks at which
+// ladders it actually broke, instead of a worst-case guess. brokenLadderSet already
+// refuses to break a floor's last unbroken ladder, so this mainly catches what that
+// guard cannot: a floor that starts with zero ladders in the first place (a layout
+// authoring bug Task 8's 4 new maps could introduce), and it stays accurate even if a
+// future rewrite of brokenLadderSet changes its selection order.
+function floorsWithoutExit(layout: Layout, level: number): string[] {
   const problems: string[] = [];
+  const broken = brokenLadderSet(layout, level);
   const topFloor = layout.girders.length - 1;
   for (let floor = 0; floor < topFloor; floor++) {
-    const upLadders = layout.ladders.filter((l) => l.from === floor && !l.broken).length;
-    if (upLadders <= brokenLadders) problems.push(`floor ${floor} has no exit`);
+    const upLadders = layout.ladders.filter((l, i) => l.from === floor && !broken.has(i)).length;
+    if (upLadders === 0) problems.push(`floor ${floor} has no exit`);
+  }
+  return problems;
+}
+
+// Walks the x-range shared by every pair of adjacent girders (not just its
+// endpoints — both girders are sloped, so the worst point can land anywhere
+// in between) and flags a pair whose vertical separation ever exceeds
+// FALL_DEATH_PX. Imported straight from player.ts rather than a hardcoded
+// 90 so this check can never drift out of sync with the actual physics: if
+// someone retunes FALL_DEATH_PX, this invariant re-evaluates against the
+// new value automatically.
+function checkGirderGaps(layout: Layout): string[] {
+  const problems: string[] = [];
+  const girders = layout.girders;
+  for (let i = 0; i < girders.length - 1; i++) {
+    const lower = girders[i];
+    const upper = girders[i + 1];
+    const x0 = Math.max(lower.x0, upper.x0);
+    const x1 = Math.min(lower.x1, upper.x1);
+    for (let x = x0; x <= x1; x++) {
+      const gap = girderYAt(lower, x) - girderYAt(upper, x);
+      if (gap > FALL_DEATH_PX) {
+        problems.push(`girders ${i}-${i + 1} too far apart`);
+        break;
+      }
+    }
   }
   return problems;
 }
@@ -58,14 +85,15 @@ function checkSpawn(layout: Layout): string | null {
   return null;
 }
 
-export function checkLayout(layout: Layout, brokenLadders: number): string[] {
+export function checkLayout(layout: Layout, level: number): string[] {
   const problems: string[] = [];
   if (!isTrophyReachable(layout)) problems.push('trophy unreachable');
-  problems.push(...floorsWithoutExit(layout, brokenLadders));
+  problems.push(...floorsWithoutExit(layout, level));
   const kongProblem = checkKong(layout);
   if (kongProblem) problems.push(kongProblem);
   problems.push(...checkHammers(layout));
   const spawnProblem = checkSpawn(layout);
   if (spawnProblem) problems.push(spawnProblem);
+  problems.push(...checkGirderGaps(layout));
   return problems;
 }

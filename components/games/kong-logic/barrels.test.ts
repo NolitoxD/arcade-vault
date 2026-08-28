@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { GIRDERS, LADDERS, layoutFor } from './level';
+import { layoutFor } from './level';
 import {
   MAX_BARRELS, spawnBarrel, advanceBarrel, atGirderEnd, dropToNextGirder,
   shouldTakeLadder, enterLadder, descendLadder, openEdgeDir,
@@ -38,7 +38,7 @@ describe('rolling', () => {
     const x0 = b.x;
     advanceBarrel(layout, b, 100, 120);
     expect(b.x).not.toBe(x0);
-    const g = GIRDERS[b.girder];
+    const g = layout.girders[b.girder];
     expect(b.y).toBeCloseTo(g.y0 + ((g.y1 - g.y0) * (b.x - g.x0)) / (g.x1 - g.x0), 0);
   });
   it('covers more x-distance downhill than uphill on the same girder', () => {
@@ -61,7 +61,7 @@ describe('rolling', () => {
     const p = pool();
     const b = spawnBarrel(p, layout)!;
     b.girder = 3;
-    b.x = GIRDERS[3].x1 + 10;
+    b.x = layout.girders[3].x1 + 10;
     b.dir = 1;
     expect(atGirderEnd(layout, b)).toBe(true);
     dropToNextGirder(layout, b);
@@ -87,7 +87,7 @@ describe('ladders', () => {
   it('descends a ladder and lands on the lower girder', () => {
     const p = pool();
     const b = spawnBarrel(p, layout)!;
-    const l = LADDERS.find((x) => x.from === 2)!;
+    const l = layout.ladders.find((x) => x.from === 2)!;
     b.girder = l.to;
     b.x = l.x;
     enterLadder(layout, b, l);
@@ -99,7 +99,7 @@ describe('ladders', () => {
   it('reorients toward the open edge after descending and eventually reaches it', () => {
     const p = pool();
     const b = spawnBarrel(p, layout)!;
-    const l = LADDERS.find((x) => x.from === 2)!;
+    const l = layout.ladders.find((x) => x.from === 2)!;
     b.girder = l.to;
     b.x = l.x;
     enterLadder(layout, b, l);

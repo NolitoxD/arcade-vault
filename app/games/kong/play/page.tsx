@@ -7,6 +7,7 @@ import { useUser } from '@/app/context/UserContext';
 import { useMusic } from '@/app/context/MusicContext';
 import MobileGamepad from '@/components/MobileGamepad';
 import InstructionsContent from '@/components/InstructionsContent';
+import GameOverModal from '@/components/GameOverModal';
 import { useGameSkin } from '@/hooks/use-game-skin';
 import { getGame, getKeyMap } from '@/lib/games-registry';
 
@@ -74,6 +75,7 @@ export default function KongPlay() {
   const levelEl = useRef<HTMLSpanElement>(null);
   const [paused, setPaused] = useState(false);
   const [over, setOver] = useState(false);
+  const [victory, setVictory] = useState(false);
   const [name, setName] = useState('INVITADO');
   const [saved, setSaved] = useState(false);
   const [gameKey, setGameKey] = useState(0);
@@ -119,6 +121,13 @@ export default function KongPlay() {
       scoreEl.current.textContent = finalScore.toLocaleString('es-ES');
     setOver(true);
   }, []);
+  const handleVictory = useCallback((finalScore: number) => {
+    scoreRef.current = finalScore;
+    if (scoreEl.current)
+      scoreEl.current.textContent = finalScore.toLocaleString('es-ES');
+    setVictory(true);
+    setOver(true);
+  }, []);
 
   useEffect(() => {
     if (over) {
@@ -140,6 +149,7 @@ export default function KongPlay() {
     if (levelEl.current) levelEl.current.textContent = '01';
     setPaused(false);
     setOver(false);
+    setVictory(false);
     setSaved(false);
     setName(username ?? 'INVITADO');
     setGameKey((k) => k + 1);
@@ -246,6 +256,7 @@ export default function KongPlay() {
             onLevelChange={handleLevelChange}
             onLivesChange={handleLivesChange}
             onGameOver={handleGameOver}
+            onVictory={handleVictory}
           />
           {paused && (
             <div
@@ -290,53 +301,24 @@ export default function KongPlay() {
       />
 
       {over && (
-        <div className="modal-bd">
-          <div className="modal">
-            <h2>FIN DEL JUEGO</h2>
-            <div className="final-label">PUNTUACIÓN FINAL</div>
-            <div className="final">
-              {scoreRef.current.toLocaleString('es-ES')}
-            </div>
-            {!saved ? (
-              <div className="input-row">
-                <input
-                  value={name}
-                  onChange={(e) =>
-                    setName(e.target.value.toUpperCase().slice(0, 10))
-                  }
-                  placeholder="TUS INICIALES"
-                />
-                <button
-                  className="btn yellow"
-                  onClick={async () => {
-                    setSaved(true);
-                    localStorage.setItem('av_player_name', name);
-                    await saveScore({
-                      gameId: 'kong',
-                      playerName: name,
-                      score: scoreRef.current,
-                    });
-                  }}
-                >
-                  GUARDAR PUNTUACIÓN
-                </button>
-              </div>
-            ) : (
-              <div className="toast-saved">▸ PUNTUACIÓN GUARDADA_</div>
-            )}
-            <div className="actions">
-              <button className="btn" onClick={restart}>
-                JUGAR DE NUEVO
-              </button>
-              <Link href="/games/kong#leaderboard" className="btn cyan">
-                VER LEADERBOARD
-              </Link>
-              <Link href="/games" className="btn magenta">
-                VOLVER AL VAULT
-              </Link>
-            </div>
-          </div>
-        </div>
+        <GameOverModal
+          variant={victory ? 'victory' : 'defeat'}
+          score={scoreRef.current}
+          name={name}
+          onNameChange={setName}
+          saved={saved}
+          onSave={async () => {
+            setSaved(true);
+            localStorage.setItem('av_player_name', name);
+            await saveScore({
+              gameId: 'kong',
+              playerName: name,
+              score: scoreRef.current,
+            });
+          }}
+          onRestart={restart}
+          leaderboardHref="/games/kong#leaderboard"
+        />
       )}
       {helpOpen && (
         <div

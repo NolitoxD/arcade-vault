@@ -18,18 +18,16 @@ import {
   CANVAS_H,
   CANVAS_W,
   configFor,
-  GIRDERS,
   girderYAt,
-  HAMMERS,
-  KONG,
-  LADDERS,
+  kongFootY,
+  kongLedgePlatform,
+  LAYOUTS,
   layoutFor,
-  PLAYER_SPAWN,
-  TROPHY,
   TROPHY_REACH_ABOVE,
   TROPHY_REACH_BELOW,
   TROPHY_REACH_X,
   type Girder,
+  type KongLedge,
   type Ladder,
   type Layout,
 } from './kong-logic/level';
@@ -53,9 +51,14 @@ interface KongGameProps {
   onLivesChange: (lives: number) => void;
   onLevelChange: (level: number) => void;
   onGameOver: (finalScore: number) => void;
+  onVictory: (finalScore: number) => void;
 }
 
 // ── Tuning (spec 26) ──────────────────────────────────────────────────────────
+
+// Last playable map: reaching the trophy here ends the game in victory
+// instead of advancing to the next layout.
+const LAST_LEVEL = LAYOUTS.length;
 
 const START_LIVES = 3;
 const GIRDER_T = 14;
@@ -87,13 +90,6 @@ const BANNER_RETRY = 1;
 // Pre-built timer strings: the HUD never allocates a string per frame
 const TIMER_TEXT: string[] = [];
 for (let i = 0; i <= 90; i++) TIMER_TEXT.push(String(i));
-
-// Derived static positions (pure math over level.ts constants)
-const HAMMER_POS = HAMMERS.map((h) => ({
-  x: h.x,
-  y: girderYAt(GIRDERS[h.girder], h.x),
-}));
-const KONG_FOOT_Y = girderYAt(GIRDERS[5], KONG.x);
 
 // ── Sprites (pre-baked pixel maps, Space Invaders / Karate Champ pattern) ─────
 // '.' = transparent; every other char maps to a skin color at bake time.
@@ -643,11 +639,12 @@ function drawGirderInto(c: CanvasRenderingContext2D, skin: Skin, g: Girder) {
 function drawLadderInto(
   c: CanvasRenderingContext2D,
   skin: Skin,
+  girders: Girder[],
   l: Ladder,
   isBroken: boolean,
 ) {
-  const yTop = girderYAt(GIRDERS[l.to], l.x);
-  const yBot = girderYAt(GIRDERS[l.from], l.x) + GIRDER_T;
+  const yTop = girderYAt(girders[l.to], l.x);
+  const yBot = girderYAt(girders[l.from], l.x) + GIRDER_T;
   const xL = l.x - 8;
   const xR = l.x + 5;
   // Baked once per level rebuild — safe to set/reset shadowBlur here.
@@ -683,8 +680,39 @@ function drawLadderInto(
   }
 }
 
+function drawKongLedgeInto(
+  c: CanvasRenderingContext2D,
+  skin: Skin,
+  ledge: KongLedge,
+) {
+  // Decorative platform above the top girder for a ledge-perched Kong
+  // (real placements land in Task 8). Flat, non-sloped, not part of
+  // `girders` — not playable. Baked once per level rebuild, same as the
+  // girders it sits above.
+  const glow = skin.name === 'neon';
+  if (glow) {
+    c.shadowBlur = 8;
+    c.shadowColor = skin.girder;
+  }
+  c.fillStyle = skin.girder;
+  c.fillRect(ledge.x0, ledge.y, ledge.x1 - ledge.x0, GIRDER_T);
+  if (glow) c.shadowBlur = 0;
+  c.strokeStyle = skin.girderTop;
+  c.lineWidth = 2;
+  c.beginPath();
+  c.moveTo(ledge.x0, ledge.y + 1);
+  c.lineTo(ledge.x1, ledge.y + 1);
+  c.stroke();
+  c.fillStyle = skin.rivet;
+  for (let x = ledge.x0 + 14; x <= ledge.x1 - 8; x += 34) {
+    c.fillRect(x, ledge.y + 4, 3, 3);
+    c.fillRect(x, ledge.y + GIRDER_T - 5, 3, 3);
+  }
+}
+
 function bakeLevelCanvas(
   skin: Skin,
+  layout: Layout,
   broken: Set<number>,
   trophy: HTMLCanvasElement,
 ): HTMLCanvasElement {
@@ -694,14 +722,16 @@ function bakeLevelCanvas(
   const c = el.getContext('2d')!;
   c.fillStyle = skin.bg;
   c.fillRect(0, 0, CANVAS_W, CANVAS_H);
-  for (let i = 0; i < LADDERS.length; i++) {
-    drawLadderInto(c, skin, LADDERS[i], broken.has(i));
+  for (let i = 0; i < layout.ladders.length; i++) {
+    drawLadderInto(c, skin, layout.girders, layout.ladders[i], broken.has(i));
   }
-  for (const g of GIRDERS) drawGirderInto(c, skin, g);
+  for (const g of layout.girders) drawGirderInto(c, skin, g);
+  const ledge = kongLedgePlatform(layout);
+  if (ledge) drawKongLedgeInto(c, skin, ledge);
   c.drawImage(
     trophy,
-    TROPHY.x - trophy.width / 2,
-    TROPHY.y - trophy.height / 2,
+    layout.trophy.x - trophy.width / 2,
+    layout.trophy.y - trophy.height / 2,
   );
   return el;
 }
@@ -733,11 +763,15 @@ type GameState = {
 };
 
 function makePlayer(): Player {
+  // Always level 1 — this only ever runs once, building the state a fresh
+  // game starts on (rebuildLevel/resetBoard take over from there).
+  const layout = layoutFor(1);
+  const spawn = layout.playerSpawn;
   return {
-    x: PLAYER_SPAWN.x,
-    y: girderYAt(GIRDERS[PLAYER_SPAWN.girder], PLAYER_SPAWN.x),
+    x: spawn.x,
+    y: girderYAt(layout.girders[spawn.girder], spawn.x),
     vy: 0,
-    girder: PLAYER_SPAWN.girder,
+    girder: spawn.girder,
     state: 'run',
     facing: -1,
     hammerMs: 0,
@@ -790,6 +824,7 @@ function KongGame({
   onLivesChange,
   onLevelChange,
   onGameOver,
+  onVictory,
 }: KongGameProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const pausedRef = useRef(paused);
@@ -842,8 +877,15 @@ function KongGame({
       jump: false,
     };
 
-    // Cached per level, not per frame
-    let brokenSet = brokenLadderSet(s.level);
+    // Cached per level, not per frame — resolved once here and reassigned
+    // in rebuildLevel() only, never inside the RAF loop.
+    let layout: Layout = layoutFor(s.level);
+    let brokenSet = brokenLadderSet(layout, s.level);
+    let hammerPos: { x: number; y: number }[] = layout.hammers.map((h) => ({
+      x: h.x,
+      y: girderYAt(layout.girders[h.girder], h.x),
+    }));
+    let kongFootYNow = kongFootY(layout);
 
     // Level backdrop cache (rebuilt on level rebuild or skin change only)
     let levelCanvas: HTMLCanvasElement | null = null;
@@ -868,9 +910,9 @@ function KongGame({
 
     function resetBoard() {
       const p = s.player;
-      p.x = PLAYER_SPAWN.x;
-      p.girder = PLAYER_SPAWN.girder;
-      p.y = girderYAt(GIRDERS[p.girder], p.x);
+      p.x = layout.playerSpawn.x;
+      p.girder = layout.playerSpawn.girder;
+      p.y = girderYAt(layout.girders[p.girder], p.x);
       p.vy = 0;
       p.state = 'run';
       p.facing = -1;
@@ -892,7 +934,13 @@ function KongGame({
     }
 
     function rebuildLevel() {
-      brokenSet = brokenLadderSet(s.level);
+      layout = layoutFor(s.level);
+      hammerPos = layout.hammers.map((h) => ({
+        x: h.x,
+        y: girderYAt(layout.girders[h.girder], h.x),
+      }));
+      kongFootYNow = kongFootY(layout);
+      brokenSet = brokenLadderSet(layout, s.level);
       s.hammerTaken[0] = false;
       s.hammerTaken[1] = false;
       levelCanvas = null;
@@ -907,6 +955,16 @@ function KongGame({
         endFired = true;
         onGameOver(s.score);
         sfxKong.play('game_over');
+      }
+    }
+
+    function doVictory() {
+      s.over = true;
+      s.phase = 'over';
+      report();
+      if (!endFired) {
+        endFired = true;
+        onVictory(s.score);
       }
     }
 
@@ -961,8 +1019,8 @@ function KongGame({
         }
         // One ladder decision per barrel-ladder encounter (latched)
         let found = -1;
-        for (let li = 0; li < LADDERS.length; li++) {
-          const l = LADDERS[li];
+        for (let li = 0; li < layout.ladders.length; li++) {
+          const l = layout.ladders[li];
           if (l.to === b.girder && Math.abs(l.x - b.x) <= LADDER_TAKE_TOL) {
             found = li;
             break;
@@ -973,7 +1031,7 @@ function KongGame({
         } else if (s.ladderLatch[i] !== found) {
           s.ladderLatch[i] = found;
           if (!brokenSet.has(found) && shouldTakeLadder(chance, Math.random)) {
-            enterLadder(layout, b, LADDERS[found]);
+            enterLadder(layout, b, layout.ladders[found]);
           }
         }
       }
@@ -983,7 +1041,6 @@ function KongGame({
       s.levelMs += dtMs;
       s.animMs = (s.animMs + dtMs) % 3_600_000;
       const cfg = configFor(s.level);
-      const layout = layoutFor(s.level);
 
       // Kong throw cadence
       if (s.kongThrowMs > 0) s.kongThrowMs = Math.max(0, s.kongThrowMs - dtMs);
@@ -1005,7 +1062,7 @@ function KongGame({
       jumpQueued = false;
       const prevPx = p.x;
       const prevState = p.state;
-      stepPlayer(layoutFor(s.level), p, input, dtMs, brokenSet);
+      stepPlayer(layout, p, input, dtMs, brokenSet);
       if (p.x < PLAYER_HALF) p.x = PLAYER_HALF;
       if (p.x > CANVAS_W - PLAYER_HALF) p.x = CANVAS_W - PLAYER_HALF;
 
@@ -1082,9 +1139,9 @@ function KongGame({
 
       // Hammer pickup (walking touch; canvas owns state + timer per player.ts)
       if (p.state === 'run') {
-        for (let i = 0; i < HAMMER_POS.length; i++) {
+        for (let i = 0; i < hammerPos.length; i++) {
           if (s.hammerTaken[i]) continue;
-          const h = HAMMER_POS[i];
+          const h = hammerPos[i];
           if (
             Math.abs(p.x - h.x) < HAMMER_PICKUP_X &&
             Math.abs(p.y - h.y) < HAMMER_PICKUP_Y
@@ -1098,9 +1155,16 @@ function KongGame({
       }
 
       // Trophy
-      const dyT = p.y - TROPHY.y;
-      if (Math.abs(p.x - TROPHY.x) < TROPHY_REACH_X && dyT > TROPHY_REACH_ABOVE && dyT < TROPHY_REACH_BELOW) {
-        startClear();
+      const dyT = p.y - layout.trophy.y;
+      if (Math.abs(p.x - layout.trophy.x) < TROPHY_REACH_X && dyT > TROPHY_REACH_ABOVE && dyT < TROPHY_REACH_BELOW) {
+        if (s.level === LAST_LEVEL) {
+          s.score +=
+            SCORE_LEVEL + timeBonus(Math.max(0, LEVEL_TIME_MS - s.levelMs));
+          sfxKong.play('level_clear');
+          doVictory();
+        } else {
+          startClear();
+        }
         return;
       }
 
@@ -1241,15 +1305,15 @@ function KongGame({
       const sprites = getSprites(skinNow);
 
       if (levelCanvas === null || bakedSkinName !== skinNow.name) {
-        levelCanvas = bakeLevelCanvas(skinNow, brokenSet, sprites.trophy);
+        levelCanvas = bakeLevelCanvas(skinNow, layout, brokenSet, sprites.trophy);
         bakedSkinName = skinNow.name;
       }
       ctx.drawImage(levelCanvas, 0, 0);
 
       // Hammers still on the level
-      for (let i = 0; i < HAMMER_POS.length; i++) {
+      for (let i = 0; i < hammerPos.length; i++) {
         if (s.hammerTaken[i]) continue;
-        const h = HAMMER_POS[i];
+        const h = hammerPos[i];
         const hPad = (sprites.hammer.width - HAMMER_SPR_W) / 2;
         ctx.drawImage(
           sprites.hammer,
@@ -1264,8 +1328,8 @@ function KongGame({
       const kongPad = (kongSpr.width - KONG_SPR_W) / 2;
       ctx.drawImage(
         kongSpr,
-        KONG.x - kongSpr.width / 2,
-        KONG_FOOT_Y - kongSpr.height + kongPad + bob,
+        layout.kong.x - kongSpr.width / 2,
+        kongFootYNow - kongSpr.height + kongPad + bob,
       );
 
       // Barrels (rotation frame from position — no per-frame state)
