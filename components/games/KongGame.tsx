@@ -25,6 +25,9 @@ import {
   LADDERS,
   PLAYER_SPAWN,
   TROPHY,
+  TROPHY_REACH_ABOVE,
+  TROPHY_REACH_BELOW,
+  TROPHY_REACH_X,
   type Girder,
   type Ladder,
 } from './kong-logic/level';
@@ -73,7 +76,6 @@ const BARREL_H = 12;
 const HAMMER_REACH = 24;
 const HAMMER_PICKUP_X = 14;
 const HAMMER_PICKUP_Y = 22;
-const TROPHY_REACH_X = 22;
 
 // Fixed banner table — indexed, never rebuilt per frame
 const BANNERS = ['¡TROFEO!', '¡OTRA VEZ!'] as const;
@@ -1094,7 +1096,7 @@ function KongGame({
 
       // Trophy
       const dyT = p.y - TROPHY.y;
-      if (Math.abs(p.x - TROPHY.x) < TROPHY_REACH_X && dyT > -34 && dyT < 60) {
+      if (Math.abs(p.x - TROPHY.x) < TROPHY_REACH_X && dyT > TROPHY_REACH_ABOVE && dyT < TROPHY_REACH_BELOW) {
         startClear();
         return;
       }

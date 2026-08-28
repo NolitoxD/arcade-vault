@@ -101,3 +101,17 @@ Ahora: el juego TERMINA. Hay una pantalla final.
 ### Bug A.2 sigue abierto
 - Responsive de las play-pages en emulacion DevTools (afecta tambien a Pac-Man, es de
   plataforma y viene de antes de Kong). Empezar con `superpowers:systematic-debugging`.
+
+## Logistica de assets de Bubble (acordado 28-ago)
+- **Caratula**: se crea con la skill `design` (lienzo Claude Design), y Claude le pasa
+  a Paco el **PNG descargable** por chat. Paco lo coloca el mismo en `public/covers/`.
+  Recordatorio: en esta maquina NO hay rsvg/magick/inkscape -> el PNG se saca con
+  Chrome headless (`--headless --screenshot`).
+- **Musica**: Paco YA tiene el MP3 de Bubble. Lo deja el en `public/`, renombrado a la
+  convencion `<id>-theme.mp3`. Claude debe **avisar cuando vaya a tenerlo listo**
+  para que Paco coloque el fichero.
+
+## Alcance del viernes 28-ago (fijado por Paco)
+- HOY: Kong v1.5 **y** Bubble entero. El lunes 31-ago: Street Fighter II (punto 5).
+- Nota: son DOS puntos de roadmap en un dia, frente a la norma de uno
+  (ver memoria `feedback_arcade_vault_ritmo_un_punto_dia.md`). Decision consciente de Paco.

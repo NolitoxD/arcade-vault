@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   CANVAS_W, CANVAS_H, GIRDERS, LADDERS, girderYAt, ladderAt,
-  LEVEL_CONFIG, configFor, brokenLadderSet, HAMMERS, TROPHY, PLAYER_SPAWN,
+  LEVEL_CONFIG, configFor, brokenLadderSet, HAMMERS, TROPHY, KONG, PLAYER_SPAWN,
+  LAYOUTS, layoutFor, TROPHY_REACH_X, TROPHY_REACH_ABOVE, TROPHY_REACH_BELOW,
 } from './level';
 
 describe('screen geometry', () => {
@@ -74,5 +75,32 @@ describe('level config', () => {
       const broken = onFloor.filter((e) => brokenLadderSet(10).has(e.i));
       expect(broken.length).toBeLessThan(onFloor.length);
     }
+  });
+});
+
+describe('layouts', () => {
+  it('exposes five layouts and clamps out-of-range levels', () => {
+    expect(LAYOUTS).toHaveLength(5);
+    expect(layoutFor(1)).toBe(LAYOUTS[0]);
+    expect(layoutFor(5)).toBe(LAYOUTS[4]);
+    expect(layoutFor(0)).toBe(LAYOUTS[0]); // clamp inferior
+    expect(layoutFor(99)).toBe(LAYOUTS[4]); // clamp superior
+  });
+
+  it('keeps layout 1 identical to the shipped geometry', () => {
+    expect(layoutFor(1).girders).toEqual(GIRDERS);
+    expect(layoutFor(1).ladders).toEqual(LADDERS);
+    expect(layoutFor(1).trophy).toEqual(TROPHY);
+    expect(layoutFor(1).kong).toEqual({ x: KONG.x, girder: 4 });
+    expect(layoutFor(1).hammers).toEqual(HAMMERS);
+    expect(layoutFor(1).playerSpawn).toEqual(PLAYER_SPAWN);
+  });
+});
+
+describe('trophy reach', () => {
+  it('keeps the exact collision box moved from KongGame.tsx', () => {
+    expect(TROPHY_REACH_X).toBe(22);
+    expect(TROPHY_REACH_ABOVE).toBe(-34);
+    expect(TROPHY_REACH_BELOW).toBe(60);
   });
 });

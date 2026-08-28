@@ -95,3 +95,36 @@ export const HAMMERS: { x: number; girder: number }[] = [
   { x: 120, girder: 4 },
 ];
 export const PLAYER_SPAWN = { x: 520, girder: 0 };
+
+// Trophy pickup collision box (moved here from KongGame.tsx: kong-logic modules
+// used by future pure-logic code cannot depend on a React client component).
+export const TROPHY_REACH_X = 22;
+export const TROPHY_REACH_ABOVE = -34;
+export const TROPHY_REACH_BELOW = 60;
+
+export type Layout = {
+  girders: Girder[];
+  ladders: Ladder[];
+  kong: { x: number; girder: number; ledge?: 0 | 1 };
+  trophy: { x: number; y: number };
+  hammers: { x: number; girder: number }[];
+  playerSpawn: { x: number; girder: number };
+};
+
+const LAYOUT_1: Layout = {
+  girders: GIRDERS,
+  ladders: LADDERS,
+  kong: { x: 90, girder: 4 },
+  trophy: TROPHY,
+  hammers: HAMMERS,
+  playerSpawn: PLAYER_SPAWN,
+};
+
+// Layouts 2-5 are placeholder copies of layout 1 until Task 8 fills them in
+// with real per-map geometry.
+export const LAYOUTS: readonly Layout[] = [LAYOUT_1, LAYOUT_1, LAYOUT_1, LAYOUT_1, LAYOUT_1];
+
+export function layoutFor(level: number): Layout {
+  const idx = Math.min(Math.max(level, 1), LAYOUTS.length) - 1;
+  return LAYOUTS[idx];
+}
