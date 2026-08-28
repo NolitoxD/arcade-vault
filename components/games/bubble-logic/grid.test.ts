@@ -28,16 +28,55 @@ describe('hex grid neighbourhood', () => {
     }
   });
 
-  it('has six neighbours inside, three or four on the border', () => {
+  it('gives every interior cell exactly six neighbours', () => {
     for (const parity of [0, 1] as const) {
-      for (let i = 0; i < CELLS; i++) {
-        const r = rowOf(i), c = colOf(i);
-        const n = neighbors(r, c, parity, nb);
-        const inside = r > 0 && r < ROWS - 1 && c > 0 && c < COLS - 1;
-        if (inside) expect({ i, parity, n }).toEqual({ i, parity, n: 6 });
-        else expect(n).toBeGreaterThanOrEqual(3);
-        expect(n).toBeLessThanOrEqual(6);
+      for (let r = 1; r < ROWS - 1; r++) {
+        for (let c = 1; c < COLS - 1; c++) {
+          expect({ parity, r, c, n: neighbors(r, c, parity, nb) }).toEqual({ parity, r, c, n: 6 });
+        }
       }
+    }
+  });
+
+  it('gives the top and bottom edges (excluding corners) exactly four neighbours', () => {
+    for (const parity of [0, 1] as const) {
+      for (let c = 1; c < COLS - 1; c++) {
+        expect({ parity, c, n: neighbors(0, c, parity, nb) }).toEqual({ parity, c, n: 4 });
+        expect({ parity, c, n: neighbors(ROWS - 1, c, parity, nb) }).toEqual({ parity, c, n: 4 });
+      }
+    }
+  });
+
+  // A shifted row's cells sit half a diameter to the right of a flush row's, so on the left
+  // edge a shifted row still touches both diagonal neighbours in the row above/below (5 total)
+  // while a flush row loses its two left diagonals (3 total) — and it's the mirror image on
+  // the right edge. Measured directly from `neighbors`, keyed off rowShifted so it holds for
+  // both parities without hardcoding which physical rows happen to be shifted.
+  it('gives the left and right edges (excluding corners) five or three neighbours depending on row shift', () => {
+    for (const parity of [0, 1] as const) {
+      for (let r = 1; r < ROWS - 1; r++) {
+        const shifted = rowShifted(r, parity);
+        expect({ parity, r, n: neighbors(r, 0, parity, nb) }).toEqual({ parity, r, n: shifted ? 5 : 3 });
+        expect({ parity, r, n: neighbors(r, COLS - 1, parity, nb) }).toEqual({ parity, r, n: shifted ? 3 : 5 });
+      }
+    }
+  });
+
+  // The parity flag shifts every odd-relative-to-parity row the same direction (never
+  // alternating independently per side), so exactly two of the four absolute corners sit on
+  // the side that shift leans away from and lose a neighbour: 2 instead of 3. Measured
+  // directly from `neighbors`, not derived from the edge/interior counts above.
+  it('gives each of the four absolute corners exactly the neighbour count its parity/side produces', () => {
+    const expected: Record<0 | 1, { tl: number; tr: number; bl: number; br: number }> = {
+      0: { tl: 2, tr: 3, bl: 2, br: 3 },
+      1: { tl: 3, tr: 2, bl: 3, br: 2 },
+    };
+    for (const parity of [0, 1] as const) {
+      const { tl, tr, bl, br } = expected[parity];
+      expect(neighbors(0, 0, parity, nb)).toBe(tl);
+      expect(neighbors(0, COLS - 1, parity, nb)).toBe(tr);
+      expect(neighbors(ROWS - 1, 0, parity, nb)).toBe(bl);
+      expect(neighbors(ROWS - 1, COLS - 1, parity, nb)).toBe(br);
     }
   });
 
