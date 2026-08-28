@@ -2,69 +2,69 @@ import { describe, it, expect } from 'vitest';
 import { appendFileSync } from 'node:fs';
 const LOG = '/tmp/bubble-review.log';
 const LOGLINE = (s: string) => appendFileSync(LOG, s + String.fromCharCode(10));
-import { createBoard, dropCeiling, cellX, cellY, neighbors, pixelToCell, idx, rowOf, colOf, COLS, ROWS, CELLS, PLAY_W, R, D, anyAtOrBelow, countBubbles } from './grid';
-import { MAPS, parseMap, configFor, LAST_MAP } from './maps';
-import { checkMap } from './map-invariants';
-import { simulateShot, ANGLE_MIN, ANGLE_MAX, createShot, fire, stepShot, FLYING } from './shot';
-import { createRun } from './run';
+import { createBoard, idx, rowOf, colOf, COLS, CELLS, countBubbles, cellX, cellY } from './grid';
+import { MAPS, parseMap, MAGIC_ANCHOR, MAGIC_PURGE, MAGIC_RAY, MAGIC_BOMB } from './maps';
+import { createRun, createResolveOut, resolveShot, startMap, OUTCOME_LIFE_LOST, OUTCOME_MAP_CLEAR, OUTCOME_VICTORY } from './run';
+import { createBag } from './bag';
 
-describe('REVIEW', () => {
-  it('geometry: flush/shifted x extents vs bounce walls', () => {
-    const info: string[] = [];
-    for (const p of [0, 1] as const) {
-      const b = createBoard(); b.parity = p;
-      let min = 1e9, max = -1e9;
-      for (let r = 0; r < ROWS; r++) { min = Math.min(min, cellX(r,0,p)); max = Math.max(max, cellX(r,COLS-1,p)); }
-      info.push(`parity${p} minX=${min} maxX=${max}`);
+const rnd = () => 0.5;
+
+describe('REVIEW2', () => {
+  it('anchor magic: freeze + reset on life lost + reset on startMap', () => {
+    const b = createBoard();
+    const cfg = { map: 1, rows: ['RRR.......'], colors: [1], bubbles: 3, dropEvery: 1, magic: MAGIC_ANCHOR as const };
+    // board: row0 cols 0..2 red, one is magic; plus a big blob so board never empties
+    b.color[idx(0,0)] = 1; b.color[idx(0,1)] = 1; b.magic[idx(0,1)] = MAGIC_ANCHOR;
+    for (let c = 4; c < 10; c++) { b.color[idx(0,c)] = 2; }
+    const run = createRun(); const bag = createBag(); const out = createResolveOut();
+    b.color[idx(0,2)] = 1; // the "just anchored" cell
+    resolveShot(b, cfg as never, run, bag, idx(0,2), rnd, out);
+    LOGLINE(`anchor: popped=${out.poppedN} magicHit=${out.magicHit} anchorShots=${run.anchorShots} shotsSinceDrop=${run.shotsSinceDrop} score=${run.score} outcome=${out.outcome}`);
+    // next shots should burn anchor charges, not the ceiling counter
+    for (let k = 0; k < 5; k++) {
+      b.color[idx(1,0)] = 3;
+      resolveShot(b, cfg as never, run, bag, idx(1,0), rnd, out);
+      LOGLINE(`  shot ${k}: anchorShots=${run.anchorShots} shotsSinceDrop=${run.shotsSinceDrop} dropped=${out.ceilingDropped} outcome=${out.outcome} lives=${run.lives}`);
     }
-    LOGLINE(info.join(' | ') + ' walls=[' + R + ',' + (PLAY_W-R) + ']');
+    startMap(b, MAPS[0], run, bag, rnd);
+    LOGLINE(`  after startMap: anchorShots=${run.anchorShots} shotsSinceDrop=${run.shotsSinceDrop} parity=${b.parity} score=${run.score} current=${bag.current} next=${bag.next}`);
+  });
+
+  it('scoring: map clear does not double count / victory', () => {
+    const b = createBoard();
+    const cfg8 = { ...MAPS[7] };
+    const run = createRun(); run.map = 8; const bag = createBag(); const out = createResolveOut();
+    b.color[idx(0,0)] = 1; b.color[idx(0,1)] = 1; b.color[idx(0,2)] = 1;
+    resolveShot(b, cfg8 as never, run, bag, idx(0,2), rnd, out);
+    LOGLINE(`victory: gained=${out.gained} score=${run.score} outcome=${out.outcome} (expect 30 pop +1000 map +5000 victory = 6030)`);
+  });
+
+  it('purge orphans bag.current? (current is NOT remapped)', () => {
+    const b = createBoard();
+    const cfg = { map: 5, rows: [], colors: [1,2], bubbles: 0, dropEvery: 99, magic: MAGIC_PURGE as const };
+    // group of 3 colour 2 with the magic; plus colour-2 bubbles elsewhere; plus colour 1 anchor blob
+    for (let c = 0; c < 10; c++) b.color[idx(0,c)] = 1;
+    b.color[idx(1,0)] = 2; b.color[idx(1,1)] = 2; b.color[idx(1,2)] = 2; b.magic[idx(1,1)] = MAGIC_PURGE;
+    b.color[idx(1,5)] = 2; b.color[idx(1,6)] = 2;
+    const run = createRun(); const bag = createBag(); const out = createResolveOut();
+    bag.palette.set([1,2]); bag.count = 2; bag.current = 2; bag.next = 2;
+    resolveShot(b, cfg as never, run, bag, idx(1,2), rnd, out);
+    LOGLINE(`purge: cleared=${out.magicClearedN} palette=[${Array.from(bag.palette.slice(0,bag.count))}] current=${bag.current} next=${bag.next}`);
+  });
+
+  it('anchorCell can return -1? probe a full board', () => {
+    // handled in shot review below
     expect(true).toBe(true);
   });
 
-  it('every map: which cells are reachable by a direct shot on the pristine board', () => {
-    for (const cfg of MAPS) {
-      const b = createBoard(); parseMap(cfg, b);
-      const landed = new Set<number>();
-      for (let a = ANGLE_MIN; a <= ANGLE_MAX + 1e-9; a += (0.25*Math.PI)/180) {
-        const c = simulateShot(b, a);
-        if (c >= 0) landed.add(c);
-      }
-      // holes = empty cells adjacent to an occupied one
-      const nb = new Int16Array(6);
-      const holes: number[] = [];
-      for (let i = 0; i < CELLS; i++) {
-        if (b.color[i] !== 0) continue;
-        const n = neighbors(rowOf(i), colOf(i), b.parity, nb);
-        let adj = false;
-        for (let k = 0; k < n; k++) if (b.color[nb[k]] !== 0) adj = true;
-        if (adj) holes.push(i);
-      }
-      const unreachable = holes.filter((h) => !landed.has(h));
-      LOGLINE(`map ${cfg.map}: landed=${landed.size} holes=${holes.length} unreachableHoles=${unreachable.length} ${unreachable.map(h=>`(${rowOf(h)},${colOf(h)})`).join(' ')}`);
-    }
-    expect(true).toBe(true);
-  });
-
-  it('dropCeiling: count + parity + geometry consistency', () => {
-    const cfg = MAPS[0];
-    const b = createBoard(); parseMap(cfg, b);
-    const pal = new Uint8Array([1,2,3]);
-    let before = countBubbles(b);
-    for (let k = 0; k < 6; k++) {
-      const p0 = b.parity;
-      const death = dropCeiling(b, pal, 3, () => 0.5);
-      LOGLINE(`drop ${k}: parity ${p0}->${b.parity} count ${before}->${countBubbles(b)} death=${death}`);
-      before = countBubbles(b);
-    }
-    expect(true).toBe(true);
-  });
-
-  it('checkMap on all 8 maps', () => {
-    for (const cfg of MAPS) {
-      const b = createBoard(); parseMap(cfg, b);
-      const p = checkMap(cfg, b);
-      LOGLINE(`map ${cfg.map}: ${p.length === 0 ? 'OK' : p.join(', ')}`);
-    }
-    expect(true).toBe(true);
+  it('life lost leaves shotsSinceDrop dirty if caller does not restart', () => {
+    const b = createBoard();
+    const cfg = { map: 1, rows: [], colors: [1], bubbles: 0, dropEvery: 2, magic: MAGIC_BOMB as const };
+    for (let c = 0; c < 10; c++) b.color[idx(0,c)] = 1;
+    b.color[idx(14,0)] = 2; // already at death row
+    const run = createRun(); const bag = createBag(); const out = createResolveOut();
+    b.color[idx(1,0)] = 3;
+    resolveShot(b, cfg as never, run, bag, idx(1,0), rnd, out);
+    LOGLINE(`lifeLost: outcome=${out.outcome} lives=${run.lives} shotsSinceDrop=${run.shotsSinceDrop} anchorShots=${run.anchorShots}`);
   });
 });
