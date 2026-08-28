@@ -20,9 +20,10 @@
 **In:**
 
 - **Migración Supabase**: fila `bubble` en `games` (`cat: 'PUZZLE'`,
-  `color: 'magenta'`, cover provisional `cover-bubble`) + clase CSS
-  `.cover-bubble` en `app/globals.css`. Segunda migración `UPDATE` a
-  `/covers/bubble.png` cuando Paco coloque el PNG (patrón `pacman` /
+  `color: 'magenta'`, cover **`/covers/bubble.png` directo**). El PNG YA ESTA
+  en el repo (Paco lo coloco el 28-ago), asi que NO hay clase CSS provisional
+  ni segunda migracion UPDATE — regla del proyecto: si el PNG existe al hacer
+  el INSERT, va directo. (Esto sustituye al patron `pacman` /
   `space-invaders` / `karate-champ`).
 - **Entrada nº12 en `lib/games-registry.ts`** + `GameId` union a 12 entradas:
   skins `CLASSIC_SKINS` (classic base / retro / neon), keyMap
@@ -60,7 +61,7 @@
 - `references/implemented-games.md` — añadir `bubble` **y** las dos filas que hoy
   faltan (`karate-champ`, `kong`).
 - Cadena: implementación → `@skin-designer` (retro/neon) → `@mobile-porter` →
-  cover PNG de Paco + migración UPDATE → `verify-plan` → QA de Paco.
+  `verify-plan` → QA de Paco. (Cover y musica ya estan en el repo.)
 
 **Fuera de alcance:**
 
@@ -324,13 +325,13 @@ VALUES (
   'Agrupa tres burbujas del mismo color y derriba el racimo entero.',
   'Un racimo de burbujas cuelga del techo del Vault y baja disparo a disparo. Apunta con el cañón, rebota en las paredes para colar la burbuja en el hueco imposible y junta tres del mismo color para reventarlas: todo lo que quede desconectado del techo se desploma. Ocho mapas, cuatro burbujas mágicas y una sola forma de salir — vaciando el último.',
   'PUZZLE',
-  'cover-bubble',
+  '/covers/bubble.png',
   'magenta'
 );
 ```
 
 Aplicada por MCP y versionada con la versión EXACTA del servidor. Migración
-posterior `UPDATE games SET cover = '/covers/bubble.png' WHERE id = 'bubble';`
+No hace falta ningun UPDATE posterior: el INSERT ya lleva el PNG definitivo.
 cuando Paco coloque el PNG. `magenta` es el único valor de la union
 `cyan|magenta|yellow|green|blue|red|gold` sin usar (verificado: de los 11 juegos,
 2 cyan, 3 green, 2 red, 2 yellow, 1 blue, 1 gold).
@@ -431,7 +432,7 @@ const MAP_1: readonly string[] = [
 
 ## Acceptance criteria
 
-- [ ] Card BUBBLE visible en `/games` (PUZZLE, magenta, cover CSS → PNG) y el
+- [ ] Card BUBBLE visible en `/games` (PUZZLE, magenta, cover PNG) y el
       contador de créditos pasa a X/**12**.
 - [ ] `/games/bubble` (ficha) responde 200 desde la ruta dinámica `[id]` sin
       crear `app/games/bubble/page.tsx`; `/games/bubble/play` exige sesión y
@@ -504,9 +505,10 @@ const MAP_1: readonly string[] = [
   (Paco, 2026-08-28)
 - **Sí: la música ya existe** — `public/bubble-theme.mp3` está en el repo
   (verificado); solo hay que cablear `setTrackOverride`. (Paco, 2026-08-28)
-- **Sí: la carátula será un PNG diseñado con la skill `design`**, que Paco coloca
-  él mismo en `public/covers/`. Hasta entonces, cover CSS provisional
-  `.cover-bubble` + migración `UPDATE` posterior. (Paco, 2026-08-28)
+- **Sí: cover PNG definitiva ya en el repo** — `public/covers/bubble.png` (800x800,
+  pixel art, misma linea que `kong.png`), colocada por Paco el 28-ago. El INSERT
+  lleva el PNG directo: **sin clase CSS provisional ni migración UPDATE posterior**,
+  segun la regla del proyecto. (Paco, 2026-08-28)
 - **Sí: id `bubble`, categoría `PUZZLE`, color `magenta`** — `'PUZZLE'` ya existe
   en la union de `lib/supabase/types.ts` (a diferencia de Kong, que tuvo que
   añadir `'PLATFORMER'`) y `magenta` es el único color libre. (Paco, 2026-08-28)
