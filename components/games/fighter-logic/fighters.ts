@@ -36,7 +36,7 @@ export const ROSTER: readonly FighterDef[] = [
   {
     id: 'torre', name: 'TORRE', strength: 9, speed: 2, reach: 4,
     magic: 'muro', boss: false, build: 1.1,
-    palette: { body: '#3a3a3a', trim: '#8a8a8a', accent: '#c0c0c0' },
+    palette: { body: '#4a5058', trim: '#aab6c2', accent: '#e6ecf2' },
   },
   {
     id: 'glitch', name: 'GLITCH', strength: 3, speed: 9, reach: 3,
