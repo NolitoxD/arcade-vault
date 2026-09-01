@@ -14,3 +14,4 @@
 | `karate-champ` | KARATE CHAMP | FIGHTING | gold | Ejecuta técnicas de karate precisas para puntuar antes que tu rival. |
 | `kong`      | KONG      | PLATFORMER | red | Esquiva los barriles y escala las vigas hasta el trofeo. |
 | `bubble`    | BUBBLE    | PUZZLE    | magenta | Agrupa tres burbujas del mismo color y derriba el racimo entero. |
+| `vault-fighter` | VAULT FIGHTER | FIGHTING | silver | Elige tu luchador y derrota a los 8 guardianes del Vault, asalto a asalto. |

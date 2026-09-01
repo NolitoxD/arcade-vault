@@ -6,6 +6,7 @@ import styles from './MobileGamepad.module.css';
 
 const CYAN = '#00f5ff';
 const MAGENTA = '#ff006e';
+const GOLD = '#ffcf3a';
 
 export interface KeyMap {
   up?: string;
@@ -14,6 +15,7 @@ export interface KeyMap {
   right?: string;
   a?: string;
   b?: string;
+  c?: string;
 }
 
 export interface SkinOptionProp {
@@ -33,6 +35,7 @@ interface MobileGamepadProps {
   skinOptions: SkinOptionProp[];
   onHelp?: () => void;
   backHref: string;
+  cLit?: boolean;
 }
 
 function keyToCode(key: string): string {
@@ -139,22 +142,54 @@ function DPadButton({
   );
 }
 
+// Layout of the action cluster. Two buttons keep the exact numbers the other
+// twelve games have shipped with, so nothing about them changes. Three buttons
+// (only VAULT FIGHTER's magic so far) use a smaller button and a tighter gap:
+// 3*44 + 2*8 = 148px of cluster beside the rigid 140px D-pad and 46px of
+// padding/border = 334px, inside the 343px a 375px viewport leaves after
+// .av-player's 16px side padding. The old 3*58 + 2*22 = 218px cluster did not
+// fit, and since the D-pad grid cannot shrink the circles absorbed the
+// difference and rendered as flattened ellipses. 44px is still the minimum
+// comfortable tap target.
+const ACTION_SIZE_2 = 58;
+const ACTION_SIZE_3 = 44;
+const ACTION_GAP_2 = 22;
+const ACTION_GAP_3 = 8;
+
 function ActionButton({
   label,
   keyValue,
   variant,
+  lit = true,
+  size = ACTION_SIZE_2,
 }: {
-  label: 'A' | 'B';
+  label: 'A' | 'B' | 'C';
   keyValue?: string;
-  variant: 'a' | 'b';
+  variant: 'a' | 'b' | 'c';
+  lit?: boolean;
+  size?: number;
 }) {
   const [active, setActive] = useState(false);
 
   const isA = variant === 'a';
-  const color = isA ? MAGENTA : CYAN;
-  const abMid = isA ? 'rgba(255,0,110,0.7)' : 'rgba(0,200,230,0.7)';
-  const abDeep = isA ? 'rgba(110,0,40,0.95)' : 'rgba(0,50,70,0.95)';
-  const abGlow = isA ? 'rgba(255,0,110,0.4)' : 'rgba(0,245,255,0.4)';
+  const isC = variant === 'c';
+  const color = isC ? GOLD : isA ? MAGENTA : CYAN;
+  const abMid = isC
+    ? 'rgba(255,207,58,0.7)'
+    : isA
+      ? 'rgba(255,0,110,0.7)'
+      : 'rgba(0,200,230,0.7)';
+  const abDeep = isC
+    ? 'rgba(120,90,0,0.95)'
+    : isA
+      ? 'rgba(110,0,40,0.95)'
+      : 'rgba(0,50,70,0.95)';
+  const abGlow = isC
+    ? 'rgba(255,207,58,0.4)'
+    : isA
+      ? 'rgba(255,0,110,0.4)'
+      : 'rgba(0,245,255,0.4)';
+  const dimmed = !lit;
 
   const handleStart = (e: React.PointerEvent) => {
     e.preventDefault();
@@ -175,26 +210,28 @@ function ActionButton({
   return (
     <button
       style={{
-        width: 58,
-        height: 58,
+        width: size,
+        height: size,
         borderRadius: '50%',
-        border: `2px solid ${color}`,
+        border: `2px solid ${dimmed ? 'rgba(255,207,58,0.35)' : color}`,
         background: `radial-gradient(circle at 32% 26%, rgba(255,255,255,0.25), transparent 50%), radial-gradient(circle at 50% 55%, ${abMid}, ${abDeep} 75%)`,
         padding: 0,
         cursor: keyValue ? 'pointer' : 'default',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        boxShadow: active
-          ? `0 1px 0 #050507, 0 0 36px ${abGlow}, inset 0 0 18px rgba(0,0,0,0.5)`
-          : `0 6px 0 #050507, 0 0 22px ${abGlow}, inset 0 1px 0 rgba(255,255,255,0.18), inset 0 -4px 8px rgba(0,0,0,0.4)`,
+        boxShadow: dimmed
+          ? '0 6px 0 #050507, inset 0 1px 0 rgba(255,255,255,0.08), inset 0 -4px 8px rgba(0,0,0,0.4)'
+          : active
+            ? `0 1px 0 #050507, 0 0 36px ${abGlow}, inset 0 0 18px rgba(0,0,0,0.5)`
+            : `0 6px 0 #050507, 0 0 22px ${abGlow}, inset 0 1px 0 rgba(255,255,255,0.18), inset 0 -4px 8px rgba(0,0,0,0.4)`,
         transform: active ? 'translateY(4px) scale(0.97)' : 'none',
         transition: 'transform 80ms, box-shadow 140ms',
         WebkitTapHighlightColor: 'transparent',
         touchAction: 'manipulation',
         userSelect: 'none',
         WebkitUserSelect: 'none',
-        opacity: keyValue ? 1 : 0.2,
+        opacity: dimmed ? 0.45 : keyValue ? 1 : 0.2,
       }}
       onPointerDown={handleStart}
       onPointerUp={handleEnd}
@@ -205,7 +242,7 @@ function ActionButton({
       <span
         style={{
           fontFamily: "'Press Start 2P', monospace",
-          fontSize: 16,
+          fontSize: size >= ACTION_SIZE_2 ? 16 : 13,
           color: '#fff',
           letterSpacing: '0.02em',
           textShadow: `0 0 8px ${color}, 0 0 18px ${color}, 0 1px 0 rgba(0,0,0,0.6)`,
@@ -226,8 +263,12 @@ export default function MobileGamepad({
   skinOptions,
   onHelp,
   backHref,
+  cLit = false,
 }: MobileGamepadProps) {
   const btnSize = 44;
+  const hasMagic = Boolean(keyMap.c);
+  const actionSize = hasMagic ? ACTION_SIZE_3 : ACTION_SIZE_2;
+  const actionGap = hasMagic ? ACTION_GAP_3 : ACTION_GAP_2;
 
   return (
     /* .gp neon container */
@@ -347,10 +388,19 @@ export default function MobileGamepad({
             <div />
           </div>
 
-          {/* Step 4 — Botones A/B */}
-          <div style={{ display: 'flex', gap: 22, alignItems: 'center' }}>
-            <ActionButton label="B" keyValue={keyMap.b} variant="b" />
-            <ActionButton label="A" keyValue={keyMap.a} variant="a" />
+          {/* Step 4 — Botones A/B (+ C opcional, la magia) */}
+          <div style={{ display: 'flex', gap: actionGap, alignItems: 'center' }}>
+            {hasMagic && (
+              <ActionButton
+                label="C"
+                keyValue={keyMap.c}
+                variant="c"
+                lit={cLit}
+                size={actionSize}
+              />
+            )}
+            <ActionButton label="B" keyValue={keyMap.b} variant="b" size={actionSize} />
+            <ActionButton label="A" keyValue={keyMap.a} variant="a" size={actionSize} />
           </div>
         </div>
 

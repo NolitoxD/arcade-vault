@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { GAMES, GAME_IDS, getGame, getKeyMap, getSkinOptions, isGameId } from './games-registry';
 
-const KEYMAP_SLOTS = ['up', 'down', 'left', 'right', 'a', 'b'];
+const KEYMAP_SLOTS = ['up', 'down', 'left', 'right', 'a', 'b', 'c'];
 
 describe('games registry', () => {
-  it('has exactly the 12 implemented games', () => {
+  it('has exactly the 13 implemented games', () => {
     expect(GAME_IDS.sort()).toEqual([
       'arkanoid', 'asteroids', 'bubble', 'frogger', 'karate-champ', 'kong', 'pacman',
-      'pong', 'road-fighter', 'snake', 'space-invaders', 'tetris',
+      'pong', 'road-fighter', 'snake', 'space-invaders', 'tetris', 'vault-fighter',
     ]);
     expect(isGameId('pacman')).toBe(true);
     expect(isGameId('galaga')).toBe(false);
@@ -22,14 +22,18 @@ describe('games registry', () => {
       expect(g.controls.keyboard.length).toBeGreaterThan(0);
     }
   });
-  it('keymaps only use valid slots and touch labels exist for a/b', () => {
+  it('keymaps only use valid slots and touch labels exist for a/b/c', () => {
     for (const id of GAME_IDS) {
-      const { keyMap, a, b } = GAMES[id].controls.touch;
+      const { keyMap, a, b, c } = GAMES[id].controls.touch;
       for (const slot of Object.keys(keyMap)) expect(KEYMAP_SLOTS).toContain(slot);
       if (keyMap.a) expect(a).toBeTruthy();
       if (keyMap.b) expect(b).toBeTruthy();
+      if (keyMap.c) expect(c).toBeTruthy();
       expect(getKeyMap(id)).toBe(keyMap);
     }
+  });
+  it('only the games that need a third button declare one', () => {
+    expect(GAME_IDS.filter((id) => GAMES[id].controls.touch.keyMap.c).sort()).toEqual(['vault-fighter']);
   });
   it('fixes the dead gamepad buttons', () => {
     expect(GAMES.arkanoid.controls.touch.keyMap.a).toBeUndefined();
@@ -52,10 +56,14 @@ describe('games registry', () => {
     expect(getSkinOptions('bubble').map((s) => `${s.key}:${s.tier}`)).toEqual([
       'classic:base', 'retro:retro', 'neon:neon',
     ]);
+    expect(getSkinOptions('vault-fighter').map((s) => `${s.key}:${s.tier}`)).toEqual([
+      'classic:base', 'retro:retro', 'neon:neon',
+    ]);
   });
   it('flags the realtime games', () => {
     expect(GAME_IDS.filter((id) => GAMES[id].realtime).sort()).toEqual([
-      'bubble', 'karate-champ', 'kong', 'pacman', 'pong', 'road-fighter', 'space-invaders',
+      'bubble', 'karate-champ', 'kong', 'pacman', 'pong', 'road-fighter',
+      'space-invaders', 'vault-fighter',
     ]);
   });
   it('karate-champ has the full keyMap and touch labels for both buttons', () => {
@@ -93,5 +101,15 @@ describe('games registry', () => {
     });
     expect(a).toBe('DISPARAR');
     expect(b).toBe('CAMBIAR');
+  });
+  it('vault-fighter has the fight keyMap with the magic button', () => {
+    const { keyMap, a, b, c } = GAMES['vault-fighter'].controls.touch;
+    expect(keyMap).toEqual({
+      up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight',
+      a: 'j', b: 'k', c: 'l',
+    });
+    expect(a).toBe('PATADA');
+    expect(b).toBe('PUÑO');
+    expect(c).toBe('MAGIA');
   });
 });

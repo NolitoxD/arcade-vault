@@ -13,7 +13,8 @@ export type GameId =
   | 'space-invaders'
   | 'karate-champ'
   | 'kong'
-  | 'bubble';
+  | 'bubble'
+  | 'vault-fighter';
 
 export type SkinDef = { key: string; label: string; tier: SkinTier };
 
@@ -23,7 +24,7 @@ export type KeyboardControl = {
   special?: boolean;
 };
 
-export type TouchControls = { keyMap: KeyMap; a?: string; b?: string };
+export type TouchControls = { keyMap: KeyMap; a?: string; b?: string; c?: string };
 
 export type GameMeta = {
   id: GameId;
@@ -366,6 +367,45 @@ export const GAMES: Record<GameId, GameMeta> = {
         'Lo que puntúa de verdad es desprender: revienta el enganche y arrastra el racimo entero',
         'Cada mapa esconde una burbuja mágica: hay que reventarla dentro de un grupo de 3, no vale tocarla',
         'Con ↓ cambias la burbuja actual por la siguiente antes de disparar',
+      ],
+    },
+    realtime: true,
+  },
+  'vault-fighter': {
+    id: 'vault-fighter',
+    skins: CLASSIC_SKINS,
+    controls: {
+      keyboard: [
+        { keys: ['→', 'D'], action: 'Avanzar hacia el rival' },
+        { keys: ['←', 'A'], action: 'Retroceder y bloquear (mantener)' },
+        { keys: ['↓', 'S'], action: 'Agacharse (mantener)' },
+        { keys: ['J', 'Espacio'], action: 'Patada', special: true },
+        { keys: ['K'], action: 'Puño', special: true },
+        { keys: ['L'], action: 'Magia (con la barra llena)', special: true },
+      ],
+      touch: {
+        keyMap: {
+          up: 'ArrowUp',
+          down: 'ArrowDown',
+          left: 'ArrowLeft',
+          right: 'ArrowRight',
+          a: 'j',
+          b: 'k',
+          c: 'l',
+        },
+        a: 'PATADA',
+        b: 'PUÑO',
+        c: 'MAGIA',
+      },
+    },
+    instructions: {
+      goal: 'Elige tu luchador y derrota a los 8 rivales del Vault, uno tras otro, ganando cada combate al mejor de 5 asaltos.',
+      tips: [
+        'Mantén ← para retroceder y bloquear a la vez — no puedes atacar mientras bloqueas',
+        '→ te acerca al rival, ← te aleja bloqueando: elige tu distancia',
+        'Agáchate con ↓ para esquivar los golpes altos',
+        'El tercer botón (C, tecla L) lanza tu magia en cuanto la barra se llena',
+        'Cada combate se decide al mejor de 5 asaltos: gana el primero en llegar a 3',
       ],
     },
     realtime: true,

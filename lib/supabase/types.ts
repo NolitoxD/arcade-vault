@@ -5,7 +5,7 @@ export interface GameRow {
   long: string;
   cat: 'ARCADE' | 'PUZZLE' | 'SHOOTER' | 'SPORTS' | 'RACING' | 'MAZE' | 'FIGHTING' | 'PLATFORMER';
   cover: string;
-  color: 'cyan' | 'magenta' | 'yellow' | 'green' | 'blue' | 'red' | 'gold';
+  color: 'cyan' | 'magenta' | 'yellow' | 'green' | 'blue' | 'red' | 'gold' | 'silver';
   created_at: string;
 }
 
