@@ -445,8 +445,12 @@ const MAP_1: readonly string[] = [
 - [ ] Anclar siempre escribe en una celda que estaba libre y que es vecina de una
       ocupada o está en la fila 0 (invariante testeado sobre las 150 celdas).
 - [ ] Test de **simetría de vecindad**: para las 150 celdas y ambas paridades,
-      `j ∈ neighbors(i)` ⟺ `i ∈ neighbors(j)`; cardinalidad 6 en interior y 3-4
-      en bordes/esquinas.
+      `j ∈ neighbors(i)` ⟺ `i ∈ neighbors(j)`; cardinalidad **6 en interior,
+      4 en bordes superior/inferior, 5 o 3 en bordes laterales segun paridad, y
+      2 o 3 en las esquinas** segun paridad y lado. CORREGIDO 28-ago: este criterio
+      decia antes "3-4 en bordes/esquinas", lo cual es FALSO — con el desplazamiento
+      de las filas impares en un solo sentido, las esquinas del lado contrario tienen
+      solo 2 vecinos. Verificado midiendo; costo una ronda de implementacion.
 - [ ] `dropCeiling` conserva el recuento de burbujas (menos las de la fila
       perdida) y **alterna `parity`** (test).
 - [ ] Grupo de ≥3 revienta; grupo de 2 no. Tras cada pop, todo lo desconectado de
