@@ -10,7 +10,6 @@ import InstructionsContent from '@/components/InstructionsContent';
 import GameOverModal from '@/components/GameOverModal';
 import { useGameSkin } from '@/hooks/use-game-skin';
 import { getGame, getKeyMap } from '@/lib/games-registry';
-import { BOUTS } from '@/components/games/fighter-logic/story';
 
 const VaultFighterGame = dynamic(
   () => import('@/components/games/VaultFighterGame'),
@@ -34,9 +33,14 @@ function getSavedMuted() {
   return localStorage.getItem('av_sfx_muted') === 'true';
 }
 
-function boutMarkup(bout: number) {
-  return `COMBATE ${String(bout).padStart(2, '0')}/${BOUTS}`;
-}
+// The bout label arrives fully built from the game, which is the only side
+// that knows which mode is running. The page just writes it, and no longer
+// imports BOUTS from story.ts — a story-mode leak into the page.
+//
+// Until the first bout reports its own label the marker is a neutral dash:
+// the mode and fighter screens now come first, and printing 'COMBATE 01/08'
+// there would announce a story run to someone about to pick a tournament.
+const IDLE_BOUT_LABEL = '—';
 
 function roundsMarkup(playerRounds: number, cpuRounds: number) {
   return `ASALTOS ${playerRounds}-${cpuRounds}`;
@@ -116,8 +120,8 @@ export default function VaultFighterPlay() {
     if (scoreEl.current)
       scoreEl.current.textContent = s.toLocaleString('es-ES');
   }, []);
-  const handleBoutChange = useCallback((bout: number) => {
-    if (boutEl.current) boutEl.current.textContent = boutMarkup(bout);
+  const handleBoutChange = useCallback((label: string) => {
+    if (boutEl.current) boutEl.current.textContent = label;
   }, []);
   const handleRoundsChange = useCallback(
     (playerRounds: number, cpuRounds: number) => {
@@ -158,7 +162,7 @@ export default function VaultFighterPlay() {
   function restart() {
     scoreRef.current = 0;
     if (scoreEl.current) scoreEl.current.textContent = '0';
-    if (boutEl.current) boutEl.current.textContent = boutMarkup(1);
+    if (boutEl.current) boutEl.current.textContent = IDLE_BOUT_LABEL;
     if (roundsEl.current) roundsEl.current.textContent = roundsMarkup(0, 0);
     setMagicReady(false);
     setPaused(false);
@@ -189,7 +193,7 @@ export default function VaultFighterPlay() {
             <div className="hud-stat lives">
               <div className="l">Combate</div>
               <div className="v">
-                <span ref={boutEl}>{boutMarkup(1)}</span>
+                <span ref={boutEl}>{IDLE_BOUT_LABEL}</span>
               </div>
             </div>
             <div className="hud-stat level">

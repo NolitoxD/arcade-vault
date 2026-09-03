@@ -24,7 +24,6 @@ import {
   type Side,
 } from './fighter-logic/combat';
 import {
-  bossFighter,
   fighterById,
   ROSTER,
   selectableFighters,
@@ -40,22 +39,31 @@ import {
   type MagicRuntime,
   type MagicSide,
 } from './fighter-logic/magic';
-import { STAGES, type StageDef } from './fighter-logic/stages';
 import {
-  acceptContinue,
-  awardDamage,
-  awardRound,
-  BOUTS,
-  createStory,
-  currentDifficulty,
-  currentOpponent,
-  currentStage,
-  declineContinue,
-  loseBout,
-  tickContinue,
-  winBout,
-  type StoryState,
-} from './fighter-logic/story';
+  createStoryMode,
+  createTournamentMode,
+  modeAcceptContinue,
+  modeAwardDamage,
+  modeAwardRound,
+  modeBoutLabel,
+  modeBracketIds,
+  modeChampionSubtitle,
+  modeContinueMsLeft,
+  modeDeclineContinue,
+  modeDifficulty,
+  modeIsFinale,
+  modeLoseBout,
+  modeOpponent,
+  modePlayerId,
+  modeScore,
+  modeStage,
+  modeStatus,
+  modeStillIn,
+  modeTickContinue,
+  modeWinBout,
+  type GameMode,
+} from './fighter-logic/mode';
+import { STAGES, type StageDef } from './fighter-logic/stages';
 import {
   createHitOutcome,
   resolveHit,
@@ -74,7 +82,7 @@ interface VaultFighterGameProps {
   muted?: boolean;
   skinKey?: string;
   onScoreChange: (score: number) => void;
-  onBoutChange: (bout: number) => void;
+  onBoutChange: (label: string) => void;
   onRoundsChange: (playerRounds: number, cpuRounds: number) => void;
   onMagicReadyChange: (ready: boolean) => void;
   onGameOver: (finalScore: number) => void;
@@ -106,13 +114,37 @@ const ROUND_END_MS = 1200;
 const BOUT_END_MS = 1700;
 
 const SELECTABLE_FIGHTERS: readonly FighterDef[] = selectableFighters(ROSTER);
-const BOSS = bossFighter(ROSTER);
 const SELECT_COLS = 4;
 const SELECT_ROWS = 2;
 
-// Pre-built HUD strings so draw() never allocates one per frame.
-const BOUT_TEXT: string[] = [];
-for (let i = 1; i <= BOUTS; i++) BOUT_TEXT.push(`COMBATE ${String(i).padStart(2, '0')}/${BOUTS}`);
+// Mode select, the screen in front of ELIGE TU LUCHADOR. Two options, each
+// with the one line that says what it actually is — the player has no way of
+// knowing otherwise. Both arrays are built once at module load and draw()
+// only indexes them, so the screen allocates nothing per frame.
+const MODE_STORY = 0;
+const MODE_TOURNAMENT = 1;
+const MODE_NAMES = ['HISTORIA', 'TORNEO'];
+const MODE_BLURBS = ['8 COMBATES, CON CONTINUE', 'CUADRO DE 4, SIN RED, CINTURÓN NEGRO AL FINAL'];
+const MODE_COUNT = MODE_NAMES.length;
+const SELECT_HINT = 'CRUCETA PARA MOVER · A PARA CONFIRMAR';
+
+// Bracket screen. Every string is a module constant: the screen redraws 60
+// times a second and the only text that changes between bouts is built once
+// per bout in refreshBracketView(), never here.
+const BRACKET_TITLE = 'CUADRO DEL TORNEO';
+const BRACKET_YOU_TAG = 'TÚ';
+const BRACKET_RIVAL_TAG = 'RIVAL';
+const BRACKET_OUT_TAG = 'FUERA';
+const BRACKET_VS = 'VS';
+const BRACKET_LAST_STANDING_TEXT = 'ÚLTIMO EN PIE';
+const BRACKET_FINALE_TEXT = 'EL CINTURÓN NEGRO EN JUEGO';
+const BRACKET_CONTINUE_LABEL = 'CONTINUAR';
+const BRACKET_CONTINUE_HINT = 'PULSA A CUANDO QUIERAS';
+const BRACKET_DIM_ALPHA = 0.34;
+
+// Pre-built HUD strings so draw() never allocates one per frame. The bout
+// label is no longer among them: it now comes pre-built from mode.ts, which
+// is the only place that knows whether a run is a story or a tournament.
 const ROUND_INTRO_TEXT: string[] = ['ASALTO 1'];
 for (let i = 2; i <= 12; i++) ROUND_INTRO_TEXT.push(`ASALTO ${i}`);
 const CONTINUE_TEXT: string[] = [];
@@ -717,12 +749,22 @@ function bakeStage(stage: StageDef, skin: Skin): HTMLCanvasElement {
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
-type Phase = 'select' | 'intro' | 'fight' | 'round-end' | 'bout-end' | 'continue' | 'over';
+type Phase =
+  | 'mode-select'
+  | 'select'
+  | 'bracket'
+  | 'intro'
+  | 'fight'
+  | 'round-end'
+  | 'bout-end'
+  | 'continue'
+  | 'over';
 
 type GameState = {
   phase: Phase;
   phaseMs: number;
   gameMs: number;
+  modeIndex: number;
   selectIndex: number;
   introText: string;
   roundBanner: Side | 'draw' | null;
@@ -737,9 +779,13 @@ type GameState = {
 
 function initialState(): GameState {
   return {
-    phase: 'select',
+    // The run starts on the mode screen, not on the fighter grid. Restarting
+    // remounts the component, so "volver a jugar" lands here too and never
+    // locks the player into the mode just played.
+    phase: 'mode-select',
     phaseMs: 0,
     gameMs: 0,
+    modeIndex: MODE_STORY,
     selectIndex: 0,
     introText: '',
     roundBanner: null,
@@ -807,10 +853,13 @@ function VaultFighterGame({
       cpuBusy: false,
       cpuMagicReady: false,
     };
-    let story: StoryState = createStory(ROSTER, SELECTABLE_FIGHTERS[0].id);
+    let mode: GameMode = createStoryMode(ROSTER, SELECTABLE_FIGHTERS[0].id);
     let profile: AiProfile = profileFor(SELECTABLE_FIGHTERS[0], 1);
     let stageCanvas: HTMLCanvasElement | null = null;
-    let bakedBoutIndex = -1;
+    // Keyed on the bout label instead of story.bout: the label changes on
+    // exactly the same transitions (one per bout in story, one per round in
+    // tournament) and reading it costs no allocation in either mode.
+    let bakedBoutLabel = '';
     let bakedSkinName = '';
 
     // Resolved lazily and cached by reference, refreshed only when the
@@ -839,12 +888,15 @@ function VaultFighterGame({
     // Reported-value caches so callbacks fire only on change, and HUD strings
     // are only rebuilt when the underlying number changes (TIMER_TEXT pattern).
     let reportedScore = -1;
-    let reportedBout = -1;
     let reportedPlayerRounds = -1;
     let reportedCpuRounds = -1;
     let reportedMagicReady = false;
     let scoreText = 'PUNTOS 0';
-    let boutText = BOUT_TEXT[0];
+    // Empty until the first report(), which always fires because no real
+    // label is ever '' — same forced first callback the old reportedBout
+    // sentinel of -1 gave, and it is never drawn before then (the select
+    // phase returns from draw() before the HUD).
+    let boutText = '';
     // Regenerated only when the whole second changes, never per frame.
     let timerSeconds = ROUND_SECONDS;
     let timerText = TIMER_TEXT[ROUND_SECONDS];
@@ -858,15 +910,16 @@ function VaultFighterGame({
     let downDown = false;
 
     function report() {
-      if (story.score !== reportedScore) {
-        reportedScore = story.score;
-        scoreText = `PUNTOS ${story.score}`;
-        onScoreChange(story.score);
+      const scoreNow = modeScore(mode);
+      if (scoreNow !== reportedScore) {
+        reportedScore = scoreNow;
+        scoreText = `PUNTOS ${scoreNow}`;
+        onScoreChange(scoreNow);
       }
-      if (story.bout !== reportedBout) {
-        reportedBout = story.bout;
-        boutText = BOUT_TEXT[Math.min(story.bout, BOUT_TEXT.length - 1)];
-        onBoutChange(story.bout + 1);
+      const labelNow = modeBoutLabel(mode);
+      if (labelNow !== boutText) {
+        boutText = labelNow;
+        onBoutChange(labelNow);
       }
       if (bout.playerRounds !== reportedPlayerRounds || bout.cpuRounds !== reportedCpuRounds) {
         reportedPlayerRounds = bout.playerRounds;
@@ -911,10 +964,56 @@ function VaultFighterGame({
       }
     }
 
+    // ── Bracket screen view ─────────────────────────────────────────────
+    // Everything drawBracket() reads, resolved once per bout (four times in a
+    // whole tournament) instead of per frame. The arrays are filled in place
+    // and never reallocated after the first bout; the two strings are the only
+    // allocation, and they happen next to the `¡X VS Y!` intro string that
+    // startBoutFor already built.
+    const bracketDefs: FighterDef[] = [];
+    const bracketAlive: boolean[] = [];
+    let bracketRows = 0;
+    let bracketPlayerDef: FighterDef = SELECTABLE_FIGHTERS[0];
+    let bracketRivalDef: FighterDef = SELECTABLE_FIGHTERS[0];
+    let bracketRoundText = '';
+    let bracketSurvivorsText = '';
+    let bracketFinale = false;
+
+    // Returns whether the current mode has a bracket to show at all. The story
+    // has none, so it answers false and the run goes straight to the intro —
+    // that is the whole "does this mode show a bracket" question, and it is
+    // answered by mode.ts, not by asking which mode this is.
+    function refreshBracketView(): boolean {
+      const ids = modeBracketIds(mode);
+      if (ids === null) return false;
+
+      bracketRows = ids.length;
+      let alive = 0;
+      for (let i = 0; i < ids.length; i++) {
+        const id = ids[i];
+        bracketDefs[i] = fighterById(ROSTER, id) ?? SELECTABLE_FIGHTERS[0];
+        const stillIn = modeStillIn(mode, id);
+        bracketAlive[i] = stillIn;
+        if (stillIn) alive++;
+      }
+      // startBout() has already been called, so the bout carries the two defs
+      // the screen has to name — including EL ARQUITECTO, who is the rival of
+      // the super final without ever being seeded in the bracket.
+      bracketPlayerDef = bout.player.def;
+      bracketRivalDef = bout.cpu.def;
+      bracketRoundText = modeBoutLabel(mode);
+      bracketFinale = modeIsFinale(mode);
+      // 'EN PIE 1 DE 8' is technically true at the black-belt bout — you are
+      // the one seed still standing — but read as a fraction it sounds like
+      // a loss, not the win it actually is. The finale gets its own line.
+      bracketSurvivorsText = bracketFinale ? BRACKET_LAST_STANDING_TEXT : `EN PIE ${alive} DE ${ids.length}`;
+      return true;
+    }
+
     function bakeCurrentStage() {
-      const stage = currentStage(STAGES, story);
+      const stage = modeStage(STAGES, mode);
       stageCanvas = bakeStage(stage, skinRef.current);
-      bakedBoutIndex = story.bout;
+      bakedBoutLabel = modeBoutLabel(mode);
       bakedSkinName = skinRef.current.name;
     }
 
@@ -927,15 +1026,18 @@ function VaultFighterGame({
       sfxVaultFighter.play('whoosh');
     }
 
-    // Begins (or restarts, on CONTINUE) the bout at story's current index.
+    // Begins (or restarts, on CONTINUE) the bout the current mode points at.
     function startBoutFor() {
-      const playerDef = fighterById(ROSTER, story.playerId) ?? SELECTABLE_FIGHTERS[0];
-      const opponentDef = story.bout === BOUTS - 1 ? BOSS : currentOpponent(ROSTER, story);
+      const playerDef = fighterById(ROSTER, modePlayerId(mode)) ?? SELECTABLE_FIGHTERS[0];
+      // No boss special case in either mode: createStory puts EL ARQUITECTO
+      // last in `order` and createTournament makes him the super final's
+      // rival, so the layer returns him when it is his turn by itself.
+      const opponentDef = modeOpponent(ROSTER, mode);
       startBout(bout, playerDef, opponentDef);
       updateTimerText();
       resetMagicRuntime(playerRt);
       resetMagicRuntime(cpuRt);
-      profile = profileFor(opponentDef, currentDifficulty(story));
+      profile = profileFor(opponentDef, modeDifficulty(mode));
       rivalName = opponentDef.name;
       s.aiMs = 0;
       s.cpuMove = 'idle';
@@ -946,19 +1048,48 @@ function VaultFighterGame({
       bakeCurrentStage();
       report();
       reportMagicReady();
+      // A mode with a bracket stops here and shows it for as long as the
+      // player wants; A resumes into the intro that is already armed above,
+      // with its full INTRO_MS intact because the bracket phase never ticks
+      // phaseMs. A mode without one goes straight to the intro, unchanged.
+      if (refreshBracketView()) s.phase = 'bracket';
     }
 
     function confirmSelection() {
       const chosen = SELECTABLE_FIGHTERS[s.selectIndex];
-      story = createStory(ROSTER, chosen.id);
+      // The one place a mode is built, once per run. Math.random goes in by
+      // reference — never wrapped in a closure, never called from the loop or
+      // from draw(); tournament.ts consumes it here and again on each win.
+      mode = s.modeIndex === MODE_TOURNAMENT
+        ? createTournamentMode(ROSTER, chosen.id, STAGES, Math.random)
+        : createStoryMode(ROSTER, chosen.id);
       endFired = false;
       s.over = false;
       s.victory = false;
       reportedScore = -1;
-      reportedBout = -1;
+      boutText = '';
       reportedPlayerRounds = -1;
       reportedCpuRounds = -1;
       startBoutFor();
+    }
+
+    function moveModeSelect(step: number) {
+      s.modeIndex = (s.modeIndex + step + MODE_COUNT) % MODE_COUNT;
+      sfxVaultFighter.play('select');
+    }
+
+    function confirmModeSelection() {
+      s.phase = 'select';
+      sfxVaultFighter.play('select');
+    }
+
+    // Single entry point for the d-pad on the two menu screens, so the four
+    // key handlers stay one line each. The list of modes is vertical and the
+    // fighter grid is 4x2; on the mode screen either axis walks the list.
+    function pressDirection(dx: number, dy: number) {
+      if (pausedRef.current) return;
+      if (s.phase === 'mode-select') moveModeSelect(dx + dy);
+      else if (s.phase === 'select') moveSelect(dx, dy);
     }
 
     function moveSelect(dx: number, dy: number) {
@@ -977,7 +1108,7 @@ function VaultFighterGame({
       forceMagicReadyOff();
       if (!endFired) {
         endFired = true;
-        onGameOver(story.score);
+        onGameOver(modeScore(mode));
         sfxVaultFighter.play('game_over');
       }
     }
@@ -990,7 +1121,7 @@ function VaultFighterGame({
       forceMagicReadyOff();
       if (!endFired) {
         endFired = true;
-        onVictory(story.score);
+        onVictory(modeScore(mode));
         sfxVaultFighter.play('champion');
       }
     }
@@ -1000,7 +1131,7 @@ function VaultFighterGame({
     // shield exists; it only scores what actually got through.
     function dealDamage(from: Side, to: Side, rawDamage: number) {
       const dealt = applyDamage(bout, to, rawDamage);
-      if (from === 'player' && dealt > 0) awardDamage(story, dealt);
+      if (from === 'player' && dealt > 0) modeAwardDamage(mode, dealt);
     }
 
     function updateTechnique(atk: CombatantState, def: CombatantState, atkSide: Side, dtMs: number) {
@@ -1163,7 +1294,7 @@ function VaultFighterGame({
       const wasKo = bout.player.health === 0 || bout.cpu.health === 0;
       const perfect = winner === 'player' && bout.player.health === MAX_HEALTH;
       commitRound(bout, winner);
-      if (winner === 'player') awardRound(story, perfect);
+      if (winner === 'player') modeAwardRound(mode, perfect);
       s.roundBanner = winner;
       s.wasKo = wasKo;
       s.phase = 'round-end';
@@ -1184,7 +1315,7 @@ function VaultFighterGame({
       const cpuHealthBefore = bout.cpu.health;
       stepMagic(playerSide, cpuSide, bout, dtMs, s.gameMs);
       const magicDamageToCpu = cpuHealthBefore - bout.cpu.health;
-      if (magicDamageToCpu > 0) awardDamage(story, magicDamageToCpu);
+      if (magicDamageToCpu > 0) modeAwardDamage(mode, magicDamageToCpu);
 
       // stepMagic() can knock a fighter (e.g. ONDA) past the arena edge —
       // clamp here unconditionally, since the knockback lands before
@@ -1242,15 +1373,22 @@ function VaultFighterGame({
     function afterBoutEnd() {
       const winner = s.boutBannerWinner;
       if (winner === 'player') {
-        winBout(story);
-        if (story.status === 'champion') {
+        modeWinBout(ROSTER, mode, Math.random);
+        if (modeStatus(mode) === 'champion') {
           doVictory();
           return;
         }
         startBoutFor();
         return;
       }
-      loseBout(story);
+      modeLoseBout(mode);
+      // Whether a loss offers a CONTINUE is the mode's answer, not the
+      // component's: it goes to the countdown only when the mode actually
+      // produced 'continue', and straight out otherwise.
+      if (modeStatus(mode) !== 'continue') {
+        doGameOver();
+        return;
+      }
       s.phase = 'continue';
       sfxVaultFighter.play('continue');
       report();
@@ -1258,13 +1396,18 @@ function VaultFighterGame({
     }
 
     function updateContinue(dtMs: number) {
-      tickContinue(story, dtMs);
-      if (story.status === 'eliminated') doGameOver();
+      modeTickContinue(mode, dtMs);
+      if (modeStatus(mode) === 'eliminated') doGameOver();
     }
 
     function update(dtMs: number) {
       switch (s.phase) {
+        case 'mode-select':
         case 'select':
+        // The bracket waits for a button, like the two menus: no countdown,
+        // no auto-advance, so the player can read who fell for as long as
+        // they want.
+        case 'bracket':
           return;
         case 'intro':
           s.phaseMs -= dtMs;
@@ -1402,6 +1545,50 @@ function VaultFighterGame({
       }
     }
 
+    function drawModeSelect(skinNow: Skin) {
+      ctx.fillStyle = '#05050a';
+      ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+      ctx.font = 'bold 26px monospace';
+      ctx.textBaseline = 'middle';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = skinNow.hudAccent;
+      ctx.fillText('ELIGE MODO', CANVAS_W / 2, 90);
+
+      const cardW = 520;
+      const cardH = 110;
+      const gapY = 28;
+      const originX = (CANVAS_W - cardW) / 2;
+      const originY = 160;
+
+      for (let i = 0; i < MODE_COUNT; i++) {
+        const y = originY + i * (cardH + gapY);
+        const selected = i === s.modeIndex;
+
+        ctx.fillStyle = 'rgba(20,20,30,0.85)';
+        ctx.fillRect(originX, y, cardW, cardH);
+        ctx.strokeStyle = selected ? skinNow.hudAccent : '#444455';
+        ctx.lineWidth = selected ? 3 : 1;
+        ctx.strokeRect(originX, y, cardW, cardH);
+
+        ctx.font = 'bold 30px monospace';
+        ctx.fillStyle = selected ? skinNow.hudAccent : skinNow.hud;
+        if (selected && skinNow.glow) {
+          ctx.shadowBlur = 14;
+          ctx.shadowColor = skinNow.hudAccent;
+        }
+        ctx.fillText(MODE_NAMES[i], CANVAS_W / 2, y + 42);
+        ctx.shadowBlur = 0;
+
+        ctx.font = '13px monospace';
+        ctx.fillStyle = skinNow.hud;
+        ctx.fillText(MODE_BLURBS[i], CANVAS_W / 2, y + 78);
+      }
+
+      ctx.font = 'bold 13px monospace';
+      ctx.fillStyle = skinNow.hud;
+      ctx.fillText(SELECT_HINT, CANVAS_W / 2, CANVAS_H - 20);
+    }
+
     function drawSelect(skinNow: Skin) {
       ctx.fillStyle = '#05050a';
       ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
@@ -1466,7 +1653,196 @@ function VaultFighterGame({
 
       ctx.font = 'bold 13px monospace';
       ctx.fillStyle = skinNow.hud;
-      ctx.fillText('CRUCETA PARA MOVER · A PARA CONFIRMAR', CANVAS_W / 2, CANVAS_H - 20);
+      ctx.fillText(SELECT_HINT, CANVAS_W / 2, CANVAS_H - 20);
+    }
+
+    // One fighter chip: the same three-colour reading as the select cards and
+    // as the sprite itself — body block, trim stripe, accent head — so the
+    // eight in the bracket are recognisable at a glance without a sprite bake.
+    function drawFighterChip(def: FighterDef, x: number, y: number, w: number, h: number) {
+      ctx.fillStyle = def.palette.body;
+      ctx.fillRect(x, y, w, h);
+      ctx.fillStyle = def.palette.trim;
+      ctx.fillRect(x + w / 2 - w / 6, y, w / 3, h);
+      ctx.fillStyle = def.palette.accent;
+      ctx.fillRect(x + w / 2 - w / 4, y + h / 5, w / 2, h / 3);
+    }
+
+    // The player's card and the rival's card of the matchup panel.
+    function drawBracketCard(def: FighterDef, x: number, y: number, w: number, h: number, tag: string, accent: string, skinNow: Skin) {
+      ctx.fillStyle = 'rgba(20,20,30,0.85)';
+      ctx.fillRect(x, y, w, h);
+      ctx.strokeStyle = accent;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x, y, w, h);
+
+      drawFighterChip(def, x + 12, y + 14, 32, h - 28);
+
+      ctx.textAlign = 'left';
+      ctx.font = 'bold 11px monospace';
+      ctx.fillStyle = accent;
+      ctx.fillText(tag, x + 58, y + 22);
+      ctx.font = 'bold 20px monospace';
+      ctx.fillStyle = skinNow.hud;
+      ctx.fillText(def.name, x + 58, y + 48);
+      ctx.textAlign = 'center';
+    }
+
+    // The bracket, shown before every bout of a mode that has one. It is the
+    // only place the draw of the three bouts the player never fights becomes
+    // visible: without it the seeded eight, the knockouts and the whole
+    // progression would be work nobody ever sees.
+    function drawBracket(skinNow: Skin) {
+      ctx.fillStyle = '#05050a';
+      ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+      ctx.textBaseline = 'middle';
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 18px monospace';
+      ctx.fillStyle = skinNow.hud;
+      ctx.fillText(BRACKET_TITLE, CANVAS_W / 2, 28);
+
+      // ── The eight, in their seeded order, as four consecutive pairs ──
+      const colX = 44;
+      const colW = 300;
+      const rowH = 26;
+      const rowStep = 32;
+      const pairGap = 14;
+      const originY = 60;
+
+      for (let i = 0; i < bracketRows; i++) {
+        const def = bracketDefs[i];
+        const alive = bracketAlive[i];
+        const y = originY + i * rowStep + Math.floor(i / 2) * pairGap;
+        const midY = y + rowH / 2;
+        const isPlayer = def.id === bracketPlayerDef.id;
+        const isRival = def.id === bracketRivalDef.id;
+
+        // Everyone knocked out is dimmed as a whole row, chip included, and
+        // then struck through at FULL alpha (see below): two readings of the
+        // same fact that do not share a channel, because the dimming alone
+        // gets lost on the neon skin.
+        ctx.globalAlpha = alive ? 1 : BRACKET_DIM_ALPHA;
+
+        ctx.fillStyle = isPlayer ? 'rgba(60,60,80,0.85)' : 'rgba(20,20,30,0.85)';
+        ctx.fillRect(colX, y, colW, rowH);
+        ctx.strokeStyle = isPlayer ? skinNow.hudAccent : isRival ? skinNow.hudDanger : '#333344';
+        ctx.lineWidth = isPlayer || isRival ? 2 : 1;
+        ctx.strokeRect(colX, y, colW, rowH);
+
+        drawFighterChip(def, colX + 7, y + 5, 16, rowH - 10);
+
+        ctx.textAlign = 'left';
+        ctx.font = 'bold 14px monospace';
+        ctx.fillStyle = skinNow.hud;
+        ctx.fillText(def.name, colX + 32, midY);
+
+        ctx.textAlign = 'right';
+        ctx.font = 'bold 11px monospace';
+        if (isPlayer) {
+          ctx.fillStyle = skinNow.hudAccent;
+          ctx.fillText(BRACKET_YOU_TAG, colX + colW - 8, midY);
+        } else if (isRival) {
+          ctx.fillStyle = skinNow.hudDanger;
+          ctx.fillText(BRACKET_RIVAL_TAG, colX + colW - 8, midY);
+        } else if (!alive) {
+          ctx.fillStyle = skinNow.hud;
+          ctx.fillText(BRACKET_OUT_TAG, colX + colW - 8, midY);
+        }
+        ctx.textAlign = 'center';
+
+        // Back to full alpha BEFORE the strike: dimming it too would make it
+        // the same signal applied to one more shape instead of a second,
+        // independent one, and on the neon skin's near-black ground a 34%
+        // line is exactly what gets lost.
+        ctx.globalAlpha = 1;
+
+        if (!alive) {
+          ctx.strokeStyle = skinNow.hudDanger;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(colX + 30, midY);
+          ctx.lineTo(colX + colW - 56, midY);
+          ctx.stroke();
+        }
+      }
+
+      // The pair braces down the right edge of the column: they are what makes
+      // the eight read as a draw of four ties instead of a list of names.
+      ctx.strokeStyle = '#333344';
+      ctx.lineWidth = 1;
+      for (let i = 0; i < bracketRows; i += 2) {
+        const topY = originY + i * rowStep + Math.floor(i / 2) * pairGap + rowH / 2;
+        const bottomY = topY + rowStep;
+        const braceX = colX + colW + 14;
+        ctx.beginPath();
+        ctx.moveTo(colX + colW, topY);
+        ctx.lineTo(braceX, topY);
+        ctx.lineTo(braceX, bottomY);
+        ctx.lineTo(colX + colW, bottomY);
+        ctx.stroke();
+      }
+
+      // ── The matchup panel: this round, and who it puts in front of you ──
+      const panelX = 400;
+      const panelW = 356;
+      const panelY = 60;
+      const panelH = 300;
+      const panelCx = panelX + panelW / 2;
+
+      ctx.fillStyle = skinNow.panel;
+      ctx.fillRect(panelX, panelY, panelW, panelH);
+      ctx.strokeStyle = bracketFinale ? skinNow.hudDanger : skinNow.panelBorder;
+      ctx.lineWidth = bracketFinale ? 3 : 2;
+      ctx.strokeRect(panelX, panelY, panelW, panelH);
+
+      ctx.font = 'bold 30px monospace';
+      ctx.fillStyle = bracketFinale ? skinNow.hudDanger : skinNow.hudAccent;
+      if (skinNow.glow) {
+        ctx.shadowBlur = 14;
+        ctx.shadowColor = bracketFinale ? skinNow.hudDanger : skinNow.hudAccent;
+      }
+      ctx.fillText(bracketRoundText, panelCx, panelY + 38);
+      ctx.shadowBlur = 0;
+
+      ctx.font = '12px monospace';
+      ctx.fillStyle = skinNow.hud;
+      ctx.fillText(bracketSurvivorsText, panelCx, panelY + 66);
+
+      drawBracketCard(bracketPlayerDef, panelX + 24, panelY + 88, panelW - 48, 72, BRACKET_YOU_TAG, skinNow.hudAccent, skinNow);
+      ctx.font = 'bold 18px monospace';
+      ctx.fillStyle = skinNow.hud;
+      ctx.fillText(BRACKET_VS, panelCx, panelY + 176);
+      drawBracketCard(bracketRivalDef, panelX + 24, panelY + 192, panelW - 48, 72, BRACKET_RIVAL_TAG, skinNow.hudDanger, skinNow);
+
+      if (bracketFinale) {
+        ctx.font = 'bold 12px monospace';
+        ctx.fillStyle = skinNow.hudDanger;
+        ctx.fillText(BRACKET_FINALE_TEXT, panelCx, panelY + 282);
+      }
+
+      // ── CONTINUAR ──
+      const btnW = 280;
+      const btnH = 46;
+      const btnX = (CANVAS_W - btnW) / 2;
+      const btnY = 398;
+      ctx.fillStyle = skinNow.hudAccent;
+      if (skinNow.glow) {
+        ctx.shadowBlur = 18;
+        ctx.shadowColor = skinNow.hudAccent;
+      }
+      ctx.fillRect(btnX, btnY, btnW, btnH);
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = skinNow.hud;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(btnX, btnY, btnW, btnH);
+      ctx.font = 'bold 22px monospace';
+      ctx.fillStyle = '#05050a';
+      ctx.fillText(BRACKET_CONTINUE_LABEL, CANVAS_W / 2, btnY + btnH / 2);
+
+      ctx.font = 'bold 12px monospace';
+      ctx.fillStyle = skinNow.hud;
+      ctx.fillText(BRACKET_CONTINUE_HINT, CANVAS_W / 2, 468);
     }
 
     // Visual duration of the area-magic flash, mirroring magic.ts's private
@@ -1566,12 +1942,27 @@ function VaultFighterGame({
     function draw() {
       const skinNow = skinRef.current;
 
-      if (bakedBoutIndex !== story.bout || bakedSkinName !== skinNow.name) {
-        if (s.phase !== 'select') bakeCurrentStage();
+      if (bakedBoutLabel !== modeBoutLabel(mode) || bakedSkinName !== skinNow.name) {
+        // Neither menu has a stage behind it, and on 'mode-select' the mode is
+        // still the placeholder built at mount — baking there would render a
+        // stage for a run that has not been chosen yet.
+        if (s.phase !== 'select' && s.phase !== 'mode-select') bakeCurrentStage();
+      }
+
+      if (s.phase === 'mode-select') {
+        drawModeSelect(skinNow);
+        return;
       }
 
       if (s.phase === 'select') {
         drawSelect(skinNow);
+        return;
+      }
+
+      // Drawn apart from the fight, on its own screen: the combat draw path
+      // below never learns this phase exists.
+      if (s.phase === 'bracket') {
+        drawBracket(skinNow);
         return;
       }
 
@@ -1585,10 +1976,14 @@ function VaultFighterGame({
       } else if (s.phase === 'bout-end') {
         drawPanel(s.boutBannerWinner === 'player' ? 'COMBATE GANADO' : 'COMBATE PERDIDO', '', skinNow);
       } else if (s.phase === 'continue') {
-        const seconds = Math.min(10, Math.ceil(story.continueMsLeft / 1000));
+        const seconds = Math.min(10, Math.ceil(modeContinueMsLeft(mode) / 1000));
         drawPanel(CONTINUE_TEXT[seconds], 'A: SÍ · B: NO', skinNow);
       } else if (s.phase === 'over') {
-        drawPanel(s.victory ? 'CAMPEÓN' : 'ELIMINADO', '', skinNow);
+        drawPanel(
+          s.victory ? 'CAMPEÓN' : 'ELIMINADO',
+          s.victory ? modeChampionSubtitle(mode) : '',
+          skinNow,
+        );
       }
     }
 
@@ -1637,19 +2032,46 @@ function VaultFighterGame({
       return 'neutral';
     }
 
-    function pressButton(button: TechButton) {
+    // `repeat` is the OS key auto-repeat flag straight off the KeyboardEvent.
+    // It is honoured ONLY by the screens that wait for a press (see the guard
+    // below); the fight ignores it entirely, so holding J to keep attacking
+    // behaves exactly as it did in the v1 the owner validated by playing.
+    function pressButton(button: TechButton, repeat: boolean) {
       if (s.over || pausedRef.current) return;
+      // Auto-repeat does not confirm a menu. Winning a bout with J or Space
+      // held down — which is what anyone actually does while fighting — used
+      // to deliver a repeat every 30-50 ms into the bracket the moment
+      // startBoutFor() opened it, so the screen flashed for a frame and was
+      // gone; held from the mode screen it walked mode-select -> select ->
+      // bracket -> intro in one go. These three phases exist to be looked at
+      // and each one demands its own real key press. Deliberately NOT a
+      // global `if (repeat) return`: 'fight' and 'continue' keep every
+      // repeat, so no v1 behaviour changes.
+      if (repeat && (s.phase === 'mode-select' || s.phase === 'select' || s.phase === 'bracket')) return;
+      if (s.phase === 'mode-select') {
+        if (button === 'a') confirmModeSelection();
+        return;
+      }
       if (s.phase === 'select') {
         if (button === 'a') confirmSelection();
         return;
       }
+      if (s.phase === 'bracket') {
+        // CONTINUAR. Only A moves on: B does nothing, so a stray button never
+        // skips the screen the player asked to be able to stare at.
+        if (button === 'a') {
+          s.phase = 'intro';
+          sfxVaultFighter.play('select');
+        }
+        return;
+      }
       if (s.phase === 'continue') {
         if (button === 'a') {
-          acceptContinue(story);
-          if (story.status === 'fighting') startBoutFor();
+          modeAcceptContinue(mode);
+          if (modeStatus(mode) === 'fighting') startBoutFor();
         } else {
-          declineContinue(story);
-          if (story.status === 'eliminated') doGameOver();
+          modeDeclineContinue(mode);
+          if (modeStatus(mode) === 'eliminated') doGameOver();
         }
         return;
       }
@@ -1671,7 +2093,7 @@ function VaultFighterGame({
       const cpuHealthBefore = bout.cpu.health;
       castMagic(MAGIC_SPECS[p.def.magic], playerSide, cpuSide, bout, s.gameMs);
       const damage = cpuHealthBefore - bout.cpu.health;
-      if (damage > 0) awardDamage(story, damage);
+      if (damage > 0) modeAwardDamage(mode, damage);
       sfxVaultFighter.play('magic_cast');
     }
 
@@ -1685,26 +2107,26 @@ function VaultFighterGame({
       const key = e.key.toLowerCase();
       if (key === 'arrowleft' || key === 'a') {
         e.preventDefault();
-        if (s.phase === 'select' && !leftDown && !pausedRef.current) moveSelect(-1, 0);
+        if (!leftDown) pressDirection(-1, 0);
         leftDown = true;
       } else if (key === 'arrowright' || key === 'd') {
         e.preventDefault();
-        if (s.phase === 'select' && !rightDown && !pausedRef.current) moveSelect(1, 0);
+        if (!rightDown) pressDirection(1, 0);
         rightDown = true;
       } else if (key === 'arrowup' || key === 'w') {
         e.preventDefault();
-        if (s.phase === 'select' && !upDown && !pausedRef.current) moveSelect(0, -1);
+        if (!upDown) pressDirection(0, -1);
         upDown = true;
       } else if (key === 'arrowdown' || key === 's') {
         e.preventDefault();
-        if (s.phase === 'select' && !downDown && !pausedRef.current) moveSelect(0, 1);
+        if (!downDown) pressDirection(0, 1);
         downDown = true;
       } else if (key === ' ' || key === 'j') {
         e.preventDefault();
-        pressButton('a');
+        pressButton('a', e.repeat);
       } else if (key === 'k') {
         e.preventDefault();
-        pressButton('b');
+        pressButton('b', e.repeat);
       } else if (key === 'l') {
         e.preventDefault();
         pressMagic();

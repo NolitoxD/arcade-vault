@@ -26,6 +26,14 @@ export type TournamentStatus = 'fighting' | 'champion' | 'eliminated';
 export type TournamentState = {
   playerId: FighterId;
   round: TournamentRound;
+  // The eight, in the order the draw seeded them, fixed for the whole run.
+  // `entrants` shrinks 8 -> 4 -> 2 -> 1 and forgets who was knocked out, so
+  // without this there is no way to say who fell — and the bracket screen
+  // exists precisely to say it. Derived state does not work here: the seeded
+  // order is random, so it cannot be recomputed from the roster, and once a
+  // round is over the losers are gone. It lives in the state, not in the
+  // component, because "who is in this bracket and where" is a rule.
+  bracket: FighterId[];
   entrants: FighterId[]; // this round's participants: 8 -> 4 -> 2 -> 1
   opponentId: FighterId; // the player's rival now; 'arquitecto' in the super final
   stageIds: string[]; // 3 drawn stages (quarters, semis, final) + 'nucleo' for black-belt
@@ -134,11 +142,16 @@ export function createTournament(
   roster: readonly FighterDef[], playerId: FighterId,
   stages: readonly StageDef[], rng: () => number,
 ): TournamentState {
-  const entrants = shuffled(selectableFighters(roster).map((f) => f.id), rng);
+  const bracket = shuffled(selectableFighters(roster).map((f) => f.id), rng);
+  // Two arrays, not one shared reference: winBout reassigns `entrants`, but
+  // anything that wrote through `entrants[i]` would otherwise rewrite the
+  // seeded bracket too.
+  const entrants = [...bracket];
 
   return {
     playerId,
     round: 'quarters',
+    bracket,
     entrants,
     opponentId: opponentInPair(entrants, playerId),
     stageIds: drawStageIds(stages, rng),
@@ -166,6 +179,17 @@ export function currentDifficulty(t: TournamentState): number {
 
 export function boutLabel(t: TournamentState): string {
   return ROUND_LABELS[t.round];
+}
+
+// Reads for the bracket screen. They are rules, not presentation: "still in"
+// is membership of the current round and "finale" is the round that closes
+// the bracket, so both belong here and neither is re-derived in the .tsx.
+export function isStillIn(t: TournamentState, id: FighterId): boolean {
+  return t.entrants.includes(id);
+}
+
+export function isFinale(t: TournamentState): boolean {
+  return t.round === 'black-belt';
 }
 
 // Takes `roster` because resolving the three bouts the player doesn't
@@ -239,6 +263,25 @@ export function checkTournamentBracket(t: TournamentState, roster: readonly Figh
   for (const id of t.entrants) {
     if (seen.has(id)) problems.push(`duplicate entrant ${id}`);
     seen.add(id);
+  }
+
+  // The seeded bracket: always the eight, never the boss, never a repeat, and
+  // never losing anyone — every round's entrants must be a subset of it, which
+  // is what lets the screen paint the fallen as "the bracket minus entrants".
+  if (t.bracket.length !== BRACKET_SIZE) {
+    problems.push(`bracket size ${t.bracket.length}`);
+  }
+  const seenSeeds = new Set<FighterId>();
+  for (const id of t.bracket) {
+    if (seenSeeds.has(id)) problems.push(`duplicate seed ${id}`);
+    seenSeeds.add(id);
+  }
+  if (t.bracket.includes(boss.id)) problems.push('arquitecto seeded in the bracket');
+  for (const id of selectableIds) {
+    if (!seenSeeds.has(id)) problems.push(`selectable fighter missing from bracket: ${id}`);
+  }
+  for (const id of t.entrants) {
+    if (!seenSeeds.has(id)) problems.push(`entrant outside the seeded bracket: ${id}`);
   }
 
   if (!t.entrants.includes(t.playerId)) problems.push('player missing from entrants');

@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { fighterById, selectableFighters, ROSTER, type FighterDef, type FighterId } from './fighters';
-import { createStory, currentDifficulty as storyCurrentDifficulty, BOUTS, SCORE_BOSS, SCORE_BOUT as STORY_SCORE_BOUT } from './story';
+import { ROUNDS_TO_WIN } from './combat';
+import {
+  createStory,
+  currentDifficulty as storyCurrentDifficulty,
+  BOUTS,
+  SCORE_BOSS,
+  SCORE_BOUT as STORY_SCORE_BOUT,
+  SCORE_PER_DAMAGE as STORY_SCORE_PER_DAMAGE,
+  SCORE_PERFECT_ROUND as STORY_SCORE_PERFECT_ROUND,
+  SCORE_ROUND as STORY_SCORE_ROUND,
+} from './story';
 import { STAGES, STAGE_COUNT } from './stages';
 import {
   awardDamage,
@@ -14,6 +24,8 @@ import {
   currentOpponent,
   currentStage,
   drawWinner,
+  isFinale,
+  isStillIn,
   loseBout,
   SCORE_BLACK_BELT,
   SCORE_BOUT,
@@ -45,6 +57,7 @@ function validQuartersState(): TournamentState {
   return {
     playerId: 'nova',
     round: 'quarters',
+    bracket: ['nova', 'torre', 'glitch', 'voltio', 'oxido', 'eco', 'pixel', 'brecha'],
     entrants: ['nova', 'torre', 'glitch', 'voltio', 'oxido', 'eco', 'pixel', 'brecha'],
     opponentId: 'torre',
     stageIds: [],
@@ -347,7 +360,9 @@ describe('checkTournamentBracket rejects what it is there to reject', () => {
 
   it('rejects a black-belt round whose opponent is not arquitecto', () => {
     const bad: TournamentState = {
-      playerId: 'nova', round: 'black-belt', entrants: ['nova'],
+      playerId: 'nova', round: 'black-belt',
+      bracket: ['nova', 'torre', 'glitch', 'voltio', 'oxido', 'eco', 'pixel', 'brecha'],
+      entrants: ['nova'],
       opponentId: 'torre', stageIds: [], status: 'fighting', score: 0,
     };
     expect(checkTournamentBracket(bad, ROSTER).join(' ')).toContain('black-belt opponent is not arquitecto');
@@ -524,5 +539,207 @@ describe('tournament vs story ceiling', () => {
     while (t.status === 'fighting') winBout(ROSTER, t, rng);
     expect(t.status).toBe('champion');
     expect(t.score).toBe(84_000);
+  });
+});
+
+// ── Step 6: the seeded bracket the screen paints ────────────────────────
+
+describe('the seeded bracket', () => {
+  it('seeds exactly the eight selectable fighters, whoever the player is', () => {
+    for (const playerId of PLAYABLE_IDS) {
+      const t = createTournament(ROSTER, playerId, STAGES, makeLcg(31));
+      expect(t.bracket).toHaveLength(BRACKET_SIZE);
+      expect([...t.bracket].sort()).toEqual([...PLAYABLE_IDS].sort());
+      expect(t.bracket).not.toContain('arquitecto');
+      expect(t.bracket).toContain(playerId);
+    }
+  });
+
+  it('starts as the same list as entrants, in the same order, but not the same array', () => {
+    const t = createTournament(ROSTER, 'nova', STAGES, makeLcg(33));
+    expect(t.bracket).toEqual(t.entrants);
+    expect(t.bracket).not.toBe(t.entrants);
+  });
+
+  it('is reproducible from a seed, like the rest of the draw', () => {
+    const a = createTournament(ROSTER, 'nova', STAGES, makeLcg(77));
+    const b = createTournament(ROSTER, 'nova', STAGES, makeLcg(77));
+    expect(a.bracket).toEqual(b.bracket);
+  });
+
+  it('never changes across the whole run while entrants halve underneath it', () => {
+    const t = createTournament(ROSTER, 'nova', STAGES, makeLcg(41));
+    const seeded = [...t.bracket];
+    const rng = makeLcg(4100);
+
+    const sizes: number[] = [t.entrants.length];
+    while (t.status === 'fighting') {
+      winBout(ROSTER, t, rng);
+      expect(t.bracket).toEqual(seeded);
+      expect(checkTournamentBracket(t, ROSTER)).toEqual([]);
+      if (t.status === 'fighting') sizes.push(t.entrants.length);
+    }
+    expect(sizes).toEqual([BRACKET_SIZE, 4, 2, 1]);
+  });
+
+  it('lets the fallen be read as bracket minus entrants: 0, 4, 6 and 7 knocked out', () => {
+    const t = createTournament(ROSTER, 'nova', STAGES, makeLcg(43));
+    const rng = makeLcg(4300);
+    const fallen: number[] = [];
+
+    fallen.push(t.bracket.filter((id) => !isStillIn(t, id)).length);
+    while (t.status === 'fighting') {
+      winBout(ROSTER, t, rng);
+      fallen.push(t.bracket.filter((id) => !isStillIn(t, id)).length);
+    }
+    // quarters: nobody out yet; semis: 4 out; final: 6 out; black-belt: 7 out
+    // and the last entry is the crowned champion's own state, still 7.
+    expect(fallen).toEqual([0, 4, 6, 7, 7]);
+  });
+
+  it('keeps every survivor inside the seeded bracket, every round', () => {
+    const t = createTournament(ROSTER, 'brecha', STAGES, makeLcg(47));
+    const rng = makeLcg(4700);
+    while (t.status === 'fighting') {
+      for (const id of t.entrants) expect(t.bracket).toContain(id);
+      winBout(ROSTER, t, rng);
+    }
+  });
+
+  it('never seeds the boss, not even when he is the rival of the super final', () => {
+    const t = createTournament(ROSTER, 'nova', STAGES, makeLcg(53));
+    const rng = makeLcg(5300);
+    while (t.round !== 'black-belt') winBout(ROSTER, t, rng);
+    expect(t.opponentId).toBe('arquitecto');
+    expect(t.bracket).not.toContain('arquitecto');
+    expect(isStillIn(t, 'arquitecto')).toBe(false);
+  });
+});
+
+describe('isStillIn / isFinale', () => {
+  it('reports every seeded fighter as still in at the quarters', () => {
+    const t = createTournament(ROSTER, 'nova', STAGES, makeLcg(59));
+    for (const id of t.bracket) expect(isStillIn(t, id)).toBe(true);
+  });
+
+  it('reports exactly the current entrants as still in after a round', () => {
+    const t = createTournament(ROSTER, 'nova', STAGES, makeLcg(61));
+    winBout(ROSTER, t, makeLcg(6100));
+    for (const id of t.bracket) {
+      expect(isStillIn(t, id)).toBe(t.entrants.includes(id));
+    }
+    expect(t.bracket.filter((id) => isStillIn(t, id))).toHaveLength(4);
+  });
+
+  it('keeps the player still in for as long as the run lasts', () => {
+    const t = createTournament(ROSTER, 'eco', STAGES, makeLcg(67));
+    const rng = makeLcg(6700);
+    while (t.status === 'fighting') {
+      expect(isStillIn(t, t.playerId)).toBe(true);
+      winBout(ROSTER, t, rng);
+    }
+  });
+
+  it('flags only the black-belt round as the finale', () => {
+    const t = createTournament(ROSTER, 'nova', STAGES, makeLcg(71));
+    const rng = makeLcg(7100);
+    expect(isFinale(t)).toBe(false);
+    winBout(ROSTER, t, rng);
+    expect(isFinale(t)).toBe(false);
+    winBout(ROSTER, t, rng);
+    expect(isFinale(t)).toBe(false);
+    winBout(ROSTER, t, rng);
+    expect(t.round).toBe('black-belt');
+    expect(isFinale(t)).toBe(true);
+  });
+});
+
+describe('checkTournamentBracket rejects a broken seeded bracket', () => {
+  it('rejects a bracket of seven', () => {
+    const bad: TournamentState = {
+      ...validQuartersState(),
+      bracket: ['nova', 'torre', 'glitch', 'voltio', 'oxido', 'eco', 'pixel'],
+    };
+    const problems = checkTournamentBracket(bad, ROSTER).join(' ');
+    expect(problems).toContain('bracket size 7');
+    expect(problems).toContain('selectable fighter missing from bracket: brecha');
+  });
+
+  it('rejects a bracket with the same fighter seeded twice', () => {
+    const bad: TournamentState = {
+      ...validQuartersState(),
+      bracket: ['nova', 'torre', 'glitch', 'voltio', 'oxido', 'eco', 'pixel', 'nova'],
+    };
+    expect(checkTournamentBracket(bad, ROSTER).join(' ')).toContain('duplicate seed nova');
+  });
+
+  it('rejects arquitecto seeded into the bracket', () => {
+    const bad: TournamentState = {
+      ...validQuartersState(),
+      bracket: ['nova', 'torre', 'glitch', 'voltio', 'oxido', 'eco', 'pixel', 'arquitecto'],
+    };
+    expect(checkTournamentBracket(bad, ROSTER).join(' ')).toContain('arquitecto seeded in the bracket');
+  });
+
+  it('rejects a survivor who was never in the seeded bracket', () => {
+    const bad: TournamentState = {
+      ...validQuartersState(),
+      round: 'semis',
+      entrants: ['nova', 'torre', 'glitch', 'arquitecto'],
+    };
+    expect(checkTournamentBracket(bad, ROSTER).join(' ')).toContain('entrant outside the seeded bracket: arquitecto');
+  });
+});
+
+// The ceiling test above only proves the per-bout term. These prove the other
+// three, and they are the ones that were missing: the awardRound and
+// awardDamage tests each compare a module against its OWN constants, so for
+// the question of criterion 11 they are tautological — set
+// tournament SCORE_ROUND to 3_000 and every one of them stays green while the
+// tournament quietly scores ~12,000 less than an equivalent story. Each test
+// here crosses the two modules, so changing a constant on one side alone
+// fails. Every number is imported: BOUTS and ROUNDS_TO_WIN included.
+describe('tournament vs story: the scoring equivalence, term by term', () => {
+  it('halving the bouts and doubling the per-bout points cancel out exactly', () => {
+    expect(TOURNAMENT_BOUTS * SCORE_BOUT).toBe(BOUTS * STORY_SCORE_BOUT);
+  });
+
+  it('a full sweep of rounds is worth the same in both modes', () => {
+    const storyRounds = BOUTS * ROUNDS_TO_WIN * STORY_SCORE_ROUND;
+    const tournamentRounds = TOURNAMENT_BOUTS * ROUNDS_TO_WIN * SCORE_ROUND;
+
+    expect(tournamentRounds).toBe(storyRounds);
+  });
+
+  it('a full sweep of PERFECT rounds is worth the same in both modes', () => {
+    const storyPerfect = BOUTS * ROUNDS_TO_WIN * STORY_SCORE_PERFECT_ROUND;
+    const tournamentPerfect = TOURNAMENT_BOUTS * ROUNDS_TO_WIN * SCORE_PERFECT_ROUND;
+
+    expect(tournamentPerfect).toBe(storyPerfect);
+  });
+
+  it('one point of damage per bout is worth the same across a whole run', () => {
+    expect(TOURNAMENT_BOUTS * SCORE_PER_DAMAGE).toBe(BOUTS * STORY_SCORE_PER_DAMAGE);
+  });
+
+  it('the finishing bonus matches the boss bonus, so neither mode ends richer', () => {
+    expect(SCORE_BLACK_BELT).toBe(SCORE_BOSS);
+  });
+
+  it('adds up: two runs identical bar the bout count score exactly the same', () => {
+    // Same shape of run on both sides — every bout swept 3-0 with every round
+    // perfect and the same damage dealt per bout — so the only difference is
+    // 8 bouts against 4. If any single constant drifted, this diverges.
+    const damagePerBout = 300;
+    const storyTotal =
+      BOUTS * (STORY_SCORE_BOUT + ROUNDS_TO_WIN * (STORY_SCORE_ROUND + STORY_SCORE_PERFECT_ROUND))
+      + BOUTS * damagePerBout * STORY_SCORE_PER_DAMAGE
+      + SCORE_BOSS;
+    const tournamentTotal =
+      TOURNAMENT_BOUTS * (SCORE_BOUT + ROUNDS_TO_WIN * (SCORE_ROUND + SCORE_PERFECT_ROUND))
+      + TOURNAMENT_BOUTS * damagePerBout * SCORE_PER_DAMAGE
+      + SCORE_BLACK_BELT;
+
+    expect(tournamentTotal).toBe(storyTotal);
   });
 });

@@ -399,13 +399,13 @@ export const GAMES: Record<GameId, GameMeta> = {
       },
     },
     instructions: {
-      goal: 'Elige tu luchador y derrota a los 8 rivales del Vault, uno tras otro, ganando cada combate al mejor de 5 asaltos.',
+      goal: 'Elige tu luchador y entra al Vault: en HISTORIA derrotas a los 8 rivales uno tras otro, con CONTINUE si caes; en TORNEO disputas un cuadro de 4 combates sin red que remata contra EL ARQUITECTO por el cinturón negro. Cada combate se decide al mejor de 5 asaltos.',
       tips: [
         'Mantén ← para retroceder y bloquear a la vez — no puedes atacar mientras bloqueas',
         '→ te acerca al rival, ← te aleja bloqueando: elige tu distancia',
         'Agáchate con ↓ para esquivar los golpes altos',
         'El tercer botón (C, tecla L) lanza tu magia en cuanto la barra se llena',
-        'Cada combate se decide al mejor de 5 asaltos: gana el primero en llegar a 3',
+        'En TORNEO no hay CONTINUE: perder cualquier combate te saca del cuadro',
       ],
     },
     realtime: true,
