@@ -1,0 +1,405 @@
+# SPEC 31 — VAULT WORLD CUP
+
+> **Estado:** Approved (leído por Paco, 2026-09-03; grill PENDIENTE)
+> **Depende de:** 29-vault-fighter (patrón de motor puro y capa de modo), 30-vault-fighter-tournament
+> (cuadro de eliminatoria y su pantalla, como referencia), 15-pong (primer SPORTS, con 2 jugadores
+> en local), 24-games-registry-credits-f2, 10 (mando táctil, tercer botón C), 12 (patrones de
+> performance)
+> **Fecha:** 2026-09-03
+> **Objetivo:** Juego nº14 con id `vault-world-cup`, segunda entrada de la categoría SPORTS:
+> **fútbol cenital de selecciones, nueve contra nueve**, con cámara que sigue al balón y minimapa,
+> balón pegado al pie, tres botones (chut o entrada · pase corto/largo o robo · sprint), alineación
+> y estrategia cambiables en pleno partido, faltas y penaltis con saques automáticos dirigidos, en
+> **dos modos** —amistoso contra la CPU o entre dos en el mismo teclado, y **Mundial de 8
+> selecciones por eliminatoria directa**— con toda la lógica del partido en un módulo puro de
+> **entradas simétricas y azar con semilla**, pensado para estrenar el online más adelante sin
+> escribir hoy nada de red.
+
+---
+
+## Alcance
+
+**Dentro:**
+
+- **Motor puro en `components/games/football-logic/`**, con nombre de motor y no de juego a
+  propósito: es el que reutilizaría la variante a lo Kick Off. Campo, balón, jugadores,
+  formaciones, IA, partido, saques, faltas y Mundial, todo como funciones puras con **las dos
+  entradas como parámetros simétricos** y **azar con semilla**.
+- **Campo grande con cámara que sigue al balón**, y **minimapa** con los dieciocho en una esquina.
+- **Nueve por equipo**: ocho de campo más portero, que siempre es IA.
+- **Control del más cercano al balón**, cambiando solo. **Balón pegado al pie**, robable.
+- **Tres alineaciones** (3-3-2 normal, 3-2-3 ofensiva, 4-3-1 defensiva) y **tres estrategias**
+  (ataque, neutral, defensa), **cambiables en pleno partido**. Tamaño de equipo y formaciones como
+  datos, con invariante.
+- **Tres botones con pulsar/mantener**: A chut (mantener = más fuerte) o entrada al suelo; B pase
+  corto al pulsar, largo al mantener, o robo de pie; C sprint en **ráfaga con recuperación**, con y
+  sin balón.
+- **Dos entradas defensivas**: al suelo (roba si llega al balón; si toca al jugador es falta; si no
+  llega a nada, un segundo en el suelo) y de pie, a corta distancia.
+- **Faltas y penaltis.** Falta fuera del área = tiro libre; dentro = penalti con el lanzador
+  eligiendo lado y el portero tirándose. **Sin tarjetas y sin fuera de juego.**
+- **Saques automáticos con dirección**: saque inicial, banda, córner, puerta, falta y penalti. El
+  jugador elige con la cruceta, cuenta atrás grande de cinco segundos, y sale solo.
+- **Dos partes de 90 segundos** (constante, techo 120) y **gol de oro** en el empate.
+- **IA rival**: colocación por formación y estrategia, persecución del balón, portero, y cambio de
+  estrategia según el marcador.
+- **Dos modos**: **Amistoso** (un partido: contra la CPU, o **dos jugadores en el mismo teclado**)
+  y **Mundial** (8 selecciones sorteadas de un banco mayor, eliminatoria directa, eliminado sin
+  CONTINUE, con pantalla de cuadro). El Mundial es siempre contra la CPU.
+- **Banco de selecciones** de dieciséis, iguales en el campo, distintas en nombre y colores de
+  equipación.
+- Selector de modo, selector de selección, HUD con marcador, tiempo y parte.
+- **Pantalla de CAMPEONES DEL MUNDO** al ganar la final y **de GANADOR** al ganar un amistoso:
+  composición fija pintada en canvas con la equipación y el nombre de la selección ganadora
+  levantando la copa; lo único en movimiento es el confeti (amistoso) o los fuegos artificiales
+  (Mundial). Corta, y CONTINUAR devuelve al selector de modo. **ELIMINADO** y la derrota del
+  amistoso son rótulos sobre la pantalla del partido, sin pantalla propia.
+- **SFX procedurales** (silbato, público, gol, golpeo) y **tres pistas de música** sorteadas por
+  partido.
+- Registro, migración, play-page, carátula (la hace Claude con `design`) y puntuación en la tabla
+  de `vault-world-cup`.
+
+**Fuera, y por qué:**
+
+- **Nada de red ni online.** Es el punto 3 del roadmap. Aquí solo se deja la simulación
+  determinista.
+- **Atributos por jugador o posición, resistencia real y cambios de banquillo → v1.5**, todo junto:
+  sin atributos un cambio no significa nada, y sin resistencia el sprint es velocidad gratis (de
+  ahí la ráfaga provisional).
+- **Tarjetas → v1.5**, si al jugar se ve que las faltas sin castigo molestan.
+- **Octavos de final → v1.5** si el Mundial de 8 queda corto; **nunca más de 16**.
+- **Fase de grupos, prórroga y tanda de penaltis como desempate**: no. Eliminatoria directa y gol
+  de oro.
+- **Diferencias entre selecciones más allá del nombre y los colores → v1.5**, con los atributos.
+- **Clubes → v2**, si llega.
+- **La variante a lo Kick Off** (balón libre, chut con efecto) → después de producción, sobre este
+  motor.
+- **Persistencia del Mundial al recargar**: se pierde, como en los otros trece.
+- **Skins retro y neon, y el port a móvil**: la cadena posterior de siempre (`skin-designer`,
+  `mobile-porter`), no este spec.
+
+---
+
+## Modelo de datos
+
+Todo el motor en `components/games/football-logic/`. **Ninguna función lee estado de módulo**:
+el campo, las selecciones, las formaciones, el estado del partido y la fuente de azar llegan
+siempre por parámetro. Las funciones del bucle escriben en el estado que reciben, sin asignar.
+
+| Fichero | Responsabilidad |
+|---|---|
+| `rng.ts` | `createRng(seed): () => number` — el azar con semilla. **Único origen de aleatoriedad del motor.** |
+| `pitch.ts` | Dimensiones del campo en coordenadas de mundo, áreas, porterías, punto de penalti. Constantes. |
+| `teams.ts` | `TeamDef` (id, nombre, colores), el banco de selecciones, `FORMATIONS` y `STRATEGIES`. |
+| `input.ts` | `TeamInput`, la entrada **simétrica** de un equipo. Quien la rellena —teclado 1, teclado 2 o CPU— es cosa del componente. |
+| `players.ts` | `PlayerState`, creación de los nueve por formación, movimiento, sprint en ráfaga, el suelo tras la entrada. |
+| `ball.ts` | `BallState`, física del balón con altura (para pases largos por encima), posesión pegada al pie. |
+| `actions.ts` | Chut, pase corto, pase largo, robo de pie, entrada al suelo. Resuelven sobre el estado y devuelven el resultado en un out-param. |
+| `ai.ts` | Colocación por formación y estrategia, persecución del balón, portero, y la decisión del equipo CPU (rellena un `TeamInput`). |
+| `referee.ts` | Gol, balón fuera (banda, córner, puerta), falta y penalti. Devuelve **qué saque toca y dónde**. |
+| `set-pieces.ts` | La fase de saque: tipo, posición, dirección elegida, cuenta atrás, ejecución automática. |
+| `match.ts` | `MatchState`: reloj, partes, marcador, fase, gol de oro. |
+| `world-cup.ts` | Sorteo de 8 del banco, cuadro, eliminación. Mismo patrón que `tournament.ts`, no el mismo código (aquél es de luchadores). |
+| `invariants.ts` | La red: formaciones que suman ocho, banco sin ids ni colores repetidos, geometría del campo coherente. |
+| `mode.ts` | Unión `'friendly' \| 'world-cup'`, igual que la de Vault Fighter. |
+
+```ts
+// input.ts — lo que hace SIMÉTRICO al motor: un equipo es un equipo, sea quien sea quien lo mueva
+export type ButtonState = 'up' | 'pressed' | 'held' | 'released';
+export type Strategy = 'attack' | 'neutral' | 'defend';
+export type TeamInput = {
+  dx: -1 | 0 | 1; dy: -1 | 0 | 1;
+  a: ButtonState; b: ButtonState; c: ButtonState;
+  formation: number;   // índice en FORMATIONS
+  strategy: Strategy;
+};
+
+// players.ts
+export type PlayerState = {
+  id: number;           // propio, no "el defensa nº2": es lo que hará posibles los cambios en la v1.5
+  team: 0 | 1;
+  role: 'gk' | 'def' | 'mid' | 'fwd';
+  x: number; y: number; vx: number; vy: number; facing: number;
+  sprintMsLeft: number; sprintCooldownMs: number;   // la ráfaga y su recuperación
+  downUntilMs: number;                              // en el suelo tras una entrada fallida
+};
+
+// ball.ts
+export type BallState = {
+  x: number; y: number; z: number;        // z = altura, para el pase largo por encima
+  vx: number; vy: number; vz: number;
+  owner: number | null;                   // id del jugador que lo lleva pegado al pie
+};
+
+// match.ts
+export type MatchPhase = 'kickoff' | 'play' | 'set-piece' | 'goal' | 'half-time' | 'golden-goal' | 'over';
+export type MatchState = {
+  teams: [TeamDef, TeamDef];
+  players: PlayerState[];                 // los 18, creados una vez
+  ball: BallState;
+  score: [number, number];
+  half: 1 | 2 | 3;                        // 3 = gol de oro
+  clockMs: number;
+  phase: MatchPhase;
+  setPiece: SetPieceState | null;
+  controlled: [number, number];           // id del jugador controlado por cada equipo
+};
+```
+
+El bucle del componente hace cada frame: rellenar los dos `TeamInput` (el humano desde el
+teclado, la CPU desde `ai.ts`), y llamar a `stepMatch(match, inputs, dtMs, rng)`. **El motor no
+sabe cuál de los dos es humano.** Esa única propiedad es la que deja abierta la puerta del online.
+
+### Números de partida, ajustables en QA
+
+Todos en constantes, ninguno enterrado en el código:
+
+| | Valor de salida |
+|---|---|
+| Campo (unidades de mundo) | 2 000 × 1 300 — la proporción de un campo real; la cámara de 800 × 500 ve un 40 % |
+| Velocidad de jugador | 180 u/s · con balón 160 · sprint ×1,4 |
+| Sprint en ráfaga | 2 s de sprint, 3 s de recuperación |
+| Pase corto / largo | 420 u/s raso · 560 u/s con altura, cae a ~350 u |
+| Chut | 700 u/s al pulsar · hasta 950 manteniendo (1 s de carga) |
+| Robo de pie | alcance 28 u, 65 % de éxito frente a un rival que no sprinta |
+| Entrada al suelo | avance 90 u en 0,4 s · si falla, 1 s en el suelo |
+| Partes | 2 × 90 s (techo 120) · cuenta atrás de saque 5 s |
+| Portero | se mueve en su línea a 220 u/s, ataja lo que llega a menos de 40 u |
+
+### Decisiones estructurales
+
+**Puntuación**, con los dos modos en la misma tabla de `vault-world-cup`:
+
+| Concepto | Puntos |
+|---|---|
+| Gol | 1 000 |
+| Victoria en un partido | 5 000 |
+| Portería a cero | 2 000 |
+| Pasar cuartos / semifinal | 5 000 / 10 000 |
+| Campeón del mundo | 25 000 |
+
+Un Mundial perfecto ronda los 80 000; un amistoso perfecto, unos 12 000. El amistoso puntúa poco
+a propósito: es para entrenar.
+
+**Gol de oro sin tope**, con la CPU pasando a estrategia de ataque al entrar en él para que el
+partido se abra solo.
+
+**Banco de dieciséis selecciones**, ocho por Mundial, sorteadas. Todas iguales en el campo,
+distintas en nombre y equipación (Italia azul, España roja, Brasil amarilla — las inconfundibles).
+
+**Dificultad de la CPU**: 4 en cuartos, 6 en semifinal, 8 en la final; 5 en el amistoso. Sobre una
+escala de 1 a 8, derivada por fórmula como en Vault Fighter: afecta a la reacción, a la precisión
+del pase y al portero. Números, no ramas.
+
+**Alineación y estrategia como datos.** Cada formación es una lista de ocho posiciones como
+fracción del campo; la estrategia desplaza todas ±12 % hacia la portería rival. Invariante: toda
+formación suma ocho y ninguna posición se sale del campo.
+
+---
+
+## Plan de implementación
+
+Once pasos en **cuatro etapas**, cada una cerrable por sí sola. **Máximo una etapa al día**; si una
+necesita dos, se le dan, y al terminarla se para. La red antes que el contenido, la lógica pura
+antes que la pantalla, y el refactor nunca mezclado con funcionalidad.
+
+### Etapa A — el motor, sin pantalla
+
+**1. `rng.ts`, `pitch.ts`, `teams.ts` e `invariants.ts` — la red antes que nada.**
+El generador con semilla, el campo, los tipos de selección y formación, y la red de invariantes con
+test negativo cada una: toda formación suma ocho y ninguna posición se sale del campo; el banco no
+repite ids ni equipaciones; la geometría del campo es coherente. Con **dos selecciones y una
+formación** — el contenido llega en el paso 7 con la red ya en verde.
+
+**2. `input.ts`, `players.ts` y `ball.ts` — el determinismo.**
+La entrada simétrica, los nueve jugadores creados por formación, movimiento, sprint en ráfaga con
+recuperación, el suelo tras la entrada, y la física del balón con altura y posesión pegada al pie.
+**El test que manda**: misma semilla y misma secuencia de entradas producen el mismo estado, paso a
+paso, sobre un partido largo. Es la precondición del online y se fija aquí.
+
+**3. `actions.ts` — lo que hace un jugador.**
+Chut con carga, pase corto raso, pase largo por alto, robo de pie, entrada al suelo con sus tres
+desenlaces. Todas escriben en out-params. Y el cambio automático de jugador controlado al más
+cercano.
+
+**4. `referee.ts` y `set-pieces.ts` — las reglas y los saques.**
+Gol, balón fuera por cada línea, falta y penalti. La fase de saque completa: tipo, posición,
+dirección elegida con la cruceta, cuenta atrás, ejecución automática. El penalti con lanzador y
+portero.
+
+**5. `match.ts` — el partido entero.**
+Reloj, dos partes, marcador, gol de oro sin tope, y la máquina de fases. **Guarda de precondición
+en todas las transiciones**, sin excepciones. Test de un partido completo simulado con entradas
+grabadas.
+
+### Etapa B — la inteligencia y el contenido
+
+**6. `ai.ts` — la CPU y los compañeros.**
+Colocación por formación y estrategia, persecución del balón por el más cercano, portero, y la
+decisión del equipo CPU que rellena un `TeamInput` — pasar, chutar, entrar, cambiar de estrategia
+por marcador. Perfil por dificultad de 1 a 8, derivado por fórmula. Test de que la IA nunca
+produce una entrada inválida y de que a más dificultad reacciona antes y acierta más.
+
+**7. El contenido: las 16 selecciones y las 3 formaciones**, con la red del paso 1 cerrándose
+sobre los datos reales. Debe pasar a la primera, como en Vault Fighter.
+
+### Etapa C — la pantalla
+
+**8. `VaultWorldCupGame.tsx` y los SFX.**
+Cámara que sigue al balón, minimapa, campo y jugadores con las equipaciones, HUD con marcador y
+reloj, teclado, la fase de saque dibujada con su cuenta atrás, rótulos de gol y de ELIMINADO. **Un
+solo amistoso contra la CPU, sin modos**: es la prueba de que el motor y la pantalla encajan. Aquí
+se juega por primera vez, y el QA empieza a ajustar números.
+
+**9. `mode.ts`, `world-cup.ts`, y todas las pantallas de flujo.**
+Selector de modo, selector de selección, el segundo teclado del amistoso a dos, el sorteo del
+Mundial, su cuadro con pantalla al inicio de cada partido, y las dos pantallas de victoria:
+confeti en el amistoso, fuegos artificiales en el Mundial.
+
+### Etapa D — el cierre
+
+**10. Registro, tipos, migración, play-page, música y carátula.**
+La entrada en el catálogo con instrucciones que expliquen los tres botones y el pulsar/mantener,
+la fila en base de datos, la play-page espejo de la de Vault Fighter, las tres pistas al azar, y la
+carátula.
+
+**11. `verify-plan` y QA humano.**
+Los criterios de aceptación del spec, y el QA de Paco: que el fútbol se sienta fútbol, que el
+amistoso a dos sea justo, y que el Mundial dé ganas de otro.
+
+---
+
+## Criterios de aceptación
+
+**Motor y determinismo**
+1. **Misma semilla y misma secuencia de entradas producen el mismo estado**, paso a paso, en un
+   partido completo. Hay test que lo fija.
+2. **El motor no distingue quién mueve cada equipo**: `stepMatch` recibe dos `TeamInput` y ningún
+   módulo de `football-logic/` lee teclado, `Math.random` ni estado de módulo.
+3. **Toda formación suma ocho de campo y ninguna posición se sale del campo**; el banco no repite
+   ids ni equipaciones. Invariantes con test negativo cada uno.
+4. **Nueve por equipo**, y el portero nunca es el jugador controlado.
+5. **Se controla siempre el más cercano al balón**, y el cambio es automático.
+
+**Juego**
+6. **El balón va pegado al pie** y un rival puede robarlo de pie o con entrada al suelo.
+7. **Los tres botones hacen lo suyo con y sin balón**: A chut (mantener = más fuerte) o entrada; B
+   pase corto al pulsar, largo al mantener, o robo; C sprint en ráfaga con recuperación.
+8. **La entrada al suelo tiene tres desenlaces**: roba si llega al balón, falta si toca al jugador,
+   y un segundo en el suelo si no llega a nada.
+9. **Falta fuera del área es tiro libre; dentro, penalti** con el lanzador eligiendo lado y el
+   portero tirándose. Sin tarjetas, sin fuera de juego.
+10. **Todo saque es automático con dirección**: cruceta para elegir, cuenta atrás de cinco segundos
+    visible, y sale solo.
+11. **Alineación y estrategia se cambian en pleno partido** y la colocación del equipo responde en
+    el acto.
+12. **Dos partes de 90 segundos y gol de oro sin tope**, con la CPU pasando a ataque al entrar en
+    gol de oro.
+13. **La cámara sigue al balón sin salirse del campo**, y el minimapa muestra a los dieciocho.
+
+**Modos y flujo**
+14. **Amistoso contra la CPU y amistoso a dos en el mismo teclado**, y en el de dos ningún equipo
+    tiene ventaja de entrada — mismo motor, mismas velocidades.
+15. **El Mundial sortea ocho de un banco de dieciséis**, eliminatoria directa de tres partidos, con
+    pantalla de cuadro al inicio de cada uno.
+16. **Perder en el Mundial es ELIMINADO** sobre la pantalla del partido, sin CONTINUE.
+17. **Ganar el amistoso da la pantalla de GANADOR con confeti; ganar la final, la de CAMPEONES DEL
+    MUNDO con fuegos artificiales**, ambas con la selección ganadora, y CONTINUAR devuelve al
+    selector de modo.
+18. **La dificultad de la CPU es 4, 6 y 8 en cuartos, semifinal y final**, y 5 en el amistoso.
+19. **La puntuación se guarda en la tabla de `vault-world-cup`** con los valores del spec.
+
+**Calidad**
+20. **Ninguna asignación de memoria por frame** en el bucle ni en el dibujo, incluido el confeti
+    (depósito de partículas creado una vez).
+21. **La suite sigue verde y no baja de los 504 tests** de partida.
+22. **QA humano:** el fútbol se siente fútbol, el amistoso a dos es justo, y el Mundial da ganas de
+    otro. Los criterios se revisan tras este QA.
+
+---
+
+## Decisiones tomadas y descartadas
+
+- **Sí: campo grande con cámara sobre el balón y minimapa.** Descartado el campo fijo que
+  recomendaba Claude: en móvil serían muñecos de tres píxeles, y el minimapa resuelve gratis el
+  contexto que la cámara quita. (Paco, 2026-09-03)
+- **Sí: nueve por equipo, ocho de campo más portero, formación 3-3-2 de salida.** Los clásicos eran
+  once contra once, pero el coste no es visual sino la IA de veinte muñecos. El tamaño es
+  constante con formación e invariante: el QA decide el número jugando. (Paco, 2026-09-03)
+- **Sí: tres alineaciones y tres estrategias, cambiables en pleno partido.** Salen gratis de que
+  la colocación sea por datos. Descartado cambiar solo antes o en el descanso: pasar a defensa
+  ganando por uno en el último minuto es la decisión que da gracia. (Paco, 2026-09-03)
+- **Sí: se controla siempre el más cercano al balón. Portero siempre IA.** (Paco, 2026-09-03)
+- **Sí: balón pegado al pie.** Descartado el balón libre a lo Kick Off: es un juego de habilidad
+  que se abandona al segundo partido. Queda como variante futura sobre este motor. (Paco, 2026-09-03)
+- **Sí: tres botones con pulsar/mantener.** Con balón A chut, B pase corto/largo, C sprint; sin
+  balón A entrada, B robo, C sprint. Descartado un cuarto botón: tocaría el mando de los otros
+  trece juegos. Descartado un botón único contextual: sin pase los ocho de campo no importan.
+  (Paco, 2026-09-03)
+- **Sí: sprint en ráfaga con recuperación en la v1.** Sin coste sería velocidad gratis; la
+  resistencia real llega con los atributos en la v1.5. (Paco, 2026-09-03)
+- **Sí: faltas y penaltis en la v1. Tarjetas, si acaso, en la v1.5** tras jugar. Descartado el
+  "sin árbitro" que recomendaba Claude. (Paco, 2026-09-03)
+- **No: fuera de juego.** En un arcade es motivo de abandono. (2026-09-03)
+- **Sí: saques automáticos con dirección y cuenta atrás de cinco segundos**, todos: inicial, banda,
+  córner, puerta, falta y penalti. Descartada la fase de saque controlada. (Paco, 2026-09-03)
+- **Sí: dos partes de 90 segundos y gol de oro sin tope**, con la CPU pasando a ataque. Descartados
+  prórroga y tanda de penaltis: spec aparte. Techo de 120 por parte; un partido nunca más de cinco
+  minutos. (Paco, 2026-09-03)
+- **Sí: jugadores idénticos con identificador propio en la v1.** Atributos por posición,
+  resistencia y cambios de banquillo van juntos a la **v1.5**: sin atributos un cambio no significa
+  nada. El identificador propio es lo que hará posibles los cambios sin reescribir. (Paco, 2026-09-03)
+- **Sí: solo selecciones, dieciséis en el banco, ocho por Mundial.** Iguales en el campo, distintas
+  en nombre y equipación. Clubes, si acaso, v2. Octavos de final solo si el QA lo pide, y nunca
+  más de dieciséis. (Paco, 2026-09-03)
+- **Sí: dos modos, amistoso y Mundial.** El amistoso admite dos jugadores en el mismo teclado —es
+  el banco de pruebas del QA y la demostración de que las entradas simétricas funcionan. El Mundial
+  es siempre contra la CPU: un Mundial a dos sería el torneo con plazas humanas del roadmap.
+  (Paco, 2026-09-03)
+- **Sí: eliminatoria directa sin fase de grupos, y eliminado sin CONTINUE.** (Paco, 2026-09-03)
+- **Sí: pantallas de victoria pintadas en canvas, no una imagen por selección.** Composición fija
+  con la equipación y el nombre del ganador levantando la copa; confeti en el amistoso, fuegos
+  artificiales en el Mundial; CONTINUAR devuelve al selector. ELIMINADO es un rótulo sobre el
+  partido, sin pantalla propia. Descartado un PNG por selección: no escala. (Paco, 2026-09-03)
+- **Sí: puntuación única para los dos modos** con los valores de la tabla; el amistoso puntúa poco
+  a propósito. (Paco, 2026-09-03)
+- **Sí: dificultad de la CPU 4-6-8 por ronda y 5 en el amistoso**, derivada por fórmula como en
+  Vault Fighter. (Paco, 2026-09-03)
+- **Sí: entradas simétricas y azar con semilla desde el día uno, y nada de red.** Tomada el 02-sep
+  pensando en el online del roadmap. No es andamiaje: es no cerrar una puerta que cuesta lo mismo
+  dejar abierta. (Paco, 2026-09-02)
+- **Sí: el motor se llama `football-logic`, no `world-cup-logic`.** Es el que reutilizará la
+  variante a lo Kick Off. (2026-09-03)
+- **Sí: cuatro etapas, máximo una al día, y la calidad manda sobre el calendario.** Mejor una v1
+  rejugable en ocho días que una floja en cuatro. (Paco, 2026-09-03)
+- **Sí: tres pistas de música al azar por partido; el público y el silbato por síntesis.** La
+  carátula la hace Claude con `design`. (Paco, 2026-09-03)
+- **Sí: los criterios se revisan tras el QA.** Están bien de partida, pero hasta que no se juega no
+  se sabe qué hay que refinar. (Paco, 2026-09-03)
+
+---
+
+## Riesgos identificados
+
+1. **Es el juego más grande del proyecto, y la IA es la factura.** Dieciocho muñecos que tienen
+   que colocarse con sentido, un portero que ataje y una CPU que decida pasar, chutar o entrar. Es
+   donde más números hay que afinar y donde el QA va a pedir más rondas. Por eso la etapa B es
+   entera para ella, y por eso cada etapa se cierra cuando está bien y no cuando toca.
+2. **Que el fútbol se sienta fútbol no lo verifica ningún test.** Los invariantes garantizan que el
+   partido es *legal*; que sea divertido solo se sabe jugando. Es el mismo riesgo de producto que
+   el equilibrio de Vault Fighter, y aquí es mayor porque hay más piezas interactuando.
+3. **El determinismo es frágil y se rompe en silencio.** Un `Math.random` que se cuele, un
+   `Date.now()`, un orden de iteración que dependa de un `Set`: cualquiera deja la simulación no
+   reproducible y ningún partido lo nota hoy — se notará el día del online. El test de misma
+   semilla y mismas entradas es la única red, y hay que correrlo sobre un partido largo.
+4. **El gol de oro sin tope puede no acabar.** La CPU pasando a ataque lo hace improbable, no
+   imposible. Si el QA lo ve, el tope y la tanda de penaltis serán su propio spec.
+5. **La cámara y el minimapa multiplican el dibujo.** Todo pasa por una transformación de mundo a
+   pantalla. Con la norma de no asignar memoria cabe en 60 fps, pero es el juego con más elementos
+   en pantalla del catálogo y el primero con cámara.
+6. **El amistoso a dos es el primer juego con dos entradas humanas simultáneas desde Pong.** Un
+   solo manejador de teclado sirviendo a dos `TeamInput` con teclas distintas, y ninguno puede
+   pisarse. Es lo que demuestra o desmiente las entradas simétricas.
+7. **Los tests que pasan por coincidencia del fixture volverán a aparecer.** Ya pasó tres veces en
+   Vault Fighter. En un motor con física las coincidencias son más fáciles todavía. Regla para cada
+   test: preguntarse si pasaría con otros números.
