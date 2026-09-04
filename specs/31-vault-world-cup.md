@@ -1,6 +1,6 @@
 # SPEC 31 — VAULT WORLD CUP
 
-> **Estado:** Approved (leído por Paco, 2026-09-03; grill PENDIENTE)
+> **Estado:** Approved (leído por Paco, 2026-09-03; grill hecho 2026-09-04, decisiones incorporadas)
 > **Depende de:** 29-vault-fighter (patrón de motor puro y capa de modo), 30-vault-fighter-tournament
 > (cuadro de eliminatoria y su pantalla, como referencia), 15-pong (primer SPORTS, con 2 jugadores
 > en local), 24-games-registry-credits-f2, 10 (mando táctil, tercer botón C), 12 (patrones de
@@ -89,6 +89,7 @@ siempre por parámetro. Las funciones del bucle escriben en el estado que recibe
 | Fichero | Responsabilidad |
 |---|---|
 | `rng.ts` | `createRng(seed): () => number` — el azar con semilla. **Único origen de aleatoriedad del motor.** |
+| `step.ts` | `STEP_MS = 1000 / 60` y `stepMatch(match, inputs, rng)`: el paso FIJO de simulación. |
 | `pitch.ts` | Dimensiones del campo en coordenadas de mundo, áreas, porterías, punto de penalti. Constantes. |
 | `teams.ts` | `TeamDef` (id, nombre, colores), el banco de selecciones, `FORMATIONS` y `STRATEGIES`. |
 | `input.ts` | `TeamInput`, la entrada **simétrica** de un equipo. Quien la rellena —teclado 1, teclado 2 o CPU— es cosa del componente. |
@@ -104,7 +105,9 @@ siempre por parámetro. Las funciones del bucle escriben en el estado que recibe
 | `mode.ts` | Unión `'friendly' \| 'world-cup'`, igual que la de Vault Fighter. |
 
 ```ts
-// input.ts — lo que hace SIMÉTRICO al motor: un equipo es un equipo, sea quien sea quien lo mueva
+// input.ts — lo que hace SIMÉTRICO al motor: un equipo es un equipo, sea quien sea quien lo mueva.
+// Un TeamInput es la entrada de UN PASO de simulación (no de un frame): el componente muestrea el
+// teclado una vez por frame y repite el mismo TeamInput en todos los pasos de ese frame.
 export type ButtonState = 'up' | 'pressed' | 'held' | 'released';
 export type Strategy = 'attack' | 'neutral' | 'defend';
 export type TeamInput = {
@@ -142,13 +145,31 @@ export type MatchState = {
   clockMs: number;
   phase: MatchPhase;
   setPiece: SetPieceState | null;
-  controlled: [number, number];           // id del jugador controlado por cada equipo
+  stepCount: number;                      // reloj en pasos, no en ms reales: 90 s = 5 400 pasos
+  controlled: [number, number];           // CACHÉ del controlado, derivado al final de cada paso (ver abajo)
 };
 ```
 
+**El controlado es estado derivado, no entrada** (grill 2026-09-04). Al final de cada `stepMatch` se
+recalcula por equipo: si el equipo tiene el balón, el poseedor; si no, el jugador de campo (nunca el
+portero) más cercano al balón, desempate por `id` más bajo (nunca por orden de iteración), y con
+**histéresis de 40 unidades**: solo cambia si otro compañero está al menos 40 u más cerca que el
+actual. Así el replay solo necesita semilla + secuencia de `TeamInput`.
+
+**Paso fijo de simulación** (grill 2026-09-04): el motor expone `STEP_MS = 1000 / 60` y
+`stepMatch(match, inputs, rng)` **sin `dtMs`**. Un `dtMs` variable rompería el determinismo entre
+ordenadores (60 fps frente a 144 fps producen secuencias distintas). El componente lleva un
+acumulador: suma el tiempo real del frame y llama a `stepMatch` tantas veces como pasos completos
+quepan, con **tope de 5 pasos por frame** (una pestaña en segundo plano no dispara cien pasos al
+volver). `pressed` y `released` duran un paso y el motor los consume en el primero.
+
 El bucle del componente hace cada frame: rellenar los dos `TeamInput` (el humano desde el
-teclado, la CPU desde `ai.ts`), y llamar a `stepMatch(match, inputs, dtMs, rng)`. **El motor no
-sabe cuál de los dos es humano.** Esa única propiedad es la que deja abierta la puerta del online.
+teclado, la CPU desde `ai.ts`), y avanzar los pasos que toquen. **El motor no sabe cuál de los dos
+es humano.** Esa única propiedad es la que deja abierta la puerta del online.
+
+Dentro de `football-logic/` se evitan `Math.sin`, `Math.cos` y `Math.atan2` en la física (los
+motores de JS no garantizan el mismo resultado bit a bit); vectores normalizados con `Math.sqrt`,
+que sí es exacto por IEEE 754.
 
 ### Números de partida, ajustables en QA
 
@@ -166,9 +187,76 @@ Todos en constantes, ninguno enterrado en el código:
 | Partes | 2 × 90 s (techo 120) · cuenta atrás de saque 5 s |
 | Portero | se mueve en su línea a 220 u/s, ataja lo que llega a menos de 40 u |
 
+
+### Reglas de la IA (del grill del 2026-09-04)
+
+Todo son números en constantes y fórmulas; ninguna rama por nivel. La IA solo recibe el **perfil**,
+nunca la dificultad. Se aplican igual a los dos equipos: el humano mueve al controlado y sus ocho
+compañeros obedecen estas reglas, lo que hace justo el amistoso a dos por construcción.
+
+**La CPU con balón** — árbol de tres ramas, evaluado cada `reactionMs` (no cada paso):
+
+1. **Chuta** si la distancia a la portería rival es < 420 u y hay línea: ningún rival a < 60 u de
+   la recta balón→portería en sus primeras 200 u. Mantiene A proporcional a la distancia (a 420 u,
+   carga completa; a 150 u, toque).
+2. **Pasa** si hay presión (rival a < 90 u) y existe un compañero con carril libre (ningún rival a
+   < 50 u de la recta del pase) más adelantado o más libre. Corto si está a < 350 u, largo si más.
+   Con presión y sin carril, conduce hacia el lado contrario al rival más cercano.
+3. **Conduce** hacia la portería en el resto, esquivando al rival más cercano; sprinta con 150 u de
+   pista libre por delante.
+
+Sin regates, paredes ni pases al hueco en la v1: sin atributos no se notan.
+
+**Los compañeros sin balón** — "lo más parecido al fútbol real" (Paco):
+
+1. **Ancla**: la posición de formación, desplazada ±12 % por la estrategia.
+2. **Deriva hacia el balón**: el ancla se desplaza un 30 % de la distancia ancla→balón en el eje
+   largo y un 20 % en el corto. El bloque acompaña el juego sin deshacer la formación.
+3. **Separación**: dos compañeros a < 60 u se repelen.
+4. **Persecución**: en el equipo sin posesión, solo el más cercano al balón lo persigue (es el
+   controlado); el segundo cubre a 120 u entre el balón y su portería; el resto, a su ancla. **La
+   estrategia fija cuántos persiguen**: ataque 3, neutral 2, defensa 1 y el resto repliega.
+   Con posesión, los compañeros aplican solo 1-3: se ofrecen por posición, no corren al balón.
+
+**El portero** — siempre IA, para los dos equipos:
+
+1. Se mueve sobre una línea a 25 u de su portería siguiendo al balón en el eje corto, cerrando el
+   ángulo balón→centro. **Sale solo dentro del área pequeña** a por balón suelto sin compañero más
+   cerca, y vuelve al despejar. **Su posición se recorta al área grande por invariante**: nunca
+   fuera, ni por física.
+2. **Atajada**: balón a < 40 u lo ataja si `rng() < catchChance`; un chut cargado al máximo resta
+   0,15. Si ataja, saque de puerta automático; si no, sigue la trayectoria.
+3. **Penalti**: se tira a un lado con `rng`, ponderado hacia el lado del lanzador por
+   `penaltyReadChance`. Si acierta el lado, ataja.
+4. **Con balón**: saca en 2 s, pase largo al compañero más libre en campo propio; mientras, no se
+   le puede robar.
+
+**Perfil por dificultad (1-8)**, `profileFor(teamDef, difficulty)` — recibe la selección desde el
+día uno aunque en la v1 no la use (v1.5: atributos), como `profileFor(def, difficulty)` en
+Vault Fighter. Todo con `clamp` a mínimos y máximos en constantes:
+
+| Campo | Fórmula | Nivel 1 → 8 |
+|---|---|---|
+| `reactionMs` | 650 − dificultad × 55 | 595 → 210 |
+| `passErrorDeg` | 18 − dificultad × 2 | 16° → 2° |
+| `shotErrorDeg` | 14 − dificultad × 1,5 | 12,5° → 2° |
+| `catchChance` | 0,50 + dificultad × 0,05 | 0,55 → 0,90 |
+| `penaltyReadChance` | 0,50 + dificultad × 0,0125 | 0,51 → 0,60 |
+| `tackleChance` | 0,45 + dificultad × 0,04 | 0,49 → 0,77 |
+
+El error angular se aplica al vector del pase o chut con `rng()` centrado en cero. **La dificultad
+NO toca la velocidad**: la CPU difícil gana por reacción y precisión, no por piernas (criterio 14).
+
+**Cambio de estrategia de la CPU por marcador**, reevaluado cada 5 s: perdiendo → ataque;
+empatando en la segunda parte con < 30 s → ataque; ganando por uno con < 30 s → defensa; gol de
+oro → ataque.
+
 ### Decisiones estructurales
 
-**Puntuación**, con los dos modos en la misma tabla de `vault-world-cup`:
+**Puntuación** — **solo puntúa el Mundial** (grill 2026-09-04). Ningún amistoso escribe en la
+tabla, ni contra la CPU ni a dos: es entrenamiento para hacerse con los controles antes del
+Mundial, y dos humanos podrían pactar un 20-0. Como el versus de Pong: marcador en pantalla, nada
+enviado. La tabla de `vault-world-cup` solo tiene Mundiales, comparables entre sí.
 
 | Concepto | Puntos |
 |---|---|
@@ -178,8 +266,9 @@ Todos en constantes, ninguno enterrado en el código:
 | Pasar cuartos / semifinal | 5 000 / 10 000 |
 | Campeón del mundo | 25 000 |
 
-Un Mundial perfecto ronda los 80 000; un amistoso perfecto, unos 12 000. El amistoso puntúa poco
-a propósito: es para entrenar.
+Un Mundial perfecto vale **61 000 sin contar goles** (3 × 5 000 + 3 × 2 000 + 40 000) más 1 000
+por gol: con 2-3 goles por partido **ronda los 70 000**. Los goles son lo único sin techo y donde
+se expresa la habilidad; no hay tope.
 
 **Gol de oro sin tope**, con la CPU pasando a estrategia de ataque al entrar en él para que el
 partido se abra solo.
@@ -214,13 +303,14 @@ formación** — el contenido llega en el paso 7 con la red ya en verde.
 **2. `input.ts`, `players.ts` y `ball.ts` — el determinismo.**
 La entrada simétrica, los nueve jugadores creados por formación, movimiento, sprint en ráfaga con
 recuperación, el suelo tras la entrada, y la física del balón con altura y posesión pegada al pie.
-**El test que manda**: misma semilla y misma secuencia de entradas producen el mismo estado, paso a
-paso, sobre un partido largo. Es la precondición del online y se fija aquí.
+`STEP_MS` y `stepMatch` de paso fijo en `step.ts`. **El test que manda**: misma semilla y misma
+secuencia de entradas producen el mismo estado, paso a paso, sobre un partido largo. Es la
+precondición del online y se fija aquí.
 
 **3. `actions.ts` — lo que hace un jugador.**
 Chut con carga, pase corto raso, pase largo por alto, robo de pie, entrada al suelo con sus tres
-desenlaces. Todas escriben en out-params. Y el cambio automático de jugador controlado al más
-cercano.
+desenlaces. Todas escriben en out-params. Y el cambio automático de jugador controlado: derivado, más cercano
+con desempate por `id` e histéresis de 40 u (nunca el portero; con posesión, el poseedor).
 
 **4. `referee.ts` y `set-pieces.ts` — las reglas y los saques.**
 Gol, balón fuera por cada línea, falta y penalti. La fase de saque completa: tipo, posición,
@@ -273,13 +363,15 @@ amistoso a dos sea justo, y que el Mundial dé ganas de otro.
 
 **Motor y determinismo**
 1. **Misma semilla y misma secuencia de entradas producen el mismo estado**, paso a paso, en un
-   partido completo. Hay test que lo fija.
+   partido completo. Hay test que lo fija. **La simulación es de paso fijo** (`STEP_MS`): ningún
+   `dtMs` entra en el motor.
 2. **El motor no distingue quién mueve cada equipo**: `stepMatch` recibe dos `TeamInput` y ningún
    módulo de `football-logic/` lee teclado, `Math.random` ni estado de módulo.
 3. **Toda formación suma ocho de campo y ninguna posición se sale del campo**; el banco no repite
    ids ni equipaciones. Invariantes con test negativo cada uno.
 4. **Nueve por equipo**, y el portero nunca es el jugador controlado.
-5. **Se controla siempre el más cercano al balón**, y el cambio es automático.
+5. **Se controla siempre el más cercano al balón**, con histéresis de 40 u para que no parpadee,
+   y el cambio es automático y derivado del estado (no es entrada).
 
 **Juego**
 6. **El balón va pegado al pie** y un rival puede robarlo de pie o con entrada al suelo.
@@ -289,6 +381,8 @@ amistoso a dos sea justo, y que el Mundial dé ganas de otro.
    y un segundo en el suelo si no llega a nada.
 9. **Falta fuera del área es tiro libre; dentro, penalti** con el lanzador eligiendo lado y el
    portero tirándose. Sin tarjetas, sin fuera de juego.
+9b. **El portero nunca sale del área grande** (invariante), y solo sale de su línea dentro del
+    área pequeña.
 10. **Todo saque es automático con dirección**: cruceta para elegir, cuenta atrás de cinco segundos
     visible, y sale solo.
 11. **Alineación y estrategia se cambian en pleno partido** y la colocación del equipo responde en
@@ -307,7 +401,8 @@ amistoso a dos sea justo, y que el Mundial dé ganas de otro.
     MUNDO con fuegos artificiales**, ambas con la selección ganadora, y CONTINUAR devuelve al
     selector de modo.
 18. **La dificultad de la CPU es 4, 6 y 8 en cuartos, semifinal y final**, y 5 en el amistoso.
-19. **La puntuación se guarda en la tabla de `vault-world-cup`** con los valores del spec.
+19. **Solo el Mundial guarda puntuación en la tabla de `vault-world-cup`**, con los valores del
+    spec. Ningún amistoso pide nombre ni envía nada.
 
 **Calidad**
 20. **Ninguna asignación de memoria por frame** en el bucle ni en el dibujo, incluido el confeti
@@ -361,8 +456,24 @@ amistoso a dos sea justo, y que el Mundial dé ganas de otro.
   con la equipación y el nombre del ganador levantando la copa; confeti en el amistoso, fuegos
   artificiales en el Mundial; CONTINUAR devuelve al selector. ELIMINADO es un rótulo sobre el
   partido, sin pantalla propia. Descartado un PNG por selección: no escala. (Paco, 2026-09-03)
-- **Sí: puntuación única para los dos modos** con los valores de la tabla; el amistoso puntúa poco
-  a propósito. (Paco, 2026-09-03)
+- **Sí: solo puntúa el Mundial.** Sustituye a la puntuación única de los dos modos del 03-sep:
+  el amistoso (CPU o a dos) es entrenamiento y no escribe en la tabla, como el versus de Pong. Paco
+  lo dejó a criterio de Claude por no ser bloqueante. (2026-09-04)
+- **Sí: el controlado es estado derivado con histéresis de 40 u**, no entrada. El replay solo
+  necesita semilla + `TeamInput`. **Tras el QA, preguntar a Paco si en la v1.5 pasa a cambio
+  manual** (botón o cruceta, como los fútbol de consola). (Paco, 2026-09-04)
+- **Sí: paso fijo de simulación a 60 por segundo**, acumulador en el componente con tope de 5
+  pasos por frame. Descartado el `dtMs` variable: solo sería determinista dentro de un mismo
+  ordenador. (Paco, 2026-09-04)
+- **Sí: la IA con los números de la sección "Reglas de la IA"**: árbol chutar/pasar/conducir,
+  colocación por ancla + deriva + separación + persecución acotada por estrategia, portero en su
+  línea y nunca fuera del área, perfil por fórmula que no toca la velocidad. Regla de Paco: "lo más
+  parecido al fútbol real". (Paco, 2026-09-04)
+- **Sí: selecciones idénticas en la v1 con `profileFor(teamDef, difficulty)` ya preparado.**
+  Descartadas las pequeñas variaciones por equipo en la v1: en el primer QA no se sabría si una
+  selección es más dura por la fórmula de dificultad o por la variación. (Paco, 2026-09-04)
+- **Sí: la cuenta del Mundial perfecto es ~70 000, no 80 000** (61 000 base + goles). La tabla no
+  cambia. (2026-09-04)
 - **Sí: dificultad de la CPU 4-6-8 por ronda y 5 en el amistoso**, derivada por fórmula como en
   Vault Fighter. (Paco, 2026-09-03)
 - **Sí: entradas simétricas y azar con semilla desde el día uno, y nada de red.** Tomada el 02-sep
@@ -379,6 +490,20 @@ amistoso a dos sea justo, y que el Mundial dé ganas de otro.
 
 ---
 
+## Pendientes para el spike de la v1.5 (discutir con Paco punto a punto tras el QA)
+
+La v1 es el MVP; la v1.5 es el producto fino. Lo apuntado en el grill del 04-sep:
+
+- **Cambio manual de jugador controlado** (botón o cruceta), frente al derivado con histéresis.
+- **Atributos por selección**: defensa, ataque, contraataque, chute, pase. Son los que tomará la
+  CPU al manejar cada selección, con niveles de dificultad propios por equipo.
+- **Atributos por jugador**: velocidad, regate, chut, entrada. Con ellos, resistencia real y
+  cambios de banquillo (ya en el spec).
+- `profileFor(teamDef, difficulty)` ya recibe la selección: aquí es donde entra.
+- Afinar la fórmula de dificultad y los equipos después de jugar.
+
+---
+
 ## Riesgos identificados
 
 1. **Es el juego más grande del proyecto, y la IA es la factura.** Dieciocho muñecos que tienen
@@ -389,8 +514,8 @@ amistoso a dos sea justo, y que el Mundial dé ganas de otro.
    partido es *legal*; que sea divertido solo se sabe jugando. Es el mismo riesgo de producto que
    el equilibrio de Vault Fighter, y aquí es mayor porque hay más piezas interactuando.
 3. **El determinismo es frágil y se rompe en silencio.** Un `Math.random` que se cuele, un
-   `Date.now()`, un orden de iteración que dependa de un `Set`: cualquiera deja la simulación no
-   reproducible y ningún partido lo nota hoy — se notará el día del online. El test de misma
+   `Date.now()`, un `dtMs` que entre en el motor, un orden de iteración que dependa de un `Set`, un
+   `Math.sin` en la física: cualquiera deja la simulación no reproducible y ningún partido lo nota hoy — se notará el día del online. El test de misma
    semilla y mismas entradas es la única red, y hay que correrlo sobre un partido largo.
 4. **El gol de oro sin tope puede no acabar.** La CPU pasando a ataque lo hace improbable, no
    imposible. Si el QA lo ve, el tope y la tanda de penaltis serán su propio spec.
