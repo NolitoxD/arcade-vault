@@ -54,8 +54,17 @@
   levantando la copa; lo único en movimiento es el confeti (amistoso) o los fuegos artificiales
   (Mundial). Corta, y CONTINUAR devuelve al selector de modo. **ELIMINADO** y la derrota del
   amistoso son rótulos sobre la pantalla del partido, sin pantalla propia.
-- **SFX procedurales** (silbato, público, gol, golpeo) y **tres pistas de música** sorteadas por
-  partido.
+- **Audio por fichero (cambio de Paco, 04-sep):** **dos pistas de música**, una de gameplay y otra
+  de menú (selector de selección, alineación y estrategia, y la pausa en partido), y **SFX de
+  fichero**: gol, pitido de árbitro (falta, penalti, gol, saque de centro al inicio, al final y
+  tras cada gol), público animando, entrada al suelo, golpeo del balón. Los trae Paco con sufijo;
+  síntesis WebAudio solo como respaldo si falta alguno.
+- **Rótulos superpuestos al partido** (como el ELIMINADO de Vault Fighter): INICIO, FALTA, PENALTI,
+  FUERA, CÓRNER, GOL, FINAL, con su pitido. **Sin figura de árbitro** en la v1.
+- **Celebración de gol fija**, la misma siempre: los que marcan se abrazan, los que reciben quedan
+  cabizbajos.
+- **Una sola versión visual** (sin skins) y **solo desktop** en la v1: en viewport pequeño el juego
+  aparece en el catálogo deshabilitado; si el viewport se reduce en partida, se para y redirige.
 - Registro, migración, play-page, carátula (la hace Claude con `design`) y puntuación en la tabla
   de `vault-world-cup`.
 
@@ -66,7 +75,9 @@
 - **Atributos por jugador o posición, resistencia real y cambios de banquillo → v1.5**, todo junto:
   sin atributos un cambio no significa nada, y sin resistencia el sprint es velocidad gratis (de
   ahí la ráfaga provisional).
-- **Tarjetas → v1.5**, si al jugar se ve que las faltas sin castigo molestan.
+- **Tarjetas → v1.5**: tras varias faltas, amarilla y roja con el dibujo de la tarjeta como rótulo.
+- **Figura de árbitro → v1.5** (opcional: un muñeco de negro siguiendo el balón). En la v1 el
+  árbitro es pitido + rótulo.
 - **Octavos de final → v1.5** si el Mundial de 8 queda corto; **nunca más de 16**.
 - **Fase de grupos, prórroga y tanda de penaltis como desempate**: no. Eliminatoria directa y gol
   de oro.
@@ -75,8 +86,9 @@
 - **La variante a lo Kick Off** (balón libre, chut con efecto) → después de producción, sobre este
   motor.
 - **Persistencia del Mundial al recargar**: se pierde, como en los otros trece.
-- **Skins retro y neon, y el port a móvil**: la cadena posterior de siempre (`skin-designer`,
-  `mobile-porter`), no este spec.
+- **Skins y port a móvil: NO** (cambio de Paco, 04-sep). Este juego no pasa por `skin-designer` ni
+  `mobile-porter`. Mobile se replantea tras jugar la v1, junto con la decisión 9 frente a 11
+  jugadores.
 
 ---
 
@@ -357,8 +369,9 @@ confeti en el amistoso, fuegos artificiales en el Mundial.
 
 **10. Registro, tipos, migración, play-page, música y carátula.**
 La entrada en el catálogo con instrucciones que expliquen los tres botones y el pulsar/mantener,
-la fila en base de datos, la play-page espejo de la de Vault Fighter, las tres pistas al azar, y la
-carátula.
+la fila en base de datos, la play-page espejo de la de Vault Fighter, las dos pistas (gameplay y
+menú) y los SFX de fichero, la carátula, y el **bloqueo por viewport**: deshabilitado en el
+catálogo en pantalla pequeña y parada + redirect si el viewport se reduce en partida.
 
 **11. `verify-plan` y QA humano.**
 Los criterios de aceptación del spec, y el QA de Paco: que el fútbol se sienta fútbol, que el
@@ -497,8 +510,11 @@ amistoso a dos sea justo, y que el Mundial dé ganas de otro.
   variante a lo Kick Off. (2026-09-03)
 - **Sí: cuatro etapas, máximo una al día, y la calidad manda sobre el calendario.** Mejor una v1
   rejugable en ocho días que una floja en cuatro. (Paco, 2026-09-03)
-- **Sí: tres pistas de música al azar por partido; el público y el silbato por síntesis.** La
-  carátula la hace Claude con `design`. (Paco, 2026-09-03)
+- **Sustituida el 04-sep: dos pistas (gameplay y menú) y SFX de fichero** que trae Paco; síntesis
+  solo de respaldo. La carátula la hace Claude con `design`. (Paco, 2026-09-04)
+- **Sí: rótulos superpuestos (INICIO, FALTA, PENALTI, FUERA, CÓRNER, GOL, FINAL) con pitido, sin
+  figura de árbitro en la v1; celebración de gol fija; sin skins; solo desktop con bloqueo por
+  viewport.** Tarjetas y árbitro dibujado, v1.5. (Paco, 2026-09-04)
 - **Sí: los criterios se revisan tras el QA.** Están bien de partida, pero hasta que no se juega no
   se sabe qué hay que refinar. (Paco, 2026-09-03)
 

@@ -1,9 +1,8 @@
 # HANDOFF — VAULT WORLD CUP · etapa A cerrada · escrito 2026-09-04
 
 **Repo:** `/Users/paco.monleon/Dev-Web/curso-claude-code/arcade-vault` · rama `main`.
-**Último commit:** `bfafcaa` (spec 31 + handoff del 03-sep). **Sin commitear al escribir esto:**
-los 26 ficheros de `components/games/football-logic/`, `specs/31-vault-world-cup.md` (modificado),
-`docs/superpowers/plans/2026-09-04-vault-world-cup-engine.md` y este handoff — los commitea Paco.
+**Último commit:** `c075e87` (Paco, 04-sep: etapa A entera, spec actualizado y plan). **Sin
+commitear al escribir esto:** solo este handoff (con la sección 7 de audio) — lo commitea Paco.
 **Suite real:** 760 tests en 51 ficheros verdes (504 de partida + 256 del motor) · `npx tsc --noEmit`
 limpio · `npm run build` verde · grep de determinismo vacío en toda la carpeta, tests incluidos.
 
@@ -36,8 +35,8 @@ etapa B**), `final-fix-report.md` (mensajes de commit propuestos, uno global o c
 
 ## 2. Próximos pasos, en orden
 
-1. **`retomar` con este documento.** Comprobar con `git log`/`git status` si Paco commiteó la
-   etapa A. Si no, recordárselo: los mensajes están en `final-fix-report.md` §"Mensaje de commit".
+1. **`retomar` con este documento.** La etapa A ya está commiteada (`c075e87`); comprobar solo que
+   el working tree está limpio.
 2. **Preguntar a Paco el "ajuste del plan"** que anunció el 04-sep ("cuando termines te digo un
    ajuste del plan"; confirmó que NO toca la etapa A). Puede afectar a B, C o D: preguntarlo ANTES
    de escribir el plan de la etapa B.
@@ -80,8 +79,8 @@ atributos por selección (defensa/ataque/contraataque/chute/pase) y por jugador.
 - Commits SOLO Paco. Las tareas dejan el working tree verificado y proponen el mensaje.
 - Spec profundo + grill; **durante la implementación, si surge una duda de diseño, parar y hacer
   un grill corto en vez de decidir en silencio** (Paco lo pidió explícitamente el 04-sep).
-- Música: Paco deja `public/vault-world-cup-theme-{1,2,3}.mp3` (etapa D). Carátula la hace Claude
-  con `design`, PNG 800×800, Paco la pone en `public/covers/vault-world-cup.png`.
+- Música y SFX: ver la sección 7 (esquema nuevo de Paco, sustituye a las 3 pistas del spec). Carátula
+  la hace Claude con `design`, PNG 800×800, Paco la pone en `public/covers/vault-world-cup.png`.
 
 ---
 
@@ -106,3 +105,36 @@ atributos por selección (defensa/ataque/contraataque/chute/pase) y por jugador.
 Nunca `next dev` (Paco lo tiene en :3000). Migraciones por MCP con `list_migrations` antes y
 autorización explícita. QA de gameplay siempre humano. Skills: `retomar`, `grill-me`,
 `superpowers:writing-plans`, `superpowers:subagent-driven-development`, `verify-plan`.
+
+---
+
+## 7. Audio (añadido por Paco el 04-sep tras cerrar la etapa A — SUSTITUYE al "3 pistas al azar")
+
+Paco trae los ficheros con sufijo en el nombre; hasta que lleguen, no cablear nada. Esquema:
+
+- **Dos pistas de música**, no tres al azar: una de **gameplay** y otra de **menú/previa** (selector
+  de selección, alineación, estrategia, y también la **pausa** en partido para cambiarlas).
+- **SFX** (los trae Paco, sustituyen a la síntesis WebAudio del spec donde haya fichero):
+  gol · **pitido de árbitro** (falta, penalti, gol, y saque de centro al inicio, al final y tras
+  cada gol) · público animando · entrada al suelo · golpeo del balón al chutar. Puede faltar alguno.
+- El spec 31 dice "tres pistas sorteadas por partido + SFX por síntesis": **actualizar el spec y el
+  paso 10 (etapa D)** con este esquema cuando Paco confirme la lista de ficheros.
+- **Paco dará "los cambios al plan" al inicio de la próxima sesión** (antes de planificar la etapa B).
+
+---
+
+## 8. Cambios al plan (Paco, 04-sep, tras cerrar la etapa A) — YA volcados al spec 31
+
+1. **Árbitro:** sin figura de árbitro en la v1 (opcional en v1.5: un muñeco de negro siguiendo el
+   balón). El árbitro se manifiesta por **pitido + rótulo**.
+2. **Rótulos superpuestos al partido** ("textos chulos", como el ELIMINADO de Vault Fighter):
+   INICIO, FALTA, PENALTI, FUERA, CÓRNER, GOL, FINAL. Cada uno con su pitido donde corresponda.
+   **Tarjetas → v1.5**: tras varias faltas, amarilla (dibujo de tarjeta amarilla) y roja.
+3. **Celebración de gol fija**, la misma siempre: los del equipo que marca abrazándose, los que lo
+   reciben cabizbajos. Una sola animación para todos los goles.
+4. **Sin skins**: este juego tiene UNA sola versión visual. No pasa por `skin-designer`.
+5. **Sin versión mobile en la v1**: no pasa por `mobile-porter`. En viewport pequeño el juego
+   aparece en el catálogo pero **deshabilitado**; si el viewport se reduce durante una partida,
+   el juego se **para y redirige**. La decisión 9 vs 11 jugadores se toma tras jugar la v1, y
+   mobile se replantea después.
+6. Audio: sección 7 (dos pistas + SFX de fichero).
