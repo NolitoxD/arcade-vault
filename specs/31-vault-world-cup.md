@@ -89,7 +89,8 @@ siempre por parámetro. Las funciones del bucle escriben en el estado que recibe
 | Fichero | Responsabilidad |
 |---|---|
 | `rng.ts` | `createRng(seed): () => number` — el azar con semilla. **Único origen de aleatoriedad del motor.** |
-| `step.ts` | `STEP_MS = 1000 / 60` y `stepMatch(match, inputs, rng)`: el paso FIJO de simulación. |
+| `clock.ts` · `step.ts` | `STEP_MS = 1000 / 60`, `stepsFor`, `perStep` (en `clock.ts`, sin imports) y `stepPhysics` (movimiento + balón) en `step.ts`. `stepMatch` vive en `match.ts` (ruling R7 de la etapa A: ponerlo aquí formaría un ciclo ESM). |
+| `geometry.ts` | `Vec2`, `dist`, `normalizeInto`, `clamp`, `INV_SQRT2` — sin trigonometría. |
 | `pitch.ts` | Dimensiones del campo en coordenadas de mundo, áreas, porterías, punto de penalti. Constantes. |
 | `teams.ts` | `TeamDef` (id, nombre, colores), el banco de selecciones, `FORMATIONS` y `STRATEGIES`. |
 | `input.ts` | `TeamInput`, la entrada **simétrica** de un equipo. Quien la rellena —teclado 1, teclado 2 o CPU— es cosa del componente. |
@@ -99,7 +100,7 @@ siempre por parámetro. Las funciones del bucle escriben en el estado que recibe
 | `ai.ts` | Colocación por formación y estrategia, persecución del balón, portero, y la decisión del equipo CPU (rellena un `TeamInput`). |
 | `referee.ts` | Gol, balón fuera (banda, córner, puerta), falta y penalti. Devuelve **qué saque toca y dónde**. |
 | `set-pieces.ts` | La fase de saque: tipo, posición, dirección elegida, cuenta atrás, ejecución automática. |
-| `match.ts` | `MatchState`: reloj, partes, marcador, fase, gol de oro. |
+| `match.ts` | `MatchState`: reloj, partes, marcador, fase, gol de oro. **Y `stepMatch(match, inputs, rng)`**, el paso completo del partido (etapa A, ruling R7). |
 | `world-cup.ts` | Sorteo de 8 del banco, cuadro, eliminación. Mismo patrón que `tournament.ts`, no el mismo código (aquél es de luchadores). |
 | `invariants.ts` | La red: formaciones que suman ocho, banco sin ids ni colores repetidos, geometría del campo coherente. |
 | `mode.ts` | Unión `'friendly' \| 'world-cup'`, igual que la de Vault Fighter. |
@@ -186,6 +187,7 @@ Todos en constantes, ninguno enterrado en el código:
 | Entrada al suelo | avance 90 u en 0,4 s · si falla, 1 s en el suelo |
 | Partes | 2 × 90 s (techo 120) · cuenta atrás de saque 5 s |
 | Portero | se mueve en su línea a 220 u/s, ataja lo que llega a menos de 40 u |
+| Añadidos en la etapa A (no estaban en el spec; revisar en QA) | robo de pie frente a rival que SÍ sprinta 35 % · el chut cargado se eleva hasta `vz` 200 (ápex 22 u, nunca por encima del larguero solo) |
 
 
 ### Reglas de la IA (del grill del 2026-09-04)
@@ -206,6 +208,11 @@ compañeros obedecen estas reglas, lo que hace justo el amistoso a dos por const
    pista libre por delante.
 
 Sin regates, paredes ni pases al hueco en la v1: sin atributos no se notan.
+
+**Pases del humano asistidos** (ruling R10, etapa A): al pulsar B el pase corto va al compañero de
+campo más cercano dentro de un cono de 45° alrededor de la cruceta (o del `facing` si está en
+neutro); al mantener B el largo va al más lejano del mismo cono; sin compañero en el cono, el pase
+sale recto. Sin error angular en el humano: el error es cosa del perfil de la CPU.
 
 **Los compañeros sin balón** — "lo más parecido al fútbol real" (Paco):
 
@@ -380,7 +387,9 @@ amistoso a dos sea justo, y que el Mundial dé ganas de otro.
 8. **La entrada al suelo tiene tres desenlaces**: roba si llega al balón, falta si toca al jugador,
    y un segundo en el suelo si no llega a nada.
 9. **Falta fuera del área es tiro libre; dentro, penalti** con el lanzador eligiendo lado y el
-   portero tirándose. Sin tarjetas, sin fuera de juego.
+   portero tirándose. Penalti solo cuando el infractor comete la falta **dentro de su propia
+   área grande** (ruling R14); una falta del atacante en el área rival es tiro libre. Sin
+   tarjetas, sin fuera de juego.
 9b. **El portero nunca sale del área grande** (invariante), y solo sale de su línea dentro del
     área pequeña.
 10. **Todo saque es automático con dirección**: cruceta para elegir, cuenta atrás de cinco segundos
@@ -474,6 +483,11 @@ amistoso a dos sea justo, y que el Mundial dé ganas de otro.
   selección es más dura por la fórmula de dificultad o por la variación. (Paco, 2026-09-04)
 - **Sí: la cuenta del Mundial perfecto es ~70 000, no 80 000** (61 000 base + goles). La tabla no
   cambia. (2026-09-04)
+- **Etapa A ejecutada (2026-09-04), rulings que tocan el spec:** R7 `stepMatch` en `match.ts`; R10
+  pases asistidos por cono de 45°; R11 la entrada al suelo hace falta al tocar a cualquier rival y el
+  que entra también cae 1 s; R14 penalti solo por falta en área propia; R6 dos números añadidos
+  (robo vs sprint 35 %, `vz` del chut 200). Ledger completo en
+  `.superpowers/sdd/2026-09-04-vault-world-cup-engine/progress.md` (git-ignorado).
 - **Sí: dificultad de la CPU 4-6-8 por ronda y 5 en el amistoso**, derivada por fórmula como en
   Vault Fighter. (Paco, 2026-09-03)
 - **Sí: entradas simétricas y azar con semilla desde el día uno, y nada de red.** Tomada el 02-sep

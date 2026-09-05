@@ -1,125 +1,108 @@
-# HANDOFF — VAULT WORLD CUP (arcade-vault) · escrito 2026-09-03
+# HANDOFF — VAULT WORLD CUP · etapa A cerrada · escrito 2026-09-04
 
 **Repo:** `/Users/paco.monleon/Dev-Web/curso-claude-code/arcade-vault` · rama `main`.
-**Suite:** 504 tests en 38 ficheros verdes · `npx tsc --noEmit` limpio · `npm run build` verde.
-**Último commit:** `a525fb0` (Vault Fighter v1.5 completo). **Sin commitear:** `specs/31-vault-world-cup.md`
-y este handoff — los commitea Paco.
+**Último commit:** `bfafcaa` (spec 31 + handoff del 03-sep). **Sin commitear al escribir esto:**
+los 26 ficheros de `components/games/football-logic/`, `specs/31-vault-world-cup.md` (modificado),
+`docs/superpowers/plans/2026-09-04-vault-world-cup-engine.md` y este handoff — los commitea Paco.
+**Suite real:** 760 tests en 51 ficheros verdes (504 de partida + 256 del motor) · `npx tsc --noEmit`
+limpio · `npm run build` verde · grep de determinismo vacío en toda la carpeta, tests incluidos.
 
 ---
 
 ## 1. Dónde estamos
 
-**Hoy (03-sep) se escribió el spec 31 entero con Paco, sección a sección, y lo ha aprobado.**
-`specs/31-vault-world-cup.md` — estado `Approved`, **grill PENDIENTE**. Es el spec más grande del
-proyecto: 22 criterios de aceptación, 22 decisiones, 7 riesgos, 11 pasos en 4 etapas.
+**04-sep, en una sesión:** grill del spec 31 (cerrado y volcado al spec), plan de la etapa A, y la
+**etapa A entera (motor sin pantalla, Tasks 1-5) ejecutada y verificada** con
+`subagent-driven-development`: cinco tareas, cada una con revisión + una ronda de arreglo +
+re-revisión; revisión final de toda la etapa (cazó 2 Critical de integración que ningún test de
+tarea podía ver) + una ola de arreglo + re-revisión limpia.
 
-**El juego:** VAULT WORLD CUP, id `vault-world-cup`, nº14, segunda entrada SPORTS. Fútbol cenital de
-selecciones, 9 contra 9, cámara que sigue al balón + minimapa, balón pegado al pie, tres botones con
-pulsar/mantener, alineación y estrategia cambiables en juego, faltas y penaltis, saques automáticos
-con dirección. Dos modos: amistoso (vs CPU o 2 en el mismo teclado) y Mundial de 8 por eliminatoria.
+**Lo que existe:** `rng` (mulberry32), `pitch`, `teams` (SOLO España e Italia y SOLO la 3-3-2),
+`invariants`, `geometry`, `clock`, `input`, `step` (paso fijo 60 Hz, `stepPhysics`), `players`,
+`ball`, `actions` (chut con carga, pases asistidos por cono de 45°, robo, entrada al suelo,
+controlado derivado con histéresis 40 u), `referee`, `set-pieces`, `match` (`MatchState`, máquina
+de fases con guarda en las 7 transiciones, `stepMatch(match, inputs, rng)`).
 
-**Lo que NO se ha hecho todavía:** ni una línea de código. El motor `components/games/football-logic/`
-no existe.
+**Lo que NO existe:** `ai.ts`, las otras 14 selecciones y 2 formaciones, `mode.ts`,
+`world-cup.ts`, pantalla, registro, migración, música, carátula.
+
+**Registro completo de la ejecución** (git-ignorado, NO borrar):
+`.superpowers/sdd/2026-09-04-vault-world-cup-engine/progress.md` — 20 rulings R1-R20, 23 minors
+diferidos con su triaje, `final-review-report.md` (466 líneas, con tablas de cobertura de criterios,
+números del spec, exports sin consumidor, tests acoplados a la 3-3-2 y **recomendaciones para la
+etapa B**), `final-fix-report.md` (mensajes de commit propuestos, uno global o cinco por tarea).
 
 ---
 
 ## 2. Próximos pasos, en orden
 
-1. **`retomar` con este documento** y leer `specs/31-vault-world-cup.md` ENTERO.
-2. **`grill-me` sobre el spec 31**, antes de cualquier código. Con Vault Fighter el grill sacó el
-   torneo de la v1 y cazó luchadores que eran *peores* en vez de *distintos*; con el torneo sacó que
-   el cuadro no se veía y que la dificultad hacía el modo más fácil en vez de más duro. Aquí hay
-   tres cosas que apretar:
-   - **La IA de la etapa B** está descrita en un párrafo y es la factura del juego entero. Cómo decide
-     la CPU pasar frente a chutar, cómo se colocan los compañeros sin balón, qué hace el portero —
-     merece números antes de codificarse.
-   - **El determinismo**: qué cuenta exactamente como "entrada" para que dos ordenadores reproduzcan
-     un partido. El `TeamInput` por frame, sí — pero el cambio automático de jugador controlado,
-     ¿es entrada o estado derivado? Si es derivado, tiene que ser determinista también.
-   - **La puntuación**: los ~80 000 del Mundial perfecto son estimación, no cuenta; y el amistoso a
-     dos —¿puntúa alguien?— no está decidido.
-3. **Actualizar el spec con lo que salga del grill** (como se hizo con el 30) y **arrancar la
-   etapa A**: el motor sin pantalla. Ejecutar con `superpowers:subagent-driven-development`, paso a
-   paso, cada uno con su revisión — es lo que funcionó dos veces.
+1. **`retomar` con este documento.** Comprobar con `git log`/`git status` si Paco commiteó la
+   etapa A. Si no, recordárselo: los mensajes están en `final-fix-report.md` §"Mensaje de commit".
+2. **Preguntar a Paco el "ajuste del plan"** que anunció el 04-sep ("cuando termines te digo un
+   ajuste del plan"; confirmó que NO toca la etapa A). Puede afectar a B, C o D: preguntarlo ANTES
+   de escribir el plan de la etapa B.
+3. **Plan de la etapa B** con `writing-plans` (Tasks 6 y 7 del spec: `ai.ts` + contenido), leyendo
+   OBLIGATORIAMENTE `final-review-report.md` §"Recommendations for stage B" y §"Tests coupled to
+   the 3-3-2 geometry", y las líneas `CARRY TO Task 6/7` del ledger. Pre-vuelo con subagente como
+   hoy. Luego `subagent-driven-development`. **Máximo la etapa B en el día.**
+4. Deudas con dueño en la etapa B (del ledger): criterio 11 "responde en el acto" se cumple en
+   la Task 6 (R19, verificar explícitamente al cerrarla); `scratch.events` ya es por jugador pero
+   solo se juzga una falta por paso (gana equipo 0); robos simultáneos resuelven equipo 0 primero
+   (criterio 14, QA); `isSprinting` da false en el último paso del sprint (umbral
+   `STEAL_CHANCE_VS_SPRINT`); comentario obsoleto en `match.test.ts` ~510 ("nobody tackles").
 
 ---
 
-## 3. Reglas de esta ejecución (de Paco, no negociables)
+## 3. Decisiones ya tomadas (no relitigar)
 
-- **Máximo UNA etapa al día.** Si una necesita dos días, se le dan; al terminarla se PARA aunque
-  sobre tarde. Cuatro etapas = cuatro días mínimo.
-- **La calidad manda sobre el calendario.** Textual: "mejor una v1 rejugable en ocho días que una
-  floja en cuatro". Las etapas se cierran cuando están bien.
-- **Commits: SOLO Paco.** Las tareas dejan el working tree verificado y proponen el mensaje.
-- **La carátula la hace Claude** con `design` (PNG 800×800, Paco lo coloca en `public/covers/`).
-  **La música la trae Paco: 3 pistas MP3**, sorteadas por partido (patrón de Vault Fighter: sorteo
-  DENTRO del efecto, nunca en render). Público, silbato y gol por síntesis WebAudio.
+**Del grill (en el spec):** paso fijo sin `dtMs`; controlado derivado con histéresis 40 u (tras el
+QA preguntar si en v1.5 pasa a manual); reglas de la IA con números y perfil 1-8 por fórmula
+(`profileFor(teamDef, difficulty)`, la dificultad NO toca la velocidad); portero en su línea, sale
+solo en el área pequeña, nunca fuera del área grande (invariante); selecciones idénticas en v1;
+**solo puntúa el Mundial** (ningún amistoso, como el versus de Pong); Mundial perfecto ~70 000.
 
----
+**De la ejecución (ledger, R1-R20), las que tocan el diseño:** `stepMatch` vive en `match.ts`
+(R7); pases asistidos (R10); entrada = falta al tocar a cualquier rival y el que entra cae 1 s
+(R11); penalti SOLO por falta en área propia del infractor (R14); `clearActionEvent` exportada y
+las 18 casillas de eventos se limpian al inicio de cada paso (R16); `pickUp` no actúa fuera del
+campo (R17); el reloj no avanza en `half === 3` (R18); grep de determinismo literal sobre toda la
+carpeta, tests incluidos (R12); dos números añadidos al spec por revisar en QA: robo vs sprint
+35 % y `vz` del chut 200 (R6).
 
-## 4. Las cuatro etapas (del spec, sección "Plan de implementación")
-
-| Etapa | Pasos | Qué es |
-|---|---|---|
-| **A — motor sin pantalla** | 1-5 | rng con semilla, campo, teams, invariantes (la red PRIMERO); input/players/ball con el test de determinismo; actions; referee + set-pieces; match |
-| **B — IA y contenido** | 6-7 | ai.ts (colocación, persecución, portero, decisión CPU, perfil 1-8); las 16 selecciones y 3 formaciones con la red ya en verde |
-| **C — pantalla** | 8-9 | VaultWorldCupGame.tsx con cámara, minimapa, HUD, saques dibujados (un amistoso vs CPU hard-coded); luego mode.ts, world-cup.ts, selectores, cuadro, pantallas de victoria |
-| **D — cierre** | 10-11 | registro, migración, play-page, música, carátula; verify-plan + QA humano |
+**Pendientes para el spike v1.5** (sección propia en el spec): cambio manual de controlado,
+atributos por selección (defensa/ataque/contraataque/chute/pase) y por jugador.
 
 ---
 
-## 5. Decisiones de arquitectura que gobiernan el motor
+## 4. Reglas de Paco (no negociables)
 
-- **Entradas simétricas**: `stepMatch(match, [inputA, inputB], dtMs, rng)`. El motor NO sabe cuál
-  es humano. Es la puerta del online (punto 3 del roadmap) — se deja abierta, NO se construye.
-- **Azar con semilla**: `createRng(seed)` es el ÚNICO origen de aleatoriedad. Ni `Math.random` ni
-  `Date.now()` ni orden de `Set` dentro de `football-logic/`. Test de misma semilla + mismas
-  entradas = mismo estado, sobre un partido LARGO.
-- **Nada de estado de módulo**: campo, selecciones, formaciones, estado y rng, todo por parámetro.
-- **El motor se llama `football-logic`** (no `world-cup-logic`): lo reutilizará la variante Kick Off.
-- **Jugadores idénticos con `id` propio** en la v1; atributos + resistencia + cambios van juntos a la
-  v1.5 (sin atributos un cambio no significa nada).
-- **Formaciones y estrategias como datos** con invariante (suman 8, ninguna posición fuera del campo).
+- Máximo UNA etapa al día; la calidad manda sobre el calendario.
+- Commits SOLO Paco. Las tareas dejan el working tree verificado y proponen el mensaje.
+- Spec profundo + grill; **durante la implementación, si surge una duda de diseño, parar y hacer
+  un grill corto en vez de decidir en silencio** (Paco lo pidió explícitamente el 04-sep).
+- Música: Paco deja `public/vault-world-cup-theme-{1,2,3}.mp3` (etapa D). Carátula la hace Claude
+  con `design`, PNG 800×800, Paco la pone en `public/covers/vault-world-cup.png`.
 
 ---
 
-## 6. Trampas heredadas de Vault Fighter (lo que costó caro)
+## 5. Trampas de hoy (además de las heredadas de Vault Fighter, en el handoff del 03-sep)
 
-- **La red de invariantes ANTES que el contenido.** Funcionó dos veces: los datos pasaron a la primera.
-- **Tests que pasan por coincidencia del fixture** — apareció TRES veces: un intervalo igual al paso
-  de simulación, un impacto a distancia exactamente cero, un alcance menor que la separación mínima.
-  En un motor con física será peor. Regla: ¿pasaría este test con otros números?
-- **Huecos entre capas**: `absorbWithShield` existió seis tareas sin consumidor y una magia entera
-  no hacía nada con 389 tests verdes. Al cerrar cada etapa: recorrer lo exportado, todo con consumidor.
-- **Guarda de precondición en TODAS las transiciones** de estado, no en casi todas.
-- **El auto-repeat del teclado** se saltaba una pantalla entera que "esperaba pulsación". Los
-  botones necesitan `e.repeat` acotado a las fases de menú (NO global: machacar en juego es válido).
-- **Verificar lo que afirman los subagentes.** Uno reportó arreglos venidos de un commit inexistente.
-
----
-
-## 7. Operativa
-
-- **Nunca arrancar `next dev`**: el de Paco vive en :3000.
-- **El Browser pane oculto congela `requestAnimationFrame`** y la play-page pide sesión → el QA de
-  gameplay es SIEMPRE humano.
-- **Migraciones por MCP** (proyecto `hppzpkurlwqwzmigiuzq`): `list_migrations` antes, versionar el
-  fichero con la versión exacta que devuelva el servidor. Autorización explícita de Paco para aplicar.
-- **Ojo con el cwd del shell**: un `npm` desde `~/Dev-Web` creó un `package-lock.json` huérfano
-  allí y Next tomó 14 GB como raíz del workspace → dev server colgado. Si pasa, mirar ese lockfile.
-- **Los avisos del editor llegan caducados**: confirmar con `npx tsc --noEmit` y `npm test`.
+- **Vitest ejecuta cualquier `*.test.ts` bajo `.superpowers/`**: los snapshots del SDD van al
+  scratchpad, NUNCA dentro del repo (inflaron la cuenta 666→809 hasta que se detectó).
+- **Los revisores de tarea no ven la integración**: los dos Critical (falta re-juzgada tras el
+  saque, balón recogido fuera del campo) solo aparecieron en la revisión final con sondas
+  ejecutables. Para la etapa B: revisión final con sondas, no solo lectura.
+- **El test integrador insignia tiene que ejercitar todas las cadenas**: la policy del partido
+  grabado no hacía entradas y por eso C1 pasó. Ahora sí (una entrada por `TACKLE_STEPS`).
+- **Las cuentas de suite de los subagentes hay que re-correrlas** (varias venían infladas).
+- El editor muestra "Cannot find module" caducados; solo vale `npx tsc --noEmit`.
+- Un `ToolSearch` de `SendMessage` no existe en este harness: las rondas de arreglo van con
+  implementador fresco + brief + informe (funcionó igual).
 
 ---
 
-## 8. Roadmap y contexto
+## 6. Operativa (sin cambios)
 
-Roadmap definitivo (02-sep): **1) este fútbol** → 2) multijugador simultáneo por puntos → 3) online
-1v1 en ordenadores distintos (aplica a fútbol, lucha y torneos con plazas humanas; hará falta una
-2ª cuenta Google para el QA) → 4) producción (Supabase actual = test; uno nuevo de prod desde las
-18 migraciones, sin datos; Vercel Production→prod, Preview/Dev→test; OAuth de prod SOLO Google).
-
-**Idea futura de Paco** (después de producción): variante a lo **Kick Off** sobre este motor —
-muñecos más pequeños, campo más vertical, balón LIBRE, chut con efecto. Era fanático. No se olvide.
-
-**Ledgers de Vault Fighter** (git-ignorados, con las decisiones tomadas por Paco):
-`.superpowers/sdd/2026-09-01-vault-fighter/progress.md` y `.superpowers/sdd/2026-09-01-tournament/progress.md`.
+Nunca `next dev` (Paco lo tiene en :3000). Migraciones por MCP con `list_migrations` antes y
+autorización explícita. QA de gameplay siempre humano. Skills: `retomar`, `grill-me`,
+`superpowers:writing-plans`, `superpowers:subagent-driven-development`, `verify-plan`.
