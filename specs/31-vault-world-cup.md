@@ -244,11 +244,20 @@ sale recto. Sin error angular en el humano: el error es cosa del perfil de la CP
    cerca, y vuelve al despejar. **Su posición se recorta al área grande por invariante**: nunca
    fuera, ni por física.
 2. **Atajada**: balón a < 40 u lo ataja si `rng() < catchChance`; un chut cargado al máximo resta
-   0,15. Si ataja, saque de puerta automático; si no, sigue la trayectoria.
+   0,15. Si ataja, **se queda el balón y el juego sigue vivo** (no es pieza de saque: entra en la
+   regla 4, el mismo mecanismo que recoger un balón suelto); si no, sigue la trayectoria. (Grill
+   del 05-sep, D4; sustituye al "saque de puerta automático" del 04-sep.)
 3. **Penalti**: se tira a un lado con `rng`, ponderado hacia el lado del lanzador por
    `penaltyReadChance`. Si acierta el lado, ataja.
-4. **Con balón**: saca en 2 s, pase largo al compañero más libre en campo propio; mientras, no se
-   le puede robar.
+4. **Con balón** (tras atajar o recoger un balón suelto, un solo mecanismo para los dos casos):
+   durante 2 s no se le puede robar y **la entrada de su equipo pasa a él** en vez de al controlado,
+   como en un saque de banda: la cruceta apunta, **B = saque con la mano** (pase corto asistido al
+   compañero más cercano del cono de 45° de R10), **A = pase largo asistido** (al más lejano del
+   cono); sin compañero en el cono, recto; con la cruceta en neutro apunta recto hacia campo
+   contrario. Es un saque: sin error angular, para los dos equipos. Mientras el portero tiene el
+   balón, el controlado de campo no obedece a la cruceta y se coloca por IA. **Si a los 2 s nadie
+   ha pulsado, saque automático**: pase largo al compañero más libre en campo propio. La CPU no
+   pulsa botones: saca siempre con el automático a los 2 s. (Paco, 05-sep, D4.)
 
 **Perfil por dificultad (1-8)**, `profileFor(teamDef, difficulty)` — recibe la selección desde el
 día uno aunque en la v1 no la use (v1.5: atributos), como `profileFor(def, difficulty)` en
@@ -515,6 +524,24 @@ amistoso a dos sea justo, y que el Mundial dé ganas de otro.
 - **Sí: rótulos superpuestos (INICIO, FALTA, PENALTI, FUERA, CÓRNER, GOL, FINAL) con pitido, sin
   figura de árbitro en la v1; celebración de gol fija; sin skins; solo desktop con bloqueo por
   viewport.** Tarjetas y árbitro dibujado, v1.5. (Paco, 2026-09-04)
+- **Grill corto del 05-sep sobre el plan de la etapa B (Paco): tres aclaraciones y una regla nueva.**
+  **D1** persecución sin posesión: persiguen el balón los K más cercanos (ataque 3 / neutral 2 /
+  defensa 1), el primero es el controlado, el siguiente cubre a 120 u entre balón y portería propia
+  y el resto va a su ancla con deriva (aclaración del grill del 05-sep). **D2** `tackleChance` es la
+  DISPOSICIÓN de la CPU a intentar robo o entrada cuando está a alcance, en cada tick de reacción;
+  el éxito del robo sigue siendo el 65 % / 35 % frente a sprint, para los dos equipos (aclaración
+  del grill del 05-sep). **D3** el perfil del equipo humano usa la MISMA dificultad que la CPU para
+  portero (`catchChance`, `penaltyReadChance`) y penalti; solo difiere en que sus pases y chuts
+  llevan error angular 0, R10 (aclaración del grill del 05-sep). **D4, regla nueva — portero con
+  balón:** una atajada NO es pieza de saque; el portero se queda el balón, inrobable 2 s, igual
+  que al recoger un balón suelto, y durante esos 2 s su equipo puede sacar con botón como si fuera
+  un saque de banda: B saque con la mano (pase corto asistido), A pase largo asistido, cruceta para
+  apuntar, sin error angular; si a los 2 s no ha sacado, saque automático al compañero más libre.
+  Sustituye al "si ataja, saque de puerta automático" del 04-sep. Literal de Paco: "puedes hacer
+  saque con botón como si fuera un saque de banda: botón pase = saque con la mano, botón chut =
+  pase largo; si a los 2 segundos no has sacado, saque automático". Interpretación de ejecución
+  como supuesto S-GK en el plan de la etapa B (neutro = recto hacia campo contrario; la CPU siempre
+  usa el automático). (Paco, 2026-09-05)
 - **Sí: los criterios se revisan tras el QA.** Están bien de partida, pero hasta que no se juega no
   se sabe qué hay que refinar. (Paco, 2026-09-03)
 
