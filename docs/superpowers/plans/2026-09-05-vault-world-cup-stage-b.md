@@ -92,7 +92,7 @@ Orden de dependencias (una fila solo importa de las de arriba; `ai.ts` importa `
 - Test: `components/games/football-logic/ai.test.ts` (nuevo), `input.test.ts`, `pitch.test.ts`, `players.test.ts`, `step.test.ts`, `ball.test.ts`, `actions.test.ts`, `set-pieces.test.ts`, `match.test.ts`
 
 **Interfaces:**
-- Consumes (código real de la etapa A): `PlayerState`, `stepPlayer`, `anchorFor`, `ownGoalSide`, `isPlayerDown`, `GK_SPEED`, `GK_CATCH_RADIUS`, `GK_LINE_DIST`, `PLAYER_SPEED`, `PLAYER_HEIGHT` (`players.ts`); `BallState`, `givePossession`, `kickBall`, `canPickUp`, `POSSESSION_RADIUS` (`ball.ts`); `Vec2`, `dist`, `normalizeInto`, `clamp`, `INV_SQRT2` (`geometry.ts`); `PitchDef`, `Side`, `centerY`, `goalLineX`, `isInsideSmallArea`, `isInsideBigArea` (`pitch.ts`); `Formation`, `Strategy`, `STRATEGIES`, `TeamDef`, `TEAM_SIZE` (`teams.ts`); `Axis`, `TeamInput` (`input.ts`); `stepsFor`, `perStep`, `AttackDirs` (`step.ts`); `Rng` (`rng.ts`); `ActionEvent`, `clearActionEvent`, `SHOT_SPEED_MIN`, `SHOT_SPEED_MAX`, `aimPass` (`actions.ts`); `MatchState`, `callSetPiece` (`match.ts`).
+- Consumes (código real de la etapa A): `PlayerState`, `stepPlayer`, `anchorFor`, `ownGoalSide`, `isPlayerDown`, `GK_SPEED`, `GK_CATCH_RADIUS`, `GK_LINE_DIST`, `PLAYER_SPEED`, `PLAYER_HEIGHT` (`players.ts`); `BallState`, `givePossession`, `kickBall`, `canPickUp`, `POSSESSION_RADIUS` (`ball.ts`); `Vec2`, `dist`, `normalizeInto`, `clamp`, `INV_SQRT2` (`geometry.ts`); `PitchDef`, `Side`, `centerY`, `goalLineX`, `isInsideSmallArea`, `isInsideBigArea` (`pitch.ts`); `Formation`, `Strategy`, `STRATEGIES`, `TeamDef`, `TEAM_SIZE` (`teams.ts`); `Axis`, `TeamInput` (`input.ts`); `stepsFor`, `perStep`, `AttackDirs` (`step.ts`); `Rng` (`rng.ts`); `ActionEvent`, `clearActionEvent`, `SHOT_SPEED_MIN`, `SHOT_SPEED_MAX`, `SHORT_PASS_SPEED`, `LONG_PASS_SPEED`, `GK_HOLD_STEPS`, `aimPass`, `shortPass`, `longPass` (`actions.ts`); `MatchState` (`match.ts`). Desde D4 la atajada no llama a `callSetPiece`: el único consumidor de `goalKickX` en código es `referee.ts`.
 - Produces (lo usan la Task 6b, la Task 7 y la etapa C con estos nombres exactos):
 
 ```ts
@@ -115,7 +115,15 @@ export type ActionKind = 'none' | 'shot' | 'short-pass' | 'long-pass' | 'steal' 
 export function chargeFraction(chargeSteps: number): number;               // 0..1, guarda <= 0 (CARRY #13)
 export function pickPassTarget(p: PlayerState, players: readonly PlayerState[], dirX: number, dirY: number, farthest: boolean, stepCount: number): number; // id | -1
 export function freestMateDir(gk: PlayerState, players: readonly PlayerState[], attackDir: 1 | -1, pitch: PitchDef, out: Vec2): boolean; // unit vector to the freest outfield mate in own half; false = none
+// D4, the automatic release: fires ONLY at stepCount - ball.ownerSinceStep >= GK_HOLD_STEPS (120), a long pass at the
+// freest own-half mate (straight along attackDir with nobody). No rng. Does NOT clear `out` on its no-op paths any more.
 export function releaseFromGoalkeeper(gk: PlayerState, ball: BallState, players: readonly PlayerState[], attackDir: 1 | -1, pitch: PitchDef, stepCount: number, aim: Vec2, out: ActionEvent): void;
+// D4, the release by button while the keeper holds the ball (caught or picked up: one path, ball.owner === gk.id):
+// the d-pad aims (neutral = (attackDir, 0)); B 'pressed' = hand throw = assisted short pass (nearest mate in the
+// 45° cone, aimPass); A 'pressed' = assisted long pass (farthest mate in the cone); nobody in the cone = straight.
+// No angular error, no rng, only 'pressed' fires (never 'held'), A wins if both are pressed, and not on the very step
+// the keeper took the ball (stepCount <= ball.ownerSinceStep). Events: 'short-pass' / 'long-pass' with actorId = gk.id.
+export function applyKeeperButtons(gk: PlayerState, input: TeamInput, ball: BallState, players: readonly PlayerState[], attackDir: 1 | -1, stepCount: number, aim: Vec2, out: ActionEvent): void;
 
 // ai.ts (nuevo)
 export type AiProfile = {
@@ -139,6 +147,10 @@ export function applyKickError(ball: BallState, errorDeg: number, rng: Rng): voi
 export type MatchState = { /* ...la etapa A menos gkPenaltyRead... */
   profiles: readonly [AiProfile, AiProfile];
   catchRolled: [boolean, boolean];   // one catch roll per approach of the ball (per keeper)
+  // scratch: gkEvent disappears (each keeper writes its own slot events[gk.id]); liveControlled is the
+  // controlled tuple stepPhysics and positionTeam see THIS step: match.controlled, or -1 for a team whose
+  // keeper holds the ball (D4: its TeamInput goes to the keeper, the field player is placed by the AI).
+  scratch: { events: ActionEvent[]; liveControlled: [number, number]; call: RefereeCall; aim: Vec2; setPiece: SetPieceState };
 };
 export function createMatch(teams: [TeamDef, TeamDef], formationTable: readonly Formation[], pitch: PitchDef, profiles: readonly [AiProfile, AiProfile]): MatchState;
 ```
@@ -169,18 +181,19 @@ export function createMatch(teams: [TeamDef, TeamDef], formationTable: readonly 
 | Clamp a mínimos y máximos en constantes | valores en nivel 1 y 8 | `REACTION_MS_MIN/MAX`, `PASS_ERROR_MIN/MAX`, `SHOT_ERROR_MIN/MAX`, `CATCH_MIN/MAX`, `PENALTY_READ_MIN/MAX`, `TACKLE_MIN/MAX` |
 | Cambio de estrategia cada 5 s · < 30 s | 5 · 30 | `STRATEGY_REVIEW_SECONDS` · `LATE_GAME_SECONDS` (Task 6b) |
 
-### Supuestos de la Task 6a (el spec no lo fija; todos marcados `// Stage B assumption, not in the spec — review in QA`; ver la respuesta final)
+### Supuestos de la Task 6a (el spec no lo fija; marcados `// Stage B assumption, not in the spec — review in QA`, salvo S3 y S9, que Paco confirmó el 05-sep y llevan `// confirmed by owner 2026-09-05`; ver la lista final "Supuestos de la etapa")
 
 - **S1 · Cotas del clamp del perfil**: el spec pide "clamp a mínimos y máximos en constantes" sin darlos → cada campo se acota a su valor en nivel 1 y nivel 8 (`REACTION_MS_MIN = 210`, `REACTION_MS_MAX = 595`, etc.). Dificultades fuera de 1-8 saturan.
 - **S2 · Skew como rotación**: `e = deg · (π/180)` y `x' = x − e·y, y' = y + e·x` normalizado; a 16° el error frente a la rotación exacta es < 0,3°. Constante `DEG_TO_SKEW = Math.PI / 180`.
-- **S3 · Persecución**: "solo el más cercano persigue; el segundo cubre a 120 u; el resto a su ancla" y "la estrategia fija cuántos persiguen: 3/2/1" se reconcilian así: los `CHASERS[strategy]` más cercanos al balón (el primero es el controlado, que mueve la entrada) persiguen el balón; el siguiente cubre a `COVER_DIST`; el resto, ancla + deriva. Rango por distancia ascendente, desempate por `id`.
+- **S3 · Persecución — CONFIRMADO por Paco el 05-sep (D1)**: "solo el más cercano persigue; el segundo cubre a 120 u; el resto a su ancla" y "la estrategia fija cuántos persiguen: 3/2/1" se reconcilian así: los `CHASERS[strategy]` más cercanos al balón (el primero es el controlado, que mueve la entrada) persiguen el balón; el siguiente cubre a `COVER_DIST`; el resto, ancla + deriva. Rango por distancia ascendente, desempate por `id`. Etiqueta en código: `// confirmed by owner 2026-09-05 (D1)`; no va al QA como supuesto.
 - **S4 · Separación**: la repulsión suma al objetivo `(SEPARATION_DIST − d)` en la dirección que aleja del compañero, por cada compañero a `< SEPARATION_DIST`.
 - **S5 · Línea del portero**: la `y` objetivo es la intersección de la recta balón→centro de la portería con la línea a `GK_LINE_DIST`, con el parámetro acotado a [0, 1] y la `y` acotada a la anchura del área pequeña (`± smallAreaWidth / 2`), de la propia `PitchDef`.
 - **S6 · El portero solo recoge balón parado**: un balón en movimiento a `< GK_CATCH_RADIUS` se juega una sola vez por aproximación (`catchRolled`); si falla, sigue su trayectoria y el portero no lo "aspira" a 22 u por `pickUp`. Un balón parado es "balón suelto" y sigue las reglas de recogida de todos.
-- **S7 · Atajada → saque de puerta automático** (literal del spec) en `goalKickX`; el balón suelto que recoge el portero sigue la regla 4 (2 s y pase largo al más libre). La penalización por carga es lineal en la velocidad del balón entre `SHOT_SPEED_MIN` y `SHOT_SPEED_MAX` (los pases, más lentos, no restan).
-- **S8 · Error angular**: se aplica en el motor a los golpeos de `applyButtons` y de `releaseFromGoalkeeper` de los DOS equipos con el `passErrorDeg`/`shotErrorDeg` de `profiles[team]`; el humano lleva `humanProfile` (error 0, R10). Los saques (`stepSetPiece`) van exactos. Una tirada de `rng` por golpeo, error cero incluido.
-- **S9 · Perfil del equipo humano**: `humanProfile(def, difficulty)` con la MISMA dificultad que la CPU (portero y penalti simétricos; criterio 14 a dos por construcción).
+- **S7 · Penalización por carga**: la resta de `CHARGED_SHOT_CATCH_PENALTY` es lineal en la velocidad del balón entre `SHOT_SPEED_MIN` (0) y `SHOT_SPEED_MAX` (0,15); los pases, más lentos, no restan. (Lo que S7 decía el 04-sep sobre el saque de puerta lo sustituye D4: la atajada da POSESIÓN al portero, regla 2 nueva del spec.)
+- **S8 · Error angular**: se aplica en el motor SOLO a los golpeos de `applyButtons` (chut, pase corto, pase largo del controlado de campo) de los DOS equipos con el `passErrorDeg`/`shotErrorDeg` de `profiles[team]`; el humano lleva `humanProfile` (error 0, R10). Los saques (`stepSetPiece`) y **los saques del portero (`applyKeeperButtons` y `releaseFromGoalkeeper`, D4) van exactos y no consumen `rng`**. Una tirada de `rng` por golpeo de campo, error cero incluido.
+- **S9 · Perfil del equipo humano — CONFIRMADO por Paco el 05-sep (D3)**: `humanProfile(def, difficulty)` con la MISMA dificultad que la CPU (portero y penalti simétricos; criterio 14 a dos por construcción); solo difiere en `passErrorDeg = shotErrorDeg = 0`. Etiqueta en código: `// confirmed by owner 2026-09-05 (D3)`.
 - **S10 · Balón alto**: el portero ataja solo balones a `z <= PLAYER_HEIGHT`, como la recogida.
+- **S-GK · Portero con balón (interpretación de ejecución de D4, regla 4 nueva del spec; marcado `// Stage B assumption S-GK (D4 interpretation) — review in QA`)**. Lo que D4 fija: la atajada (`rng() < catchChance − penalización`, balón a `< GK_CATCH_RADIUS`) da posesión al portero por `givePossession` —el MISMO camino que recoger un balón parado por `pickUp`—, sin cambio de fase; inrobable por construcción (`steal` y `stepTackle` ya rechazan al portero como dueño); mientras `ball.owner === gk.id` el `TeamInput` del equipo va al portero (`applyKeeperButtons`) y no al controlado de campo, que se coloca por `positionTeam`; B = saque con la mano = pase corto asistido (cono de 45° de R10, al más cercano); A = pase largo asistido (al más lejano del cono); sin compañero en el cono, recto; sin error angular; si a `GK_HOLD_STEPS` (= `stepsFor(2)` = 120, el temporizador de la etapa A sobre `ball.ownerSinceStep`) nadie ha pulsado, `releaseFromGoalkeeper` saca al compañero más libre en campo propio; la CPU no pulsa botones (siempre el automático). Lo que el spec NO fija y aquí se decide: (1) **cruceta en neutro = recto hacia campo contrario, `(attackDir, 0)`**, nunca el `facing` del portero (que es el que tenía al atajar); (2) **solo `'pressed'` dispara** (una B mantenida desde un intento de robo anterior no saca); (3) **si A y B llegan `'pressed'` en el mismo paso gana A** (mismo orden que `applyButtons`); (4) **el saque a botón no puede salir en el mismo paso en que el portero se hizo con el balón** (`stepCount <= ball.ownerSinceStep` → nada): así la atajada y la recogida por `pickUp` (que ocurre en la física, después de los botones) se comportan igual —el primer saque posible es el paso siguiente— y el evento `'gk-catch'` de ese paso no lo pisa un `'short-pass'`; (5) los saques a botón llevan los eventos `'short-pass'`/`'long-pass'` con `actorId = gk.id` (son pases; el automático sigue siendo `'gk-release'`); (6) `match.controlled[team]` sigue apuntando al jugador de campo durante la posesión del portero (lo deriva `updateControlled`, que nunca elige al portero): el motor no cambia el cursor; si la etapa C quiere dibujarlo sobre el portero, lo decide leyendo `ball.owner` (nota para la Task 8).
 
 - [ ] **Step 1: `toAxis` en `input.ts` con su test, y quitar los `as Axis` de `step.test.ts` (CARRY #10)**
 
@@ -424,8 +437,9 @@ Run: `npx vitest run components/games/football-logic/step.test.ts components/gam
 
 ```ts
 // pitch.ts — tras penaltySpotX
-// The goal-kick spot: on the small-area line, centre of the goal (referee.ts and
-// the keeper's catch in ai.ts both restart from here).
+// The goal-kick spot: on the small-area line, centre of the goal. Its only code
+// consumer is judgeBall (referee.ts): since D4 a keeper's catch keeps play alive,
+// it never restarts from here.
 export function goalKickX(pitch: PitchDef, side: Side): number {
   return side === 0 ? pitch.smallAreaDepth : pitch.width - pitch.smallAreaDepth;
 }
@@ -595,9 +609,21 @@ describe('releaseFromGoalkeeper', () => {
     releaseFromGoalkeeper(w.players[0], w.ball, w.players, 1, PITCH, 500, w.aim, w.out);
     expect(w.ball.owner).toBe(4);
   });
+  it('leaves `out` alone on its no-op paths (D4: the throw applyKeeperButtons wrote in the same slot this step survives)', () => {
+    const w = world();
+    const gk = at(w.players[9], 1975, 650, -1, 0);
+    givePossession(w.ball, gk, 100);
+    w.out.kind = 'short-pass'; w.out.ok = true; w.out.actorId = 9;
+    releaseFromGoalkeeper(gk, w.ball, w.players, -1, PITCH, 100 + GK_HOLD_STEPS - 7, w.aim, w.out);   // holding: no-op
+    expect(w.out.kind).toBe('short-pass');
+    shortPass(gk, w.ball, -1, 0, 100 + GK_HOLD_STEPS, w.out);                                         // the ball left by button
+    releaseFromGoalkeeper(gk, w.ball, w.players, -1, PITCH, 100 + GK_HOLD_STEPS, w.aim, w.out);       // not the owner: no-op
+    expect(w.out.kind).toBe('short-pass');
+    expect(w.ball.owner).toBeNull();
+  });
 });
 ```
-(`at`, `world`, `dist2` son los helpers que ya existen en `actions.test.ts`; comprobar sus firmas antes de usarlos y reutilizarlos tal cual.)
+(`at`, `world`, `dist2` son los helpers que ya existen en `actions.test.ts` —`at(p, x, y, fx = 1, fy = 0)`, `world()` aparca a los 18 en la banda inferior con `facing (1, 0)`—; `dist2(a, b)` no existe todavía: definirlo junto a `speedOf` como `Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2)`.)
 
 Run: `npx vitest run components/games/football-logic/actions.test.ts` → FAIL (símbolos nuevos y aridad de `releaseFromGoalkeeper`).
 
@@ -685,18 +711,17 @@ export function freestMateDir(gk: PlayerState, players: readonly PlayerState[], 
   return normalizeInto(out, mate.x - gk.x, mate.y - gk.y);
 }
 
-// Spec goalkeeper rule 4, now with the target: the freest own-half mate, else
-// straight along attackDir. `aim` is the caller's scratch Vec2 (no module state,
-// no allocation), exactly as applyButtons receives it; match.ts passes scratch.aim.
+// Spec goalkeeper rule 4 (D4), the AUTOMATIC release: once GK_HOLD_STEPS have
+// passed since the keeper took the ball (caught or picked up, one path through
+// givePossession/ownerSinceStep) and nobody released it by button, a long pass at
+// the freest own-half mate, else straight along attackDir. Exact: no error, no rng.
+// `aim` is the caller's scratch Vec2 (no module state, no allocation), exactly as
+// applyButtons receives it; match.ts passes scratch.aim. Unlike applyButtons it
+// does NOT clear `out` on its no-op paths: stepOpenPlay wipes every slot at the top
+// of the step and applyKeeperButtons may already have written this same slot.
 export function releaseFromGoalkeeper(gk: PlayerState, ball: BallState, players: readonly PlayerState[], attackDir: 1 | -1, pitch: PitchDef, stepCount: number, aim: Vec2, out: ActionEvent): void {
-  if (gk.role !== 'gk' || ball.owner !== gk.id) {
-    clearActionEvent(out);
-    return;
-  }
-  if (stepCount - ball.ownerSinceStep < GK_HOLD_STEPS) {
-    clearActionEvent(out);
-    return;
-  }
+  if (gk.role !== 'gk' || ball.owner !== gk.id) return;
+  if (stepCount - ball.ownerSinceStep < GK_HOLD_STEPS) return;
   if (!freestMateDir(gk, players, attackDir, pitch, aim)) {
     aim.x = attackDir;
     aim.y = 0;
@@ -707,7 +732,7 @@ export function releaseFromGoalkeeper(gk: PlayerState, ball: BallState, players:
   setEvent(out, 'gk-release', true, gk.id);
 }
 ```
-(`actions.ts` importa `PitchDef` como tipo de `./pitch`.) **Firma definitiva**, la misma del bloque Produces: `releaseFromGoalkeeper(gk, ball, players, attackDir, pitch, stepCount, aim, out)`.
+(`actions.ts` importa `PitchDef` como tipo de `./pitch`.) **Firma definitiva**, la misma del bloque Produces: `releaseFromGoalkeeper(gk, ball, players, attackDir, pitch, stepCount, aim, out)`. Actualizar el comentario de cabecera de `clearActionEvent` (hoy dice "applyButtons/releaseFromGoalkeeper still reset their own slot in place before deciding"): desde D4 solo `applyButtons` lo hace; `releaseFromGoalkeeper` y `applyKeeperButtons` confían en el barrido de `stepOpenPlay`.
 
 Run: `npx vitest run components/games/football-logic/actions.test.ts components/games/football-logic/set-pieces.test.ts` → PASS (los tests de `aimPass` de la etapa A siguen exactos: el cociente es el mismo).
 
