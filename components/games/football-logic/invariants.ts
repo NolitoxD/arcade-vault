@@ -1,5 +1,5 @@
 import { isInsideBigArea, type PitchDef } from './pitch';
-import { BANK_SIZE, FORMATION_COUNT, OUTFIELD, STRATEGY_SHIFT, slotCounts, type Formation, type TeamDef } from './teams';
+import { BANK_SIZE, FORMATION_COUNT, OUTFIELD, STRATEGY_SHIFT, slotCounts, type Formation, type Role, type TeamDef } from './teams';
 import type { PlayerState } from './players';
 import type { AttackDirs } from './step';
 
@@ -28,8 +28,14 @@ function insideUnit(v: number): boolean {
 export function checkFormation(f: Formation): string[] {
   const problems: string[] = [];
   if (f.slots.length !== OUTFIELD) problems.push(`slot count ${f.slots.length}`);
-  f.slots.forEach((s, i) => {
-    if ((s.role as string) === 'gk') problems.push('goalkeeper in formation');
+  // CARRY #1: the table is data, so a 'gk' can be smuggled into a slot at runtime
+  // despite OutfieldRole and the invariant has to say so. Reading the slots through
+  // the widened element type (a plain assignment, arrays being covariant here) is
+  // what makes the comparison legal -- no `as string` cast, and no narrowing of a
+  // `const role: Role = s.role` back to OutfieldRole by the compiler either.
+  const slots: readonly { role: Role; x: number; y: number }[] = f.slots;
+  slots.forEach((s, i) => {
+    if (s.role === 'gk') problems.push('goalkeeper in formation');
     if (!insideUnit(s.x) || !insideUnit(s.y)) problems.push(`slot ${i} out of pitch`);
     else if (!insideUnit(s.x + STRATEGY_SHIFT) || !insideUnit(s.x - STRATEGY_SHIFT)) {
       problems.push(`slot ${i} leaves pitch under strategy`);

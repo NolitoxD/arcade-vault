@@ -5,6 +5,7 @@ export type { Strategy } from './teams';
 // A TeamInput is the input of ONE simulation step (not a frame): the component
 // samples the keyboard once per frame and repeats it for every step of that frame.
 // `pressed` and `released` last one step; the engine consumes them on the first.
+// exported for Task 8: the component builds a TeamInput button by button; today only input.ts uses it
 export type ButtonState = 'up' | 'pressed' | 'held' | 'released';
 export type Axis = -1 | 0 | 1;
 
@@ -37,6 +38,12 @@ export function copyTeamInput(from: TeamInput, to: TeamInput): void {
 
 export function isDown(b: ButtonState): boolean {
   return b === 'pressed' || b === 'held';
+}
+
+// Quantizes a signed value into the d-pad axis with a dead zone: the AI, the
+// step-script of step.test.ts and the recorded-match policy all need it.
+export function toAxis(v: number, dead: number): Axis {
+  return v > dead ? 1 : v < -dead ? -1 : 0;
 }
 
 function isAxis(v: number): boolean {

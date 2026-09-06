@@ -18,13 +18,13 @@ export type BallState = {
   kickLockUntilStep: number;
 };
 
-export const GRAVITY = 900;
+const GRAVITY = 900;
 export const BALL_GROUND_DECEL = 260;
 export const BALL_BOUNCE = 0.5;
-export const BALL_REST_VZ = 30;
+const BALL_REST_VZ = 30;
 export const CONTROL_DIST = 18;
 export const POSSESSION_RADIUS = 22;
-export const KICK_LOCK_SECONDS = 0.25;
+const KICK_LOCK_SECONDS = 0.25;
 export const KICK_LOCK_STEPS = stepsFor(KICK_LOCK_SECONDS);
 // With GRAVITY 900 the flight lasts 2 * 280 / 900 = 0.62 s: at 560 u/s that is ~348 u (spec: "cae a ~350 u"),
 // with an apex of 280² / 1800 = 43.6 u, above PLAYER_HEIGHT.
@@ -74,6 +74,10 @@ export function canPickUp(ball: BallState, p: PlayerState, stepCount: number): b
   if (isPlayerDown(p, stepCount)) return false;
   if (p.tackleStepsLeft > 0) return false;
   if (ball.kickerId === p.id && stepCount < ball.kickLockUntilStep) return false;
+  // Stage B (Task 6a): a keeper only collects a ball AT REST (a loose ball). A
+  // moving ball is caught, or not, by keeperCatch in ai.ts with the profile's
+  // catchChance; without this rule the 22 u free pickup made the roll moot.
+  if (p.role === 'gk' && (ball.vx !== 0 || ball.vy !== 0 || ball.vz !== 0 || ball.z !== 0)) return false;
   return true;
 }
 

@@ -23,6 +23,7 @@ export type SetPieceState = {
   takerId: number;
 };
 
+// exported for Task 8: the HUD counts the set piece down in seconds, not in steps
 export const SET_PIECE_COUNTDOWN_SECONDS = 5;
 export const SET_PIECE_COUNTDOWN_STEPS = stepsFor(SET_PIECE_COUNTDOWN_SECONDS);
 export const SET_PIECE_CLEARANCE = 180;
@@ -40,6 +41,9 @@ function rivalSide(team: 0 | 1, attackDir: AttackDirs): Side {
   return attackDir[team] === 1 ? 1 : 0;
 }
 
+// Returns -1 only if the team has no outfield player: unreachable while TEAM_SIZE
+// is 9 and rosters are fixed (stage B decision); v1.5 substitutions/sendings-off
+// must keep at least one outfield player or guard beginSetPiece before indexing.
 function nearestOutfield(players: readonly PlayerState[], team: 0 | 1, x: number, y: number): number {
   let best = -1;
   let bestDist = Infinity;

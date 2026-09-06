@@ -3,13 +3,15 @@ import { centerX, centerY, type PitchDef } from './pitch';
 import { TEAM_SIZE, type Formation, type Strategy, type TeamDef } from './teams';
 import type { TeamInput } from './input';
 import type { Rng } from './rng';
+import { HALF_SECONDS, HALF_SECONDS_MAX, HALF_STEPS } from './clock';
 import { STEP_MS, stepPhysics, stepsFor } from './step';
 import { createPlayers, placeByFormation, type PlayerState } from './players';
 import { createBall, type BallState } from './ball';
 import {
-  applyButtons, clearActionEvent, createActionEvent, releaseFromGoalkeeper, stepTackle, updateControlled,
-  type ActionEvent,
+  applyButtons, applyKeeperButtons, clearActionEvent, createActionEvent, releaseFromGoalkeeper, stepTackle,
+  updateControlled, type ActionEvent,
 } from './actions';
+import { applyKickError, keeperCatch, keeperStep, positionTeam, type AiProfile } from './ai';
 import {
   clearRefereeCall, createRefereeCall, judgeBall, judgeFoul,
   type RefereeCall, type RestartKind, type SetPieceKind,
@@ -36,22 +38,25 @@ export type MatchState = {
   strategies: [Strategy, Strategy];
   formationTable: readonly Formation[];
   pitch: PitchDef;
-  gkPenaltyRead: [number, number];
+  profiles: readonly [AiProfile, AiProfile];
+  // One catch roll per approach of the ball, per keeper (stage B, D4): keeperCatch
+  // sets it when it rolls and clears it as soon as the ball leaves the radius.
+  catchRolled: [boolean, boolean];
   lastGoalTeam: 0 | 1 | -1;
   // Fix round 1: one ActionEvent per player id (18 total), not per team -- a
   // shared per-team slot let a second same-team tackler's clean outcome
   // overwrite a first tackler's foul in the same step (see stepOpenPlay).
-  scratch: { events: ActionEvent[]; gkEvent: ActionEvent; call: RefereeCall; aim: Vec2; setPiece: SetPieceState };
+  // Stage B (D4): gkEvent is gone (each keeper writes its own slot events[gk.id])
+  // and liveControlled is the controlled tuple stepPhysics and positionTeam see
+  // THIS step: match.controlled, or -1 for a team whose keeper holds the ball.
+  scratch: { events: ActionEvent[]; liveControlled: [number, number]; call: RefereeCall; aim: Vec2; setPiece: SetPieceState };
 };
 
-export const HALF_SECONDS = 90;
-export const HALF_SECONDS_MAX = 120;
-export const HALF_STEPS = stepsFor(HALF_SECONDS);
-export const GOAL_PAUSE_SECONDS = 2;
+export { HALF_SECONDS, HALF_SECONDS_MAX, HALF_STEPS };
+const GOAL_PAUSE_SECONDS = 2;
 export const GOAL_PAUSE_STEPS = stepsFor(GOAL_PAUSE_SECONDS);
-export const HALF_TIME_PAUSE_SECONDS = 3;
+const HALF_TIME_PAUSE_SECONDS = 3;
 export const HALF_TIME_PAUSE_STEPS = stepsFor(HALF_TIME_PAUSE_SECONDS);
-export const DEFAULT_PENALTY_READ_CHANCE = 0.5;
 
 export function kickoffTeamFor(half: 1 | 2 | 3): 0 | 1 {
   return half === 2 ? 1 : 0;
@@ -95,7 +100,7 @@ function createPlayerEvents(count: number): ActionEvent[] {
   return events;
 }
 
-export function createMatch(teams: [TeamDef, TeamDef], formationTable: readonly Formation[], pitch: PitchDef): MatchState {
+export function createMatch(teams: [TeamDef, TeamDef], formationTable: readonly Formation[], pitch: PitchDef, profiles: readonly [AiProfile, AiProfile]): MatchState {
   const match: MatchState = {
     teams,
     players: createPlayers([formationTable[0], formationTable[0]], pitch),
@@ -114,11 +119,12 @@ export function createMatch(teams: [TeamDef, TeamDef], formationTable: readonly 
     strategies: ['neutral', 'neutral'],
     formationTable,
     pitch,
-    gkPenaltyRead: [DEFAULT_PENALTY_READ_CHANCE, DEFAULT_PENALTY_READ_CHANCE],
+    profiles,
+    catchRolled: [false, false],
     lastGoalTeam: -1,
     scratch: {
       events: createPlayerEvents(TEAM_SIZE * 2),
-      gkEvent: createActionEvent(),
+      liveControlled: [-1, -1],
       call: createRefereeCall(),
       aim: { x: 0, y: 0 },
       setPiece: createSetPieceState(),
@@ -226,22 +232,78 @@ function isRestart(kind: RefereeCall['kind']): kind is RestartKind {
   return kind !== 'none' && kind !== 'goal';
 }
 
+function keeperOf(match: MatchState, team: 0 | 1): PlayerState {
+  return match.players[team * TEAM_SIZE];
+}
+
+// D4: -1 while this team's keeper holds the ball (nobody reads the d-pad), else the
+// derived controlled. match.controlled itself is untouched: updateControlled keeps
+// the cursor on a field player and stage C reads ball.owner to draw it on the keeper.
+function liveControlledFor(match: MatchState, team: 0 | 1): number {
+  return match.ball.owner === keeperOf(match, team).id ? -1 : match.controlled[team];
+}
+
+// One rng draw at most, only when a roll is actually possible (keeperCatch). A catch
+// is possession -- no set piece, no early return: the step goes on.
+function keeperCatchFor(match: MatchState, team: 0 | 1, rng: Rng): void {
+  const gk = keeperOf(match, team);
+  keeperCatch(gk, match.ball, match.profiles[team].catchChance, match.catchRolled, rng, match.pitch, match.stepCount, match.scratch.events[gk.id]);
+}
+
+function runTeamAi(match: MatchState, team: 0 | 1): void {
+  const { players, ball, scratch } = match;
+  positionTeam(players, ball, team, match.formationTable[match.formationIndex[team]], match.strategies[team], match.attackDir[team], scratch.liveControlled[team], match.pitch, match.stepCount, scratch.aim);
+  keeperStep(keeperOf(match, team), players, ball, match.attackDir[team], match.pitch, match.stepCount);
+}
+
+// D4 routing. Keeper holding the ball: the TeamInput is the keeper's (throw by button,
+// exact) and, failing that, the automatic release at GK_HOLD_STEPS -- both write the
+// keeper's own slot and neither draws. Otherwise the field controlled gets the
+// buttons (steal draw inside) and its kick gets the profile's angular error (one draw).
+// Team 0 acts first: a simultaneous steal by both resolves in its favour, same
+// lowest-id rule as everywhere; QA item, criterion 14.
+function applyTeamInput(match: MatchState, team: 0 | 1, input: TeamInput, rng: Rng): void {
+  const { players, ball, scratch } = match;
+  const gk = keeperOf(match, team);
+  if (ball.owner === gk.id) {
+    applyKeeperButtons(gk, input, ball, players, match.attackDir[team], match.stepCount, scratch.aim, scratch.events[gk.id]);
+    releaseFromGoalkeeper(gk, ball, players, match.attackDir[team], match.pitch, match.stepCount, scratch.aim, scratch.events[gk.id]);
+    return;
+  }
+  const controlledPlayer = players[match.controlled[team]];
+  const ev = scratch.events[controlledPlayer.id];
+  applyButtons(controlledPlayer, input, ball, players, rng, match.stepCount, scratch.aim, ev);
+  if (ev.ok && (ev.kind === 'shot' || ev.kind === 'short-pass' || ev.kind === 'long-pass')) {
+    applyKickError(ball, ev.kind === 'shot' ? match.profiles[team].shotErrorDeg : match.profiles[team].passErrorDeg, rng);
+  }
+}
+
 function stepOpenPlay(match: MatchState, inputs: readonly [TeamInput, TeamInput], rng: Rng): void {
   const { players, ball, scratch } = match;
   // Whole-stage review C1: only the two controlled slots used to be cleared (by
   // applyButtons), so a judged foul stayed in its slot and was judged AGAIN as
   // soon as the set piece handed play back -- a new penalty every countdown.
-  // Wiping all 18 here makes "the events of this step" true by construction.
-  // 18 scalar resets, no allocation. Clearing only the judged slot would not do:
-  // the scan below returns on the first foul and leaves the rest untouched.
-  for (let i = 0; i < scratch.events.length; i++) clearActionEvent(scratch.events[i]);
-  for (let t = 0; t < 2; t++) {
-    const controlledPlayer = players[match.controlled[t]];
-    applyButtons(controlledPlayer, inputs[t], ball, players, rng, match.stepCount, scratch.aim, scratch.events[controlledPlayer.id]);
-  }
-  releaseFromGoalkeeper(players[0], ball, match.attackDir[0], match.stepCount, scratch.gkEvent);
-  releaseFromGoalkeeper(players[TEAM_SIZE], ball, match.attackDir[1], match.stepCount, scratch.gkEvent);
-  stepPhysics(players, ball, inputs, match.controlled, match.attackDir, match.pitch, match.stepCount);
+  // Wiping all 18 makes "the events of this step" true by construction; moved
+  // to the top of stepMatch (final review Important #1) so kickoff/set-piece/
+  // goal/half-time steps start clean too, not just open-play ones.
+  // Stage B (Task 6a): the in-engine AI, applied to BOTH teams so the replay
+  // stays seed + TeamInput. Order of the step, fixed for the rng: (1) the catch,
+  // team 0 then team 1 (the only draw before the buttons; D4: a catch is
+  // possession, play goes on); (2) who reads the TeamInput this step -- the field
+  // controlled, or nobody when the keeper holds the ball (its input goes to the
+  // keeper's throw and the field player is placed by the AI, D4); (3) placement
+  // and keeper write the want channel; (4) per team, the throw + automatic
+  // release (exact, no draw) OR the buttons (steal draw) + kick error (one draw);
+  // (5) physics, tackles, referee, clock exactly as in stage A.
+  keeperCatchFor(match, 0, rng);
+  keeperCatchFor(match, 1, rng);
+  scratch.liveControlled[0] = liveControlledFor(match, 0);
+  scratch.liveControlled[1] = liveControlledFor(match, 1);
+  runTeamAi(match, 0);
+  runTeamAi(match, 1);
+  applyTeamInput(match, 0, inputs[0], rng);
+  applyTeamInput(match, 1, inputs[1], rng);
+  stepPhysics(players, ball, inputs, scratch.liveControlled, match.attackDir, match.pitch, match.stepCount);
   for (let i = 0; i < players.length; i++) {
     // Fix round 1: each player writes its own outcome into its own slot
     // (events[i], since players[i].id === i) -- a second same-team tackler
@@ -289,6 +351,16 @@ function stepOpenPlay(match: MatchState, inputs: readonly [TeamInput, TeamInput]
 // step.ts keeps stepPhysics only, so match.ts can import it without an ESM cycle.
 export function stepMatch(match: MatchState, inputs: readonly [TeamInput, TeamInput], rng: Rng): void {
   if (match.phase === 'over') return;
+  // Final review Important #1: this used to run only inside stepOpenPlay, so a
+  // foul (or any other event) judged on the last open-play step before a
+  // set-piece/goal/half-time phase stayed in its slot for every step of that
+  // phase -- up to hundreds of steps of a stage-C consumer re-firing sound/HUD
+  // for an event that already happened. Sweeping here, before the phase
+  // dispatch, makes "the events of this step" true on every step, not only
+  // open-play ones. The set-piece branch below writes
+  // scratch.events[sp.takerId] AFTER this sweep runs (same step), so that
+  // write stays visible when stepMatch returns. 18 scalar resets, no allocation.
+  for (let i = 0; i < match.scratch.events.length; i++) clearActionEvent(match.scratch.events[i]);
   applyTeamChoices(match, inputs);
   switch (match.phase) {
     case 'kickoff':
@@ -300,7 +372,7 @@ export function stepMatch(match: MatchState, inputs: readonly [TeamInput, TeamIn
       }
       const keeperTeam = sp.team === 0 ? 1 : 0;
       const executed = stepSetPiece(
-        sp, inputs[sp.team], match.players, match.ball, rng, match.gkPenaltyRead[keeperTeam],
+        sp, inputs[sp.team], match.players, match.ball, rng, match.profiles[keeperTeam].penaltyReadChance,
         match.attackDir, match.pitch, match.stepCount, match.scratch.aim, match.scratch.events[sp.takerId],
       );
       // stepSetPiece keeps counting past zero and would fire the kick again (and

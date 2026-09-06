@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkTeamInput, copyTeamInput, createTeamInput, isDown } from './input';
+import { checkTeamInput, copyTeamInput, createTeamInput, isDown, toAxis } from './input';
 
 describe('TeamInput', () => {
   it('createTeamInput is the neutral input', () => {
@@ -41,5 +41,15 @@ describe('TeamInput', () => {
     const badStrategy = createTeamInput();
     badStrategy.strategy = 'yolo' as never;
     expect(checkTeamInput(badStrategy, 3).join(' ')).toContain('bad strategy');
+  });
+});
+
+describe('toAxis', () => {
+  it('maps a value beyond the dead zone to ±1 and inside it to 0 (sampled off the boundary)', () => {
+    expect(toAxis(7, 4)).toBe(1);
+    expect(toAxis(-7, 4)).toBe(-1);
+    expect(toAxis(2, 4)).toBe(0);
+    expect(toAxis(-2, 4)).toBe(0);
+    expect(toAxis(0, 0)).toBe(0);   // the exact boundary is 0, never ±1
   });
 });

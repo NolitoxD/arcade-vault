@@ -169,6 +169,24 @@ describe('pickup by proximity', () => {
     stepBall(ball, players, 7, PITCH);
     expect(ball.owner).toBe(9);
   });
+  // Stage B (S6): a moving ball reaching the keeper is decided by keeperCatch
+  // (catchChance), never by the free pickup; a ball at rest is a loose ball.
+  it('the keeper does not pick up a MOVING ball but does pick up one at rest (an outfield player takes both)', () => {
+    const { players, ball } = world();
+    const gk = players[9];
+    gk.x = 1960; gk.y = 650;
+    ball.x = 1970; ball.y = 650; ball.vx = -120; ball.vy = 0;   // 10 u away, rolling towards him
+    stepBall(ball, players, 5, PITCH);
+    expect(ball.owner).toBeNull();
+    ball.vx = 0; ball.vy = 0; ball.x = 1970;
+    stepBall(ball, players, 6, PITCH);
+    expect(ball.owner).toBe(9);
+    const { players: ps, ball: b } = world();
+    ps[7].x = 1000; ps[7].y = 600;
+    b.x = 1010; b.y = 600; b.vx = -120;
+    stepBall(b, ps, 5, PITCH);
+    expect(b.owner).toBe(7);
+  });
   it('a down player, a tackling player and the locked kicker cannot pick up', () => {
     const { players, ball } = world();
     ball.x = 1000; ball.y = 600;

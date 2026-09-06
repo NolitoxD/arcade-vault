@@ -16,11 +16,11 @@ por el primer paso NO marcado. Nada de preguntar a Paco lo ya decidido.
 - [x] Revisión del plan para D4 (agente): sustituir "saque de puerta" por posesión del portero,
       enrutado de TeamInput al portero, tests (a)-(e), etiquetas "Stage B assumption" → "confirmed by
       owner 2026-09-05" para D1-D3, supuesto S-GK. COMPROBAR si ya está: `grep -c "confirmed by owner" plan`.
-- [ ] Pre-vuelo con subagente (escaneo de pares de tareas que comparten fichero/interfaz, fixtures
-      recalculados), informe en `.superpowers/sdd/2026-09-06-vault-world-cup-stage-b/preflight.md`.
-- [ ] `superpowers:subagent-driven-development`: 6a → 6b → 7, cada una con revisión + arreglo + re-revisión.
-- [ ] Revisión final de la etapa con sondas ejecutables (scratchpad, NUNCA `*.test.ts` bajo `.superpowers/`).
-- [ ] Actualizar memoria `project_arcade_vault_pong_y_plan.md` y handoff.
+- [x] Pre-vuelo con subagente (H1-H11 aplicados al plan) (escaneo de pares de tareas que comparten fichero/interfaz, fixtures
+      recalculados), informe en `.superpowers/sdd/2026-09-05-vault-world-cup-stage-b/preflight.md`.
+- [x] SDD: 6a (821) → 6b (847) → 7 (860) hechas y revisadas
+- [x] Revisión final con 15 sondas (1,2 M pasos) + ola de arreglo (R28) + re-revisión limpia → 861/861, build 0. PENDIENTE: commit de Paco
+- [x] Memoria y handoff actualizados (06-sep). Este checkpoint puede borrarse tras el commit.
 
 ## Reglas vigentes
 Commits SOLO Paco (proponer mensaje). Máximo la etapa B hoy. Duda de diseño → grill corto. Nunca `next dev`.

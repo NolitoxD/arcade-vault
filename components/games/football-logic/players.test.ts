@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { PITCH, centerY, isInsideBigArea } from './pitch';
-import { FORMATIONS, OUTFIELD, TEAM_SIZE } from './teams';
+import { FORMATIONS, OUTFIELD, TEAM_SIZE, slotCounts } from './teams';
 import { STEPS_PER_SECOND } from './step';
 import {
-  GK_LINE_DIST, PLAYER_SPEED, PLAYER_SPEED_WITH_BALL, SPRINT_COOLDOWN_STEPS, SPRINT_MULT, SPRINT_STEPS,
+  GK_LINE_DIST, GK_SPEED, PLAYER_SPEED, PLAYER_SPEED_WITH_BALL, SPRINT_COOLDOWN_STEPS, SPRINT_MULT, SPRINT_STEPS,
   TACKLE_DIST, TACKLE_STEPS, anchorFor, createPlayers, isPlayerDown, isSprinting, ownGoalSide,
-  placeByFormation, stepPlayer, type PlayerState,
+  placeByFormation, stepPlayer, stepPlayerFree, type PlayerState,
 } from './players';
 
 const F = FORMATIONS[0];
@@ -58,6 +58,27 @@ describe('createPlayers', () => {
     }
     expect(ps[1].facingX).toBe(1);
     expect(ps[10].facingX).toBe(-1);
+  });
+  it('every published formation gives its team exactly the roles its slots say, in slot order', () => {
+    for (const f of FORMATIONS) {
+      const ps = createPlayers([f, f], PITCH);
+      const [def, mid, fwd] = slotCounts(f);
+      for (const team of [0, 1] as const) {
+        const mine = ps.filter((p) => p.team === team && p.role !== 'gk');
+        expect(mine.filter((p) => p.role === 'def')).toHaveLength(def);
+        expect(mine.filter((p) => p.role === 'mid')).toHaveLength(mid);
+        expect(mine.filter((p) => p.role === 'fwd')).toHaveLength(fwd);
+        mine.forEach((p, i) => expect([p.slot, p.role]).toEqual([i, f.slots[i].role]));
+      }
+    }
+  });
+  it('two different formations on the two sides: each team follows its own', () => {
+    const ps = createPlayers([FORMATIONS[1], FORMATIONS[2]], PITCH);
+    expect(ps.filter((p) => p.team === 0 && p.role === 'fwd')).toHaveLength(3);
+    expect(ps.filter((p) => p.team === 1 && p.role === 'def')).toHaveLength(4);
+    expect(ps[8].role).toBe('fwd');    // 3-2-3: last slot is a forward
+    expect(ps[17].role).toBe('fwd');   // 4-3-1: last slot is the lone forward
+    expect(ps[10].role).toBe('def');
   });
 });
 
@@ -198,5 +219,63 @@ describe('down and tackling players ignore the d-pad', () => {
     // stepPlayer only slides: the countdown and the outcome belong to stepTackle (Task 3).
     expect(p.tackleStepsLeft).toBe(TACKLE_STEPS);
     expect(TACKLE_STEPS).toBe(24);
+  });
+});
+
+describe('stepPlayerFree: the AI movement channel', () => {
+  it('a fresh player wants nothing and stays put', () => {
+    const p = fresh()[4];
+    expect([p.wantX, p.wantY, p.wantSprint]).toEqual([0, 0, false]);
+    const x0 = p.x;
+    for (let s = 0; s < 10; s++) stepPlayerFree(p, false, 1, PITCH, s);
+    expect(p.x).toBe(x0);
+  });
+  it('a unit want moves at PLAYER_SPEED along it and turns the facing', () => {
+    const p = fresh()[4];
+    p.wantX = 0.6; p.wantY = 0.8;   // 3-4-5: a unit vector off both axes
+    const x0 = p.x; const y0 = p.y;
+    for (let s = 0; s < 60; s++) stepPlayerFree(p, false, 1, PITCH, s);
+    expect(p.x - x0).toBeCloseTo(PLAYER_SPEED * 0.6, 6);
+    expect(p.y - y0).toBeCloseTo(PLAYER_SPEED * 0.8, 6);
+    expect(p.facingX).toBeCloseTo(0.6, 10);
+    expect(p.facingY).toBeCloseTo(0.8, 10);
+  });
+  it('a want of magnitude 0.5 moves at half speed (arrive-exactly semantics), and 1.7 is capped at full speed', () => {
+    const half = fresh()[4];
+    half.wantX = 0.5; half.wantY = 0;
+    const x0 = half.x;
+    for (let s = 0; s < 60; s++) stepPlayerFree(half, false, 1, PITCH, s);
+    expect(half.x - x0).toBeCloseTo(PLAYER_SPEED * 0.5, 6);
+    const over = fresh()[4];
+    over.wantX = 1.7; over.wantY = 0;
+    const x1 = over.x;
+    for (let s = 0; s < 60; s++) stepPlayerFree(over, false, 1, PITCH, s);
+    expect(over.x - x1).toBeCloseTo(PLAYER_SPEED, 6);
+  });
+  it('the goalkeeper moves at GK_SPEED and never sprints', () => {
+    const gk = fresh()[0];
+    gk.wantX = 0; gk.wantY = 1; gk.wantSprint = true;
+    const y0 = gk.y;
+    for (let s = 0; s < 60; s++) stepPlayerFree(gk, false, 1, PITCH, s);
+    expect(gk.y - y0).toBeCloseTo(GK_SPEED, 6);
+    expect(isSprinting(gk)).toBe(false);
+  });
+  it('wantSprint sprints an outfield player at x1.4 and the want is ignored while down or mid-tackle', () => {
+    const p = fresh()[4];
+    p.x = 100;
+    p.wantX = 1; p.wantY = 0; p.wantSprint = true;
+    const x0 = p.x;
+    for (let s = 0; s < 30; s++) stepPlayerFree(p, false, 1, PITCH, s);
+    expect(p.x - x0).toBeCloseTo(30 * (PLAYER_SPEED / STEPS_PER_SECOND) * SPRINT_MULT, 6);
+    const down = fresh()[5];
+    down.wantX = 1; down.downUntilStep = 100;
+    const xd = down.x;
+    stepPlayerFree(down, false, 1, PITCH, 37);
+    expect(down.x).toBe(xd);
+    const sliding = fresh()[6];
+    sliding.wantX = -1; sliding.tackleStepsLeft = 5; sliding.tackleDirX = 0; sliding.tackleDirY = 1;
+    const ys = sliding.y;
+    stepPlayerFree(sliding, false, 1, PITCH, 0);
+    expect(sliding.y).toBeGreaterThan(ys);   // slides along tackleDir, not along the want
   });
 });

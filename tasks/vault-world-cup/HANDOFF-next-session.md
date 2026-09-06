@@ -1,140 +1,115 @@
-# HANDOFF — VAULT WORLD CUP · etapa A cerrada · escrito 2026-09-04
+# HANDOFF — VAULT WORLD CUP · etapa B cerrada · escrito 2026-09-06
 
 **Repo:** `/Users/paco.monleon/Dev-Web/curso-claude-code/arcade-vault` · rama `main`.
-**Último commit:** `c075e87` (Paco, 04-sep: etapa A entera, spec actualizado y plan). **Sin
-commitear al escribir esto:** solo este handoff (con la sección 7 de audio) — lo commitea Paco.
-**Suite real:** 760 tests en 51 ficheros verdes (504 de partida + 256 del motor) · `npx tsc --noEmit`
-limpio · `npm run build` verde · grep de determinismo vacío en toda la carpeta, tests incluidos.
+**HEAD al escribir:** `5eeeb41` (Paco, 06-sep: spec con D1-D4 + plan B + checkpoint). **SIN commitear:** TODA la
+etapa B (código en `components/games/football-logic/`, `ai.ts`/`ai.test.ts` nuevos sin trackear), las
+ediciones H1-H11 del plan B, `tasks/vault-world-cup/CHECKPOINT-etapa-B.md` y este handoff — lo commitea Paco.
+**Suite real:** 861 tests en 52 ficheros verdes (760 de partida + 101) · `npx tsc --noEmit` limpio ·
+`npm run build` exit 0 · grep de determinismo vacío (tests incluidos).
 
 ---
 
 ## 1. Dónde estamos
 
-**04-sep, en una sesión:** grill del spec 31 (cerrado y volcado al spec), plan de la etapa A, y la
-**etapa A entera (motor sin pantalla, Tasks 1-5) ejecutada y verificada** con
-`subagent-driven-development`: cinco tareas, cada una con revisión + una ronda de arreglo +
-re-revisión; revisión final de toda la etapa (cazó 2 Critical de integración que ningún test de
-tarea podía ver) + una ola de arreglo + re-revisión limpia.
+**06-sep, en una sesión (cortada dos veces por límite de uso, reanudada sin pérdida):** plan de la etapa B
+(`docs/superpowers/plans/2026-09-05-vault-world-cup-stage-b.md`, 3377 líneas), grill corto con Paco
+(D1-D4, en el spec), pre-vuelo (H1-H11 aplicados al plan), y la **etapa B entera (Tasks 6a, 6b, 7)
+ejecutada y verificada** con `subagent-driven-development`: cada tarea con revisión + ronda de arreglo
+(6a y 6b una cada una; 7 limpia a la primera) + re-revisión; revisión final de la etapa con **15 sondas
+ejecutables (1,2 M de pasos simulados, 0 violaciones)** + una ola de arreglo (R28) + re-revisión limpia.
 
-**Lo que existe:** `rng` (mulberry32), `pitch`, `teams` (SOLO España e Italia y SOLO la 3-3-2),
-`invariants`, `geometry`, `clock`, `input`, `step` (paso fijo 60 Hz, `stepPhysics`), `players`,
-`ball`, `actions` (chut con carga, pases asistidos por cono de 45°, robo, entrada al suelo,
-controlado derivado con histéresis 40 u), `referee`, `set-pieces`, `match` (`MatchState`, máquina
-de fases con guarda en las 7 transiciones, `stepMatch(match, inputs, rng)`).
+**Lo que existe ahora además de la etapa A:** `ai.ts` completo (canal `want`, perfil 1-8 por fórmula,
+colocación viva por formación/estrategia, portero en su línea que ataja y se queda el balón 2 s con saque
+por botón o automático, error angular por perfil, `AiState`, `chooseStrategy`, `decideTeamInput` con el
+árbol chutar/pasar/conducir, persecución y robo/entrada, penalti); `createMatch(teams, formations, pitch,
+profiles)`; `HALF_*` en `clock.ts`; **16 selecciones y 3 formaciones** en `teams.ts` con la red de
+invariantes cerrada sobre ellas (162 colocaciones en 84 ms); `scratch.events` barrido al inicio de CADA
+paso (R28). Tres partidos grabados deterministas (criterio 1 seis fases, gol de oro con IA viva, CPU vs
+CPU semilla 14) + uno por formación.
 
-**Lo que NO existe:** `ai.ts`, las otras 14 selecciones y 2 formaciones, `mode.ts`,
-`world-cup.ts`, pantalla, registro, migración, música, carátula.
+**Lo que NO existe:** `mode.ts`, `world-cup.ts`, pantalla, registro, migración, música, carátula (etapas C y D).
 
-**Registro completo de la ejecución** (git-ignorado, NO borrar):
-`.superpowers/sdd/2026-09-04-vault-world-cup-engine/progress.md` — 20 rulings R1-R20, 23 minors
-diferidos con su triaje, `final-review-report.md` (466 líneas, con tablas de cobertura de criterios,
-números del spec, exports sin consumidor, tests acoplados a la 3-3-2 y **recomendaciones para la
-etapa B**), `final-fix-report.md` (mensajes de commit propuestos, uno global o cinco por tarea).
+**Registro completo** (git-ignorado, NO borrar): `.superpowers/sdd/2026-09-05-vault-world-cup-stage-b/`
+— `progress.md` (rulings R21-R28, 16 minors diferidos con triaje), `preflight.md`, briefs/informes/
+revisiones por tarea, `final-review-report.md` (veredicto, sondas, criterios, números→constantes, triaje,
+**recomendaciones para la etapa C y lista QA de la Task 11**), `final-fix-report.md`.
 
 ---
 
 ## 2. Próximos pasos, en orden
 
-1. **`retomar` con este documento.** La etapa A ya está commiteada (`c075e87`); comprobar solo que
-   el working tree está limpio.
-2. **Preguntar a Paco el "ajuste del plan"** que anunció el 04-sep ("cuando termines te digo un
-   ajuste del plan"; confirmó que NO toca la etapa A). Puede afectar a B, C o D: preguntarlo ANTES
-   de escribir el plan de la etapa B.
-3. **Plan de la etapa B** con `writing-plans` (Tasks 6 y 7 del spec: `ai.ts` + contenido), leyendo
-   OBLIGATORIAMENTE `final-review-report.md` §"Recommendations for stage B" y §"Tests coupled to
-   the 3-3-2 geometry", y las líneas `CARRY TO Task 6/7` del ledger. Pre-vuelo con subagente como
-   hoy. Luego `subagent-driven-development`. **Máximo la etapa B en el día.**
-4. Deudas con dueño en la etapa B (del ledger): criterio 11 "responde en el acto" se cumple en
-   la Task 6 (R19, verificar explícitamente al cerrarla); `scratch.events` ya es por jugador pero
-   solo se juzga una falta por paso (gana equipo 0); robos simultáneos resuelven equipo 0 primero
-   (criterio 14, QA); `isSprinting` da false en el último paso del sprint (umbral
-   `STEAL_CHANCE_VS_SPRINT`); comentario obsoleto en `match.test.ts` ~510 ("nobody tackles").
+1. **Paco commitea la etapa B.** Mensaje recomendado por la revisión final (opción A, global):
+   `feat(world-cup): stage B — in-engine AI, CPU decision layer, sixteen selections and three formations`
+   (opción B, tres por tarea, en `final-review-report.md` §9; exigiría `git add` por rutas). Antes:
+   `git status` debe mostrar solo `components/games/football-logic/`, `docs/`, `tasks/`. No hay
+   `node_modules` colado (se borró una caché `.vite` de las sondas).
+2. **`retomar` con este documento.** Comprobar árbol limpio y 861 verdes.
+3. **Etapa C (Tasks 8-10 del spec: la pantalla).** Plan con `writing-plans` leyendo OBLIGATORIAMENTE
+   `final-review-report.md` §8 "Recomendaciones para la etapa C" (6 puntos: `abandon()` para el gol de oro
+   sin techo; cursor durante los 2 s del portero, S-GK.6, decisión visible; A/B tragados en la cuenta atrás →
+   el HUD debe decirlo; `applyTeamChoices` corre cada paso, el HUD escribe `TeamInput` sin ceremonia) y el
+   triaje "CARRY TO Task 8" del ledger (5 ítems: guarda −1 en `applyTeamInput`, `SHOT_VZ_MAX` y
+   `*_SECONDS`/`SET_PIECE_COUNTDOWN_SECONDS` como consumidores del HUD/SFX, `OutfieldRole`/`Kit`/
+   `ButtonState`/`ActionKind` con destino declarado, helper `isGoalkeeperRole`). Pre-vuelo con subagente.
+   Luego `subagent-driven-development`. **Máximo la etapa C en el día.**
+4. **Antes de la Task 11 (QA humano)** leer `final-review-report.md` §8 "QA list": 11 puntos con datos
+   (ver sección 5 de este handoff).
 
 ---
 
 ## 3. Decisiones ya tomadas (no relitigar)
 
-**Del grill (en el spec):** paso fijo sin `dtMs`; controlado derivado con histéresis 40 u (tras el
-QA preguntar si en v1.5 pasa a manual); reglas de la IA con números y perfil 1-8 por fórmula
-(`profileFor(teamDef, difficulty)`, la dificultad NO toca la velocidad); portero en su línea, sale
-solo en el área pequeña, nunca fuera del área grande (invariante); selecciones idénticas en v1;
-**solo puntúa el Mundial** (ningún amistoso, como el versus de Pong); Mundial perfecto ~70 000.
+**Grill corto 05-sep (en el spec, §Decisiones 2026-09-05):** D1 persecución = K más cercanos (3/2/1),
+1º controlado, siguiente cubre a 120 u; D2 `tackleChance` = disposición (éxito sigue 65/35); D3 perfil
+humano con la misma dificultad (error angular 0); **D4 portero con balón**: atajada ≠ saque de puerta,
+2 s inrobable, B saque con la mano / A largo, cruceta apunta, a los 120 pasos automático al más libre.
 
-**De la ejecución (ledger, R1-R20), las que tocan el diseño:** `stepMatch` vive en `match.ts`
-(R7); pases asistidos (R10); entrada = falta al tocar a cualquier rival y el que entra cae 1 s
-(R11); penalti SOLO por falta en área propia del infractor (R14); `clearActionEvent` exportada y
-las 18 casillas de eventos se limpian al inicio de cada paso (R16); `pickUp` no actúa fuera del
-campo (R17); el reloj no avanza en `half === 3` (R18); grep de determinismo literal sobre toda la
-carpeta, tests incluidos (R12); dos números añadidos al spec por revisar en QA: robo vs sprint
-35 % y `vz` del chut 200 (R6).
+**Rulings de ejecución (ledger, R21-R28):** R24/S-GK detalles de D4 (primer saque en el paso siguiente
+a la atajada; A gana a B; solo `pressed`; cursor sobre el portero = decisión de la etapa C); R25 tres tests
+de la etapa A cambian por la regla 2 (no relajación); **R26** partido grabado criterio 1 con 6 fases +
+segundo grabado "gol de oro con IA viva"; **R27** tasa de chuts de la CPU → QA (ver 5); **R28** barrido de
+`scratch.events` al inicio de `stepMatch`.
 
-**Pendientes para el spike v1.5** (sección propia en el spec): cambio manual de controlado,
-atributos por selección (defensa/ataque/contraataque/chute/pase) y por jugador.
+**Supuestos abiertos etiquetados en código** (`// Stage B assumption`): S14b entrada de la CPU solo de
+frente; S-GK; `SHOT_POST_MARGIN = 20` y `CHASE_DEAD_ZONE = 4` sin número → numerar en el spec.
 
 ---
 
-## 4. Reglas de Paco (no negociables)
+## 4. Reglas de Paco (sin cambios)
 
-- Máximo UNA etapa al día; la calidad manda sobre el calendario.
-- Commits SOLO Paco. Las tareas dejan el working tree verificado y proponen el mensaje.
-- Spec profundo + grill; **durante la implementación, si surge una duda de diseño, parar y hacer
-  un grill corto en vez de decidir en silencio** (Paco lo pidió explícitamente el 04-sep).
-- Música y SFX: ver la sección 7 (esquema nuevo de Paco, sustituye a las 3 pistas del spec). Carátula
-  la hace Claude con `design`, PNG 800×800, Paco la pone en `public/covers/vault-world-cup.png`.
+Máximo UNA etapa al día · commits SOLO Paco · spec profundo + grill; duda de diseño en implementación →
+grill corto · nunca `next dev` (:3000 es de Paco) · audio: dos pistas + SFX de fichero (sección 7 del
+handoff del 04-sep, ya en el spec) · carátula con `design`, PNG 800×800 → `public/covers/vault-world-cup.png`.
 
 ---
 
-## 5. Trampas de hoy (además de las heredadas de Vault Fighter, en el handoff del 03-sep)
+## 5. Lista QA (Task 11) — resumen, detalle en `final-review-report.md` §8
 
-- **Vitest ejecuta cualquier `*.test.ts` bajo `.superpowers/`**: los snapshots del SDD van al
-  scratchpad, NUNCA dentro del repo (inflaron la cuenta 666→809 hasta que se detectó).
-- **Los revisores de tarea no ven la integración**: los dos Critical (falta re-juzgada tras el
-  saque, balón recogido fuera del campo) solo aparecieron en la revisión final con sondas
-  ejecutables. Para la etapa B: revisión final con sondas, no solo lectura.
-- **El test integrador insignia tiene que ejercitar todas las cadenas**: la policy del partido
-  grabado no hacía entradas y por eso C1 pasó. Ahora sí (una entrada por `TACKLE_STEPS`).
-- **Las cuentas de suite de los subagentes hay que re-correrlas** (varias venían infladas).
-- El editor muestra "Cannot find module" caducados; solo vale `npx tsc --noEmit`.
-- Un `ToolSearch` de `SendMessage` no existe en este harness: las rondas de arreglo van con
-  implementador fresco + brief + informe (funcionó igual).
-
----
-
-## 6. Operativa (sin cambios)
-
-Nunca `next dev` (Paco lo tiene en :3000). Migraciones por MCP con `list_migrations` antes y
-autorización explícita. QA de gameplay siempre humano. Skills: `retomar`, `grill-me`,
-`superpowers:writing-plans`, `superpowers:subagent-driven-development`, `verify-plan`.
+- **Chuts de la CPU**: 160 planes → 123 completados (76,9 %); el cuello es que **casi nunca decide chutar**
+  (puerta geométrica de `tryShoot`, ai.ts ~451-459: solo rayo recto/diagonal a < 55 u del centro).
+  Palancas: ensanchar `SHOT_POST_MARGIN`, más direcciones candidatas, releer `shoot` en el tick, recalcular
+  carga al soltar, capar la carga. Media 2,55 chuts/partido, 0 en 2 de 20 semillas.
+- **0 saques de puerta y 2 córners en 18 partidos** (consecuencia de D4; palanca `catchChance`/geometría).
+- Saque automático del portero cargado por rival a 2,7 u (bucle atajada→saque→robo→chut→atajada en 3 pasos).
+- Entrada al portero que sostiene el balón sigue siendo falta (2 s de exposición a penalti; solo el humano lo
+  explota). Decisión de producto.
+- Penaltis: 20 en 60 partidos, 2 marcados / 8 parados / 10 sin gol en 4 s → mirar con más semillas.
+- Dificultad: nivel 8 gana 18 de 20 al nivel 1, desde los dos lados. Números típicos 8v8: 11-16 k pasos,
+  1-4 goles, 20-60 pases cortos y 10-35 largos por equipo, 6-49 robos ganados, 0-6 atajadas, 1-5 chuts.
+- Robos simultáneos resuelven equipo 0 primero; una falta por paso (gana equipo 0) — heredado de la etapa A.
 
 ---
 
-## 7. Audio (añadido por Paco el 04-sep tras cerrar la etapa A — SUSTITUYE al "3 pistas al azar")
+## 6. Trampas de hoy (además de las del 04-sep)
 
-Paco trae los ficheros con sufijo en el nombre; hasta que lleguen, no cablear nada. Esquema:
-
-- **Dos pistas de música**, no tres al azar: una de **gameplay** y otra de **menú/previa** (selector
-  de selección, alineación, estrategia, y también la **pausa** en partido para cambiarlas).
-- **SFX** (los trae Paco, sustituyen a la síntesis WebAudio del spec donde haya fichero):
-  gol · **pitido de árbitro** (falta, penalti, gol, y saque de centro al inicio, al final y tras
-  cada gol) · público animando · entrada al suelo · golpeo del balón al chutar. Puede faltar alguno.
-- El spec 31 dice "tres pistas sorteadas por partido + SFX por síntesis": **actualizar el spec y el
-  paso 10 (etapa D)** con este esquema cuando Paco confirme la lista de ficheros.
-- **Paco dará "los cambios al plan" al inicio de la próxima sesión** (antes de planificar la etapa B).
-
----
-
-## 8. Cambios al plan (Paco, 04-sep, tras cerrar la etapa A) — YA volcados al spec 31
-
-1. **Árbitro:** sin figura de árbitro en la v1 (opcional en v1.5: un muñeco de negro siguiendo el
-   balón). El árbitro se manifiesta por **pitido + rótulo**.
-2. **Rótulos superpuestos al partido** ("textos chulos", como el ELIMINADO de Vault Fighter):
-   INICIO, FALTA, PENALTI, FUERA, CÓRNER, GOL, FINAL. Cada uno con su pitido donde corresponda.
-   **Tarjetas → v1.5**: tras varias faltas, amarilla (dibujo de tarjeta amarilla) y roja.
-3. **Celebración de gol fija**, la misma siempre: los del equipo que marca abrazándose, los que lo
-   reciben cabizbajos. Una sola animación para todos los goles.
-4. **Sin skins**: este juego tiene UNA sola versión visual. No pasa por `skin-designer`.
-5. **Sin versión mobile en la v1**: no pasa por `mobile-porter`. En viewport pequeño el juego
-   aparece en el catálogo pero **deshabilitado**; si el viewport se reduce durante una partida,
-   el juego se **para y redirige**. La decisión 9 vs 11 jugadores se toma tras jugar la v1, y
-   mobile se replantea después.
-6. Audio: sección 7 (dos pistas + SFX de fichero).
+- **Ninguna copia `*.ts` bajo `.superpowers/`**: una instantánea `snapshot-after-6a/ai.test.ts` la ejecutó
+  vitest (fallo fantasma). Las instantáneas van con extensión `.txt`.
+- **Sin commits no hay `git diff BASE..HEAD`**: los paquetes de revisión se hacen con `git diff BASE --
+  components/...` + ficheros nuevos anexados; para tareas encadenadas, instantánea `.txt` de la carpeta.
+  `git stash create` NO incluye ficheros sin trackear.
+- **Sondas ejecutables**: `--root <dir>` sin más NO aísla; lo que funciona es `ln -s <repo>/node_modules
+  <dir>/node_modules` + `npx vitest run --root <dir>`. Borrar `components/games/football-logic/node_modules/`
+  (caché `.vite`) si reaparece: `.gitignore` solo anula `/node_modules` en la raíz.
+- Límite de uso cortó dos agentes a mitad: reanudar con agente fresco + auditoría del diff funciona; el
+  `CHECKPOINT-etapa-B.md` con casillas fue la red (puede borrarse tras el commit).
+- El editor enseña "Cannot find name" caducados tras cambios grandes; solo vale `npx tsc --noEmit`.

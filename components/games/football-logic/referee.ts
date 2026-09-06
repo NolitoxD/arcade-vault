@@ -1,4 +1,4 @@
-import { centerY, goalLineX, isBetweenPosts, isInsideBigArea, penaltySpotX, type PitchDef, type Side } from './pitch';
+import { centerY, goalKickX, goalLineX, isBetweenPosts, isInsideBigArea, penaltySpotX, type PitchDef, type Side } from './pitch';
 import type { BallState } from './ball';
 import type { AttackDirs } from './step';
 
@@ -61,7 +61,7 @@ export function judgeBall(ball: BallState, attackDir: AttackDirs, pitch: PitchDe
       const attacking = defending === 0 ? 1 : 0;
       call(out, 'corner', attacking, goalLineX(pitch, side), ball.y < centerY(pitch) ? 0 : pitch.height);
     } else {
-      const x = side === 0 ? pitch.smallAreaDepth : pitch.width - pitch.smallAreaDepth;
+      const x = goalKickX(pitch, side);
       call(out, 'goal-kick', defending, x, centerY(pitch));
     }
     return;

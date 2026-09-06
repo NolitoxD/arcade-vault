@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  PITCH, centerX, centerY, clampToBigArea, goalLineX, isBetweenPosts,
+  PITCH, centerX, centerY, clampToBigArea, goalKickX, goalLineX, isBetweenPosts,
   isInsideBigArea, isInsideSmallArea, penaltySpotX,
 } from './pitch';
 import { checkPitch } from './invariants';
@@ -22,6 +22,10 @@ describe('pitch queries', () => {
   it('penalty spots are penaltySpotDist away from their goal line', () => {
     expect(penaltySpotX(PITCH, 0)).toBe(PITCH.penaltySpotDist);
     expect(penaltySpotX(PITCH, 1)).toBe(PITCH.width - PITCH.penaltySpotDist);
+  });
+  it('goalKickX sits on the small-area line at both ends', () => {
+    expect(goalKickX(PITCH, 0)).toBe(PITCH.smallAreaDepth);
+    expect(goalKickX(PITCH, 1)).toBe(PITCH.width - PITCH.smallAreaDepth);
   });
   it('between posts is symmetric around centerY and excludes the posts', () => {
     const half = PITCH.goalWidth / 2;

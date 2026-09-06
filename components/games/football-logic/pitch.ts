@@ -43,6 +43,18 @@ export function penaltySpotX(pitch: PitchDef, side: Side): number {
   return side === 0 ? pitch.penaltySpotDist : pitch.width - pitch.penaltySpotDist;
 }
 
+// The goal-kick spot: on the small-area line, centre of the goal. Its only code
+// consumer is judgeBall (referee.ts): since D4 a keeper's catch keeps play alive,
+// it never restarts from here.
+export function goalKickX(pitch: PitchDef, side: Side): number {
+  return side === 0 ? pitch.smallAreaDepth : pitch.width - pitch.smallAreaDepth;
+}
+
+// Boundary conventions (deferred minor #3, decided in stage B): isBetweenPosts is
+// EXCLUSIVE (a ball exactly on a post is not a goal) while isInsideBox is CLOSED
+// (a keeper exactly on the area line is still inside, which is what clampToBigArea
+// produces). referee.ts and ai.ts rely on both together: a ball on the goal line
+// between the posts is judged by judgeBall, never picked up or caught.
 export function isBetweenPosts(pitch: PitchDef, y: number): boolean {
   const half = pitch.goalWidth / 2;
   const cy = centerY(pitch);

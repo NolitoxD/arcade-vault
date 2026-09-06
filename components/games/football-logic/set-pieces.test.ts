@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { PITCH, centerY, goalLineX, isInsideBigArea } from './pitch';
 import { FORMATIONS, TEAM_SIZE, type Formation, type Strategy } from './teams';
+import { dist } from './geometry';
 import { createTeamInput, type TeamInput } from './input';
 import { GK_LINE_DIST, createPlayers, type PlayerState } from './players';
 import { CONTROL_DIST, LONG_PASS_VZ, createBall, type BallState } from './ball';
@@ -50,6 +51,17 @@ function speedOf(b: BallState): number {
 }
 
 describe('beginSetPiece', () => {
+  it('a rival standing EXACTLY on the free-kick spot is pushed straight back towards its own goal (zero-distance fallback)', () => {
+    const w = world();
+    // (1234, 567) is on no formation lane and not centre-anything: the pushed
+    // coordinates below cannot coincide with a formation slot by accident.
+    const rival = w.players[13];
+    rival.x = 1234; rival.y = 567;
+    begin(w, 'free-kick', 0, 1234, 567);
+    // team 0 attacks +x: the fallback direction is (-attackDir[0], 0) = (-1, 0)
+    expect(rival.x).toBe(1234 - SET_PIECE_CLEARANCE);
+    expect(rival.y).toBe(567);
+  });
   it('kickoff: everyone by formation, the nearest outfield player of the team takes it from the centre facing attackDir', () => {
     const w = world();
     w.players[3].x = 1700; // moved away: kickoff must reset it
@@ -128,6 +140,20 @@ describe('beginSetPiece', () => {
     expect(w.players[3].x).toBe(1500);
     begin(w, 'free-kick', 0, 1200, 400);
     expect(w.players[3].y).toBe(900);
+  });
+  it('the kickoff taker is the outfield player nearest the centre spot in EVERY formation (ids differ, the rule does not)', () => {
+    // Hand-computed (see the note below): 3-3-2 → id 5; 3-2-3 → id 5 (NOT a tie: 0.35 * 1300 is
+    // 454.99999999999994, so the slot at y = 845 is 5e-14 closer); 4-3-1 → id 6.
+    for (const [fi, expectedId] of [[0, 5], [1, 5], [2, 6]] as const) {
+      const f = FORMATIONS[fi];
+      const w = { ...world(), players: createPlayers([f, f], PITCH) };
+      beginSetPiece(w.sp, 'kickoff', 0, 1000, CY, w.players, w.ball, [f, f], STRATS, ATTACK, PITCH, 0);
+      expect(w.sp.takerId).toBe(expectedId);
+      expect(w.players[w.sp.takerId].role).not.toBe('gk');
+      let best = Infinity;
+      for (let i = 1; i <= 8; i++) best = Math.min(best, dist(w.players[i].x, w.players[i].y, 1000, CY));
+      expect(dist(w.players[w.sp.takerId].x, w.players[w.sp.takerId].y, 1000, CY)).toBeCloseTo(best, 6);
+    }
   });
 });
 

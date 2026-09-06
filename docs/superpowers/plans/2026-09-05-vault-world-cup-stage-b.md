@@ -37,6 +37,8 @@ Heredadas literalmente de la etapa A, con la baseline actualizada:
   5. `releaseFromGoalkeeper` gana `players` y `pitch` (apunta al compañero más libre): sus dos tests de `actions.test.ts` cambian de firma, no de valor (Task 6a).
   6. Los **comentarios** con números medidos del partido grabado de `match.test.ts` ("14 915 pasos, 1-2…") y el comentario obsoleto "nobody tackles" (R20): se re-miden y se reescriben; las **aserciones** (rangos, fases visitadas, `sawFoulSetPiece`, divergencia) NO se tocan. Si una aserción del partido grabado deja de cumplirse tras cablear la colocación viva, se responde **BLOCKED** con la medición.
   7. `players.test.ts` "gives each team one goalkeeper…" (3 def / 2 fwd) y `teams.test.ts` entero: son tests de contenido que la Task 7 amplía o reescribe.
+  8. `match.test.ts:482-491` **C2-C** ("a 700 u/s shot over the goal line … keeper ON his line"): el portero a 7,67 u de un balón en movimiento hace que `keeperCatchFor(1)` tire ANTES de la física, y `createRng(1)` da 0,627 < 0,75 (`catchChance` del nivel 5) → ataja y la fase sigue `'play'`. Es la regla 2 del portero del spec (D4) funcionando, no una regresión: se sustituye `createRng(1)` por `fixedRng([0.99])` (falla a cualquier nivel, `catchChance ≤ 0,90`) y se AÑADE `expect(rng.calls).toBe(1)` — queda documentado que el portero tiró y falló; las aserciones de gol y marcador no se tocan (Task 6a, Step 16). No es relajar: la expectativa (gol) es la misma, solo se retira la tirada nueva que la etapa B pone delante.
+  9. `match.test.ts:356-374` **"a penalty draws from the rng only on the step it executes, and never again"** y `match.test.ts:397-437` **C1**: su premisa ("nada más en el motor consume `rng`" / "el portero solo recoge") muere con `keeperCatch`: el portero falla la lectura (0,627 ≥ 0,5625), el balón vuela recto y `keeperStep` lo desliza hasta `GK_CATCH_RADIUS` en ~11 pasos → tercera tirada (0,527 < 0,75: ataja), y en C1 el saque automático posterior puede acabar en banda dentro de la ventana de 400 pasos. Se pone al portero 9 en el suelo justo después del paso que ejecuta (`m.players[9].downUntilStep = m.stepCount + 60`): `keeperCatch` rechaza a un portero caído, así que la ÚNICA tirada / el ÚNICO saque que podría aparecer es un saque re-ejecutándose, que es exactamente la propiedad que los dos tests fijan. Las aserciones (`rng.calls === afterExecution`, `secondCall === -1`) no cambian (Task 6a, Step 16). No es relajar: la atajada es comportamiento del spec (regla 2), el fixture la aparta y la propiedad medida es la misma.
   Todo lo demás —incluidas las cuatro trazas del reloj en vacío (N1) y `set-pieces.test.ts:59` `takerId 5`— **debe seguir en verde sin tocarlo**: la 3-3-2 publicada no cambia ni una coma en la Task 7 (sigue siendo `FORMATIONS[0]` con los mismos ocho slots), y con entradas en vacío los controlados no se mueven, así que la traza N1 sobrevive. Si no sobrevive: BLOCKED con la medición.
 - **Tipos y firmas idénticos entre tareas.** Las firmas de este plan son las del código REAL de la etapa A (comprobadas hoy sobre `components/games/football-logic/`): `stepMatch(match, inputs, rng)`, `stepPhysics(players, ball, inputs, controlled, attackDir, pitch, stepCount)`, `stepPlayer(p, dx, dy, wantSprint, hasBall, attackDir, pitch, stepCount)`, `anchorFor(slot, strategy, attackDir, pitch, out)`, `aimPass(p, players, dirX, dirY, farthest, stepCount, out)`, `applyButtons(p, input, ball, players, rng, stepCount, aim, out)`, `beginSetPiece(sp, kind, team, x, y, players, ball, formations, strategies, attackDir, pitch, stepCount)`, `stepSetPiece(sp, input, players, ball, rng, penaltyReadChance, attackDir, pitch, stepCount, aim, out)`, `checkGoalkeepersInBox(players, attackDir, pitch)`, `checkTeamInput(input, formationCount)`. `nearestOutfield` y `pushRivalsAway` son **privadas** de `set-pieces.ts` (se ejercitan por `beginSetPiece`); `toAxis` **no existe** todavía (la crea la Task 6a en `input.ts`).
 
@@ -92,7 +94,7 @@ Orden de dependencias (una fila solo importa de las de arriba; `ai.ts` importa `
 - Test: `components/games/football-logic/ai.test.ts` (nuevo), `input.test.ts`, `pitch.test.ts`, `players.test.ts`, `step.test.ts`, `ball.test.ts`, `actions.test.ts`, `set-pieces.test.ts`, `match.test.ts`
 
 **Interfaces:**
-- Consumes (código real de la etapa A): `PlayerState`, `stepPlayer`, `anchorFor`, `ownGoalSide`, `isPlayerDown`, `GK_SPEED`, `GK_CATCH_RADIUS`, `GK_LINE_DIST`, `PLAYER_SPEED`, `PLAYER_HEIGHT` (`players.ts`); `BallState`, `givePossession`, `kickBall`, `canPickUp`, `POSSESSION_RADIUS` (`ball.ts`); `Vec2`, `dist`, `normalizeInto`, `clamp`, `INV_SQRT2` (`geometry.ts`); `PitchDef`, `Side`, `centerY`, `goalLineX`, `isInsideSmallArea`, `isInsideBigArea` (`pitch.ts`); `Formation`, `Strategy`, `STRATEGIES`, `TeamDef`, `TEAM_SIZE` (`teams.ts`); `Axis`, `TeamInput` (`input.ts`); `stepsFor`, `perStep`, `AttackDirs` (`step.ts`); `Rng` (`rng.ts`); `ActionEvent`, `clearActionEvent`, `SHOT_SPEED_MIN`, `SHOT_SPEED_MAX`, `SHORT_PASS_SPEED`, `LONG_PASS_SPEED`, `GK_HOLD_STEPS`, `aimPass`, `shortPass`, `longPass` (`actions.ts`); `MatchState` (`match.ts`). Desde D4 la atajada no llama a `callSetPiece`: el único consumidor de `goalKickX` en código es `referee.ts`.
+- Consumes (código real de la etapa A): `PlayerState`, `stepPlayer`, `anchorFor`, `ownGoalSide`, `isPlayerDown`, `GK_SPEED`, `GK_CATCH_RADIUS`, `GK_LINE_DIST`, `PLAYER_SPEED`, `PLAYER_HEIGHT` (`players.ts`); `BallState`, `givePossession`, `kickBall` (`ball.ts`; `canPickUp` se MODIFICA en el Step 7, no se consume); `Vec2`, `dist`, `normalizeInto`, `INV_SQRT2` (`geometry.ts`); `PitchDef`, `Side`, `centerY`, `goalLineX`, `isInsideSmallArea`, `isInsideBigArea` (`pitch.ts`; `Side` solo en `goalKickX`, `ai.ts` no lo importa); `Formation`, `Strategy`, `TeamDef`, `TEAM_SIZE` (`teams.ts`; `STRATEGIES` no lo importa nadie nuevo: `anchorFor` ya lo consume dentro de `players.ts`); `Axis`, `TeamInput` (`input.ts`); `stepsFor`, `perStep` (`step.ts`); `Rng` (`rng.ts`); `ActionEvent`, `clearActionEvent`, `SHOT_SPEED_MIN`, `SHOT_SPEED_MAX`, `SHORT_PASS_SPEED`, `LONG_PASS_SPEED`, `GK_HOLD_STEPS`, `aimPass`, `shortPass`, `longPass` (`actions.ts`); `MatchState` (`match.ts`). Desde D4 la atajada no llama a `callSetPiece`: el único consumidor de `goalKickX` en código es `referee.ts`.
 - Produces (lo usan la Task 6b, la Task 7 y la etapa C con estos nombres exactos):
 
 ```ts
@@ -137,7 +139,7 @@ export type AiProfile = {
 export function profileFor(def: TeamDef, difficulty: number): AiProfile;   // def unused in v1 (v1.5 attributes), kept in the signature as the spec asks
 export function humanProfile(def: TeamDef, difficulty: number): AiProfile; // profileFor with passErrorDeg = shotErrorDeg = 0 (ruling R10)
 export function quantizeDir(x: number, y: number, out: { dx: Axis; dy: Axis }): void;  // nearest of the 8 d-pad directions; (0,0) for the zero vector
-export function laneBlocked(players: readonly PlayerState[], rivalOf: 0 | 1, fromX: number, fromY: number, dirX: number, dirY: number, length: number, radius: number, stepCount: number): boolean;
+export function laneBlocked(players: readonly PlayerState[], team: 0 | 1, fromX: number, fromY: number, dirX: number, dirY: number, length: number, radius: number, stepCount: number): boolean;   // `team` is MY team (the lane's owner); true when a standing rival of `team` lies in the corridor (pre-vuelo H1)
 export function positionTeam(players: PlayerState[], ball: BallState, team: 0 | 1, formation: Formation, strategy: Strategy, attackDir: 1 | -1, controlled: number, pitch: PitchDef, stepCount: number, scratch: Vec2): void;
 export function keeperStep(gk: PlayerState, players: readonly PlayerState[], ball: BallState, attackDir: 1 | -1, pitch: PitchDef, stepCount: number): void;
 export function keeperCatch(gk: PlayerState, ball: BallState, catchChance: number, rolled: [boolean, boolean], rng: Rng, pitch: PitchDef, stepCount: number, out: ActionEvent): boolean;
@@ -552,7 +554,11 @@ describe('freestMateDir: the outfield mate in OWN half farthest from every rival
     const crowded = at(w.players[1], 400, 400);
     at(w.players[10], 430, 400);                   // rival 30 u from the crowded mate
     const free = at(w.players[2], 500, 900);
-    at(w.players[11], 700, 900);                   // nearest rival 200 u away
+    at(w.players[11], 750, 900);                   // nearest rival 250 u away
+    // Anti-coincidence (pre-flight H6): world() parks mates 4-8 at (260..420, 1290), in OWN half,
+    // and mate 4 has the parked rival keeper 9 at (460, 1290) EXACTLY 200 u away. With the rival
+    // at 200 u the "free" mate would win only by lowest id; at 250 u it wins by margin.
+    expect(dist2(w.players[4], w.players[9])).toBe(200);
     at(w.players[3], 1300, 650);                   // freest of all but in the rival half: ignored
     const out = { x: 0, y: 0 };
     expect(freestMateDir(gk, w.players, 1, PITCH, out)).toBe(true);
@@ -623,7 +629,7 @@ describe('releaseFromGoalkeeper', () => {
   });
 });
 ```
-(`at`, `world`, `dist2` son los helpers que ya existen en `actions.test.ts` —`at(p, x, y, fx = 1, fy = 0)`, `world()` aparca a los 18 en la banda inferior con `facing (1, 0)`—; `dist2(a, b)` no existe todavía: definirlo junto a `speedOf` como `Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2)`.)
+(`at`, `world`, `dist2` son los helpers que ya existen en `actions.test.ts` —`at(p, x, y, fx = 1, fy = 0)`, `world()` aparca a los 18 en la banda inferior con `facing (1, 0)`—; `dist2(a, b)` **ya existe** en `actions.test.ts:441` (declaración `function`, hoisted, justo tras el `describe` de `aimPass`): se reutiliza tal cual y **no se vuelve a declarar** — sería TS2393 *Duplicate function implementation*, que vitest/esbuild tolera pero `npx tsc --noEmit` no, y el compilador es puerta de este plan (pre-vuelo H2).)
 
 Run: `npx vitest run components/games/football-logic/actions.test.ts` → FAIL (símbolos nuevos y aridad de `releaseFromGoalkeeper`).
 
@@ -900,7 +906,7 @@ import { dist } from './geometry';
 import { createTeamInput, type Axis, type TeamInput } from './input';
 import { stepsFor, perStep } from './step';
 import { GK_CATCH_RADIUS, GK_LINE_DIST, GK_SPEED, PLAYER_SPEED, createPlayers, type PlayerState } from './players';
-import { createBall, givePossession, type BallState } from './ball';
+import { KICK_LOCK_STEPS, createBall, givePossession, type BallState } from './ball';
 import { createRng, type Rng } from './rng';
 import { createActionEvent, SHOT_SPEED_MAX, SHOT_SPEED_MIN, type ActionEvent } from './actions';
 import { checkGoalkeepersInBox } from './invariants';
@@ -994,18 +1000,21 @@ describe('laneBlocked: a rival inside the corridor blocks, outside or beyond its
   it('judges perpendicular distance and projection, ignoring downed rivals and own team', () => {
     const ps = createPlayers([F, F], PITCH);
     for (const p of ps) at(p, 50 + p.id * 10, 1250);
+    // The lane is team 0's (attacking +x from (1000, 650)): the second argument is MY team, so
+    // the obstacles are the players of team 1 (ids 9-17). Pre-flight H1: never pass the rival's team.
     at(ps[10], 1100, 640);          // 100 u along the lane, 10 u off it: blocks a radius of 60
-    expect(laneBlocked(ps, 1, 1000, 650, 1, 0, 200, 60, 0)).toBe(true);
+    expect(laneBlocked(ps, 0, 1000, 650, 1, 0, 200, 60, 0)).toBe(true);
     at(ps[10], 1100, 731);          // 81 u off the lane: outside a radius of 60
-    expect(laneBlocked(ps, 1, 1000, 650, 1, 0, 200, 60, 0)).toBe(false);
+    expect(laneBlocked(ps, 0, 1000, 650, 1, 0, 200, 60, 0)).toBe(false);
     at(ps[10], 1237, 650);          // on the lane but 237 u along it: beyond a length of 200
-    expect(laneBlocked(ps, 1, 1000, 650, 1, 0, 200, 60, 0)).toBe(false);
+    expect(laneBlocked(ps, 0, 1000, 650, 1, 0, 200, 60, 0)).toBe(false);
     at(ps[10], 1100, 640); ps[10].downUntilStep = 50;
-    expect(laneBlocked(ps, 1, 1000, 650, 1, 0, 200, 60, 20)).toBe(false);   // on the floor: not an obstacle
+    expect(laneBlocked(ps, 0, 1000, 650, 1, 0, 200, 60, 20)).toBe(false);   // on the floor: not an obstacle
+    at(ps[10], 150, 1250);          // rival 10 back on the touchline (and up again: at() clears downUntilStep)
     at(ps[3], 1100, 640);           // a TEAMMATE of team 0 on the lane is not a rival of team 0
-    expect(laneBlocked(ps, 1, 1000, 650, 1, 0, 200, 60, 100)).toBe(false);
+    expect(laneBlocked(ps, 0, 1000, 650, 1, 0, 200, 60, 100)).toBe(false);
     at(ps[10], 930, 650);           // behind the start: negative projection
-    expect(laneBlocked(ps, 1, 1000, 650, 1, 0, 200, 60, 100)).toBe(false);
+    expect(laneBlocked(ps, 0, 1000, 650, 1, 0, 200, 60, 100)).toBe(false);
   });
 });
 
@@ -1052,8 +1061,8 @@ Run: `npx vitest run components/games/football-logic/ai.test.ts` → FAIL (`./ai
 ```ts
 // components/games/football-logic/ai.ts
 import { dist, normalizeInto, type Vec2 } from './geometry';
-import { centerY, goalLineX, isInsideSmallArea, type PitchDef, type Side } from './pitch';
-import { STRATEGIES, type Formation, type Strategy, type TeamDef } from './teams';
+import { centerY, goalLineX, isInsideSmallArea, type PitchDef } from './pitch';
+import type { Formation, Strategy, TeamDef } from './teams';
 import type { Axis } from './input';
 import { perStep, stepsFor } from './step';
 import {
@@ -1179,12 +1188,13 @@ export function quantizeDir(x: number, y: number, out: { dx: Axis; dy: Axis }): 
   }
 }
 
-// True when a rival of `rivalOf` (not on the floor) lies within `radius` of the
+// True when a rival of `team` (not on the floor) lies within `radius` of the
 // segment from (fromX, fromY) along the unit (dirX, dirY) for `length` units.
-export function laneBlocked(players: readonly PlayerState[], rivalOf: 0 | 1, fromX: number, fromY: number, dirX: number, dirY: number, length: number, radius: number, stepCount: number): boolean {
+// `team` is the lane's owner (MY team): its own players are never obstacles.
+export function laneBlocked(players: readonly PlayerState[], team: 0 | 1, fromX: number, fromY: number, dirX: number, dirY: number, length: number, radius: number, stepCount: number): boolean {
   for (let i = 0; i < players.length; i++) {
     const q = players[i];
-    if (q.team === rivalOf || isPlayerDown(q, stepCount)) continue;
+    if (q.team === team || isPlayerDown(q, stepCount)) continue;
     const rx = q.x - fromX;
     const ry = q.y - fromY;
     const along = rx * dirX + ry * dirY;
@@ -1443,6 +1453,20 @@ describe('keeperCatch: one roll per approach, penalised by shot charge, never on
     expect(keeperCatch(half.gk, half.w.ball, 0.9, half.rolled, fixedRng([0.8]), PITCH, 0, half.out)).toBe(true);
     expect(CHARGED_SHOT_CATCH_PENALTY).toBe(0.15);
   });
+  it('never rolls for its own kick inside the kick lock (D4: the throw must leave, not bounce back into the gloves)', () => {
+    const { w, gk, out, rolled } = approach(-700);
+    w.ball.x = gk.x - 9;                                     // one step after a throw: 9 u out, well inside the radius
+    w.ball.kickerId = 9; w.ball.kickLockUntilStep = KICK_LOCK_STEPS;   // what kickBall wrote at step 0 (15 steps)
+    let calls = 0;
+    const rng = () => { calls++; return 0.1; };
+    expect(keeperCatch(gk, w.ball, 0.9, rolled, rng, PITCH, 3, out)).toBe(false);
+    expect(calls).toBe(0);
+    expect(w.ball.owner).toBeNull();
+    expect(rolled[1]).toBe(false);                           // the lock refused, not a used-up approach
+    // Lock over (KICK_LOCK_STEPS < KICK_LOCK_STEPS is false): a normal approach again, one roll, caught.
+    expect(keeperCatch(gk, w.ball, 0.9, rolled, rng, PITCH, KICK_LOCK_STEPS, out)).toBe(true);
+    expect(calls).toBe(1);
+  });
   it('never rolls for an owned ball, a resting ball, a high ball, or a ball already over a line', () => {
     let calls = 0;
     const rng = () => { calls++; return 0; };
@@ -1611,6 +1635,10 @@ export function keeperStep(gk: PlayerState, players: readonly PlayerState[], bal
 // (CHARGED_SHOT_CATCH_PENALTY), so passes are never penalised (assumption S7). A
 // ball over a line is the referee's (same strict comparisons as pickUp, ruling
 // R17); a high ball is not catchable (assumption S10, same rule as the pickup).
+// Never its own throw: inside the kick lock the released ball is still within the
+// radius (7-9 u per step) and `rolled` was reset while it was held, so without the
+// guard the keeper would roll for -- and mostly catch -- its own release, forever
+// (pre-flight H4). KICK_LOCK_STEPS (15) carry it 105-140 u out, past the radius.
 export function keeperCatch(gk: PlayerState, ball: BallState, catchChance: number, rolled: [boolean, boolean], rng: Rng, pitch: PitchDef, stepCount: number, out: ActionEvent): boolean {
   const moving = ball.vx !== 0 || ball.vy !== 0 || ball.vz !== 0 || ball.z !== 0;
   const inside = ball.x >= 0 && ball.x <= pitch.width && ball.y >= 0 && ball.y <= pitch.height;
@@ -1619,6 +1647,7 @@ export function keeperCatch(gk: PlayerState, ball: BallState, catchChance: numbe
     rolled[gk.team] = false;
     return false;
   }
+  if (ball.kickerId === gk.id && stepCount < ball.kickLockUntilStep) return false;   // own throw, still locked: no roll, `rolled` stays false
   if (!moving || ball.z > PLAYER_HEIGHT || isPlayerDown(gk, stepCount)) return false;
   if (rolled[gk.team]) return false;
   rolled[gk.team] = true;
@@ -1653,14 +1682,47 @@ function fresh(): MatchState {
 ```
 `createMatch(TEAM_PAIR, three, PITCH)` en el test de "stores the formation…" pasa a `createMatch(TEAM_PAIR, three, PITCH, PROFILES)`. En el test de `createMatch`, `expect(m.gkPenaltyRead).toEqual(...)` → `expect(m.profiles).toBe(PROFILES); expect(m.catchRolled).toEqual([false, false]);` y quitar `DEFAULT_PENALTY_READ_CHANCE` del import. En `sameMatch`, sustituir la línea de `gkPenaltyRead` por `if (a.catchRolled[0] !== b.catchRolled[0] || a.catchRolled[1] !== b.catchRolled[1]) return false;`.
 
-Tests nuevos (helpers primero; `countingRng` y `sameMatch` ya existen en el fichero):
+**Expectativas 8 y 9 de la lista de caducidad (pre-vuelo H3) — tres tests de la etapa A cuya premisa muere con `keeperCatch`; cambia el fixture, nunca la aserción** (`fixedRng` es la declaración `function` del bloque siguiente: hoisted, usable desde C2-C aunque se defina más abajo):
 ```ts
-// D4 helpers. A free, low ball with a velocity and no kicker lock; a fixed rng that counts its draws.
-function freeBall(m: MatchState, x: number, y: number, vx: number, vy: number): void {
-  const b = m.ball;
-  b.owner = null; b.x = x; b.y = y; b.z = 0; b.vx = vx; b.vy = vy; b.vz = 0;
-  b.kickerId = null; b.kickLockUntilStep = 0;
-}
+// match.test.ts:482-491 — C2-C: sustituir `stepMatch(m, IDLE, createRng(1));` y sus dos expects por
+    // Stage B (D4, keeper rule 2): a moving ball inside GK_CATCH_RADIUS makes keeperCatch roll
+    // BEFORE the physics. A draw of 0.99 misses at every level (catchChance <= 0.90), so the
+    // shot flies on and the referee still sees it cross the line. The roll is asserted, not
+    // hidden: the keeper tried and failed, and the goal stands (expectation 8).
+    const rng = fixedRng([0.99]);
+    stepMatch(m, IDLE, rng);
+    expect(m.phase).toBe('goal');
+    expect(m.score).toEqual([1, 0]);
+    expect(rng.calls).toBe(1);
+```
+```ts
+// match.test.ts:356-374 — "a penalty draws from the rng only on the step it executes, and never again":
+// tras `stepMatch(m, IDLE, rng); expect(m.phase).not.toBe('set-piece');` añadir
+    // Stage B (D4): keeperCatch is the one other draw the engine makes, and it WOULD fire here --
+    // a misread penalty flies at the keeper's line and keeperStep slides him into
+    // GK_CATCH_RADIUS in ~11 steps. Keeper on the floor: keeperCatch refuses a downed keeper, so
+    // the only draw that could appear is a set piece re-firing -- exactly what this test pins
+    // (expectation 9).
+    m.players[9].downUntilStep = m.stepCount + 60;
+// y reescribir el comentario "Idle inputs never press B, so nothing else in the engine can draw" como
+    // Idle inputs never press B and a downed keeper never catches, so nothing else in the
+    // engine can draw: any growth here would be stepSetPiece firing a second time.
+```
+```ts
+// match.test.ts:397-437 — C1: tras `for (let i = 0; i < SET_PIECE_COUNTDOWN_STEPS; i++) stepMatch(m, IDLE, rng);`
+// y su `expect(m.phase).not.toBe('set-piece');` añadir
+    // Stage B (D4): same penalty, same ~11-step slide into GK_CATCH_RADIUS, and a catch would
+    // hold the ball 2 s and throw it long -- a throw that can end in touch inside the 400-step
+    // window and set `secondCall` for a reason that is not C1. Keeper on the floor: keeperCatch
+    // refuses a downed keeper, so the ball goes in as it did in stage A and the only set piece
+    // that could appear is the re-judged foul this test pins (expectation 9).
+    m.players[9].downUntilStep = m.stepCount + 60;
+```
+Ninguno de los tres relaja una expectativa: la atajada nueva es comportamiento del spec (regla 2 del portero, D4), la Global Constraint manda investigar y la investigación está hecha (pre-vuelo H3: `createRng(1)` = 0,627 / 0,0027 / 0,527 contra `catchChance` 0,75 y `penaltyReadChance` 0,5625 del nivel 5). Lo que cambia es la fuente de tirada que la etapa B añade, no lo que cada test afirma (`phase 'goal'`, `rng.calls === afterExecution`, `secondCall === -1` siguen tal cual). Si con estos cambios alguno de los tres sigue rojo: **BLOCKED con la medición**.
+
+Tests nuevos (helpers primero; `countingRng`, `sameMatch` **y `freeBall(m, x, y, vx, vy)`** ya existen en el fichero: `freeBall` es la del fix C2, `match.test.ts:444` —`kickerId = -1`, `lastTouchTeam 0`/`lastTouchId 5`, sin lock— y vale tal cual para `caught()` porque la atajada no lee `lastTouch`; **no se redeclara**, sería TS2393 *Duplicate function implementation* (pre-vuelo H2). El único helper nuevo es `fixedRng`):
+```ts
+// D4 helper: a fixed rng that counts its draws (freeBall is the C2 one, higher up in this file).
 function fixedRng(values: number[]): CountingRng {
   let i = 0;
   const fn: CountingRng = Object.assign(function next(): number {
@@ -1745,6 +1807,15 @@ describe('D4: a catch is possession, not a set piece; the team throws by button 
     expect(m.phase).toBe('play');
     expect(rng.calls).toBe(0);                               // the whole hold and the release: no draw (no error on a keeper's kick)
     expect(GK_HOLD_STEPS).toBe(stepsFor(2));
+    // Pre-flight H4: the five steps after the throw. The ball is 9-46 u from the keeper, moving
+    // and free -- inside GK_CATCH_RADIUS for four of them -- and keeperCatch must NOT roll for
+    // it (own kick inside the kick lock): the keeper never gets it back, the rng stays untouched.
+    for (let i = 0; i < 5; i++) {
+      stepMatch(m, IDLE, rng);
+      expect(m.ball.owner).toBeNull();
+      expect(m.scratch.events[9].kind).not.toBe('gk-catch');
+    }
+    expect(rng.calls).toBe(0);
   });
   it('(e) while the keeper holds the ball the d-pad and the sprint do not move the field controlled: the AI places it, identically with and without input; with a free ball the same d-pad does move it', () => {
     const a = caught().m;
@@ -1833,7 +1904,7 @@ describe('criterion 11: live placement responds at once to a formation or strate
   });
 });
 ```
-(importar `GK_HOLD_STEPS` y `freestMateDir` de `./actions` y `type PlayerState` ya está; `dist` de `./geometry` ya está; `CountingRng`, `countingRng` y `sameMatch` ya existen en el fichero. Regla anti-coincidencia: 31 u y no 39/40; el paso del automático se afirma por `GK_HOLD_STEPS − 1` verde y `GK_HOLD_STEPS` rojo; el control con balón libre de (e) demuestra que la igualdad no es vacía; los `rng.calls === 0` prueban que ni la posesión ni el saque del portero tocan el `rng`.) Sustituir además el bloque de comentario del partido grabado (expectativa 6): quitar "nobody tackles, so there are no fouls and no penalties" y decir que la `policy` sí entra (I1) y que desde la etapa B el `rng` también lo consumen la atajada y el error angular, por lo que la divergencia de la run C llega por cualquiera de los cuatro consumidores.
+(importar `GK_HOLD_STEPS` y `freestMateDir` de `./actions` y `type PlayerState` ya está; `dist` de `./geometry` ya está; `CountingRng`, `countingRng` y `sameMatch` ya existen en el fichero. Regla anti-coincidencia: 31 u y no 39/40; el paso del automático se afirma por `GK_HOLD_STEPS − 1` verde y `GK_HOLD_STEPS` rojo; el control con balón libre de (e) demuestra que la igualdad no es vacía; los `rng.calls === 0` prueban que ni la posesión, ni el saque del portero, ni los cinco pasos que lo siguen —el portero no re-ataja su propio saque dentro del kick lock, H4— tocan el `rng`.) Sustituir además el bloque de comentario del partido grabado (expectativa 6): quitar "nobody tackles, so there are no fouls and no penalties" y decir que la `policy` sí entra (I1) y que desde la etapa B el `rng` también lo consumen la atajada y el error angular, por lo que la divergencia de la run C llega por cualquiera de los cuatro consumidores.
 
 Run: `npx vitest run components/games/football-logic/match.test.ts` → FAIL (aridad de `createMatch`, `profiles`, atajada, colocación viva).
 
@@ -1971,7 +2042,7 @@ Run: `npx vitest run components/games/football-logic/set-pieces.test.ts` → PAS
 
 - [ ] **Step 19: Verificación de la Task 6a y grep de determinismo**
 
-Run: `npx vitest run` → verde (≈ 760 + ~57: 45 de la versión del 04-sep más los 7 de `applyKeeperButtons`/`releaseFromGoalkeeper` en `actions.test.ts` y los 5 de D4 en `match.test.ts`). `npx tsc --noEmit` limpio. `grep -rn "Math.random\|Date.now\|performance.now\|Math.sin\|Math.cos\|Math.atan2\|Math.hypot" components/games/football-logic/` → vacío. `grep -rn "gkEvent\|goalKickX" components/games/football-logic/` → `gkEvent` en ningún sitio; `goalKickX` solo en `pitch.ts`, `referee.ts` y `pitch.test.ts`. Recorrer `grep -n "^export" components/games/football-logic/ai.ts`: cada símbolo con consumidor en `match.ts` o `ai.test.ts`; `applyKeeperButtons` consumido por `match.ts` y `actions.test.ts`.
+Run: `npx vitest run` → verde (≈ 760 + ~58: 45 de la versión del 04-sep más los 7 de `applyKeeperButtons`/`releaseFromGoalkeeper` en `actions.test.ts`, los 5 de D4 en `match.test.ts` y el `it` del kick lock de `keeperCatch` (H4) en `ai.test.ts`). `npx tsc --noEmit` limpio. `grep -rn "Math.random\|Date.now\|performance.now\|Math.sin\|Math.cos\|Math.atan2\|Math.hypot" components/games/football-logic/` → vacío. `grep -rn "gkEvent\|goalKickX" components/games/football-logic/` → `gkEvent` en ningún sitio; `goalKickX` solo en `pitch.ts`, `referee.ts` y `pitch.test.ts`. Recorrer `grep -n "^export" components/games/football-logic/ai.ts`: cada símbolo con consumidor en `match.ts` o `ai.test.ts`; `applyKeeperButtons` consumido por `match.ts` y `actions.test.ts`. **Excepción declarada (pre-vuelo H7):** los ocho umbrales del árbol con balón (`SHOT_RANGE`, `SHOT_TAP_DIST`, `SHOT_LANE_LENGTH`, `SHOT_LANE_RADIUS`, `PRESSURE_DIST`, `PASS_LANE_RADIUS`, `LONG_PASS_MIN_DIST`, `SPRINT_FREE_DIST`) y el tipo `AiPlan` no tienen consumidor hasta la Task 6b (Step 4, `it` de umbrales); se anota aquí y se cierra allí. `ai.ts` no importa `STRATEGIES` ni `Side` (podados del Step 13).
 
 Re-medir el partido grabado de `match.test.ts` (pasos, marcador, fases, tiros libres, `firstMismatchC`) y reescribir su comentario con los números nuevos (expectativa 6). Reportar en el informe de la tarea la cifra de tests y las mediciones.
 
@@ -1992,7 +2063,7 @@ Working tree verificado. Mensaje propuesto (lo ejecuta Paco):
 - Test: `components/games/football-logic/ai.test.ts`
 
 **Interfaces:**
-- Consumes: todo lo de la Task 6a más `pickPassTarget`, `STEAL_RANGE`, `SHOT_CHARGE_STEPS`, `LONG_PASS_HOLD_STEPS` (`actions.ts`); `TACKLE_DIST`, `isPlayerDown` (`players.ts`); `PenaltySide` (`set-pieces.ts`, tipo); `MatchState` (`match.ts`, **solo tipo**); `HALF_STEPS` (`clock.ts`); `createTeamInput`, `checkTeamInput`, `copyTeamInput`, `toAxis` (`input.ts`).
+- Consumes: todo lo de la Task 6a más `pickPassTarget`, `STEAL_RANGE`, `SHOT_CHARGE_STEPS`, `LONG_PASS_HOLD_STEPS` (`actions.ts`); `TACKLE_DIST`, `isPlayerDown` (`players.ts`); `PenaltySide` (`set-pieces.ts`, tipo); `MatchState` (`match.ts`, **solo tipo**); `HALF_STEPS` (`step.ts`, que lo re-exporta de `clock.ts` tras el Step 1: `ai.ts` sigue la convención del motor, "everything outside players.ts/ball.ts imports the clock from step.ts" — pre-vuelo H11); `createTeamInput`, `checkTeamInput`, `copyTeamInput`, `toAxis` (`input.ts`).
 - Produces (lo usan la Task 7, el componente de la etapa C y las sondas del cierre):
 
 ```ts
@@ -2031,7 +2102,7 @@ export const LATE_GAME_SECONDS = 30;
 - **S11 · Lado del penalti de la CPU**: uniforme entre −1/0/1 con una tirada de su `rng`, elegido una vez por penalti y mantenido durante la cuenta atrás. Los demás saques dejan la dirección por defecto del motor (hacia el centro de la portería rival).
 - **S12 · Esquiva al conducir**: `v = unit(goal − me) − unit(rival − me) · (1 − dRival / DODGE_DIST)` con `DODGE_DIST = 150`; con presión y sin carril, `v = unit(goal − me) − unit(rival − me)` (peso completo: "hacia el lado contrario").
 - **S13 · "150 u de pista libre"**: `laneBlocked` con `SPRINT_FREE_DIST` de largo y `SPRINT_LANE_RADIUS = 60` de radio (el mismo radio que la línea de chut).
-- **S14 · Sin balón — CONFIRMADO por Paco el 05-sep (D2)**: el controlado persigue el balón cada paso (sin puerta de reacción: es lo que hace el humano con la cruceta) y sprinta si está a más de `SPRINT_FREE_DIST`; la **acción defensiva** (robo a < `STEAL_RANGE`, entrada a < `TACKLE_DIST` **solo de frente**, `dot(me − owner, owner.facing) > 0`, y solo si `rng() < tackleChance`) se evalúa en la puerta de reacción. `tackleChance` es la **disposición** de la CPU a intentar robo o entrada a alcance en cada tick de reacción (como `aggression` en Vault Fighter); el éxito del robo sigue siendo `STEAL_CHANCE` 65 % / 35 % frente a sprint para los dos equipos, y el de la entrada, geométrico. Etiqueta en código: `// confirmed by owner 2026-09-05 (D2)`.
+- **S14 · Sin balón — CONFIRMADO por Paco el 05-sep (D2)**: el controlado persigue el balón cada paso (sin puerta de reacción: es lo que hace el humano con la cruceta) y sprinta si está a más de `SPRINT_FREE_DIST`; la **acción defensiva** (robo a < `STEAL_RANGE`, entrada a < `TACKLE_DIST` y solo si `rng() < tackleChance`) se evalúa en la puerta de reacción. El **"solo de frente"** (`dot(me − owner, owner.facing) > 0`) NO está en el texto de D2: es un supuesto propio (entrar por detrás es falta por construcción), numerado **S14b**, etiquetado `// Stage B assumption S14b, not in the spec — review in QA` y NO `confirmed` (pre-vuelo H9). `tackleChance` es la **disposición** de la CPU a intentar robo o entrada a alcance en cada tick de reacción (como `aggression` en Vault Fighter); el éxito del robo sigue siendo `STEAL_CHANCE` 65 % / 35 % frente a sprint para los dos equipos, y el de la entrada, geométrico. Etiqueta en código: `// confirmed by owner 2026-09-05 (D2)`.
 - **S15 · Un solo rayo de chut**: el chut sale por la cruceta (8 direcciones): recto `(attack, 0)` si `|me.y − cy| < goalWidth/2 − SHOT_POST_MARGIN`, diagonal `(attack, ±1)` si ese rayo entra entre los postes con el mismo margen; `SHOT_POST_MARGIN = 20`. Sin rayo que entre, no chuta y sigue conduciendo hacia `(goalX, cy)`.
 - **S16 · Al ganar el balón se decide en el acto** (`plan === 'none'` fuerza la decisión); a partir de ahí, cada `reactionSteps`.
 - **S17 · Con el portero propio en posesión — CONFIRMADO por Paco el 05-sep (D4)**: la CPU **no pulsa botones** (saca siempre con el automático a los 2 s) y emite entrada neutra (`dx = dy = 0`, A/B/C `'up'`): el motor enruta ese `TeamInput` al saque del portero (D4), así que la cruceta no movería al controlado de campo, que se coloca por `positionTeam` (ancla + deriva) igual que el resto. Ni una tirada del `rng` de la CPU en ese estado. Etiqueta en código: `// confirmed by owner 2026-09-05 (D4)`.
@@ -2046,11 +2117,13 @@ export const HALF_SECONDS_MAX = 120;
 export const HALF_STEPS = stepsFor(HALF_SECONDS);
 ```
 ```ts
-// match.ts — sustituir las tres líneas de HALF_* por
-import { HALF_STEPS, STEP_MS, stepPhysics, stepsFor } from './step';
-export { HALF_SECONDS, HALF_SECONDS_MAX, HALF_STEPS } from './clock';
+// match.ts — sustituir las tres líneas de HALF_* por (una sola fuente para el reloj de la parte, `./clock`,
+// y una sola línea de import: match.ts es, como step.ts, un re-exportador de clock.ts para match.test.ts
+// y el componente; pre-vuelo H11)
+import { HALF_SECONDS, HALF_SECONDS_MAX, HALF_STEPS } from './clock';
+export { HALF_SECONDS, HALF_SECONDS_MAX, HALF_STEPS };
 ```
-y en `step.ts` ampliar la re-exportación: `export { STEPS_PER_SECOND, STEP_MS, HALF_SECONDS, HALF_SECONDS_MAX, HALF_STEPS, stepsFor, perStep } from './clock';`.
+(la línea `import { STEP_MS, stepPhysics, stepsFor } from './step';` de `match.ts` no cambia; `HALF_STEPS` se usa localmente en `endHalf`/`stepMatch` y sale del mismo import que se re-exporta, no de dos fuentes distintas) y en `step.ts` ampliar la re-exportación: `export { STEPS_PER_SECOND, STEP_MS, HALF_SECONDS, HALF_SECONDS_MAX, HALF_STEPS, stepsFor, perStep } from './clock';`.
 
 Run: `npx vitest run components/games/football-logic/match.test.ts` → PASS sin tocar el test (`HALF_STEPS` etc. siguen saliendo de `./match`). `npx tsc --noEmit` limpio.
 
@@ -2099,7 +2172,7 @@ Run: `npx vitest run components/games/football-logic/ai.test.ts` → FAIL.
 
 ```ts
 // ai.ts — añadir
-import { HALF_STEPS } from './clock';
+import { HALF_STEPS } from './step';   // the engine convention: the clock comes through step.ts (re-exported in 6b Step 1), never from clock.ts directly (pre-flight H11)
 import type { TeamInput } from './input';
 import type { PenaltySide } from './set-pieces';
 import type { MatchState } from './match';   // type only: erased at compile time, no ESM cycle
@@ -2112,7 +2185,8 @@ export const LATE_GAME_SECONDS = 30;
 const STRATEGY_REVIEW_STEPS = stepsFor(STRATEGY_REVIEW_SECONDS);
 const LATE_GAME_STEPS = stepsFor(LATE_GAME_SECONDS);
 // Stage B assumptions S12, S13 and S15, not in the spec — review in QA (S14, the
-// defensive roll in `chase`, is confirmed by owner 2026-09-05, D2)
+// defensive roll in `chase`, is confirmed by owner 2026-09-05, D2; S14b, the
+// front-only slide in `chase`, is NOT: assumption, review in QA)
 const DODGE_DIST = 150;
 const SPRINT_LANE_RADIUS = 60;
 const SHOT_POST_MARGIN = 20;
@@ -2161,7 +2235,10 @@ Run: `npx vitest run components/games/football-logic/ai.test.ts` → los tests d
 - [ ] **Step 4: Tests que fallan — el árbol con balón, la persecución y la acción defensiva, la reacción por dificultad (1 vs 8), el penalti**
 
 ```ts
-// ai.test.ts — añadir
+// ai.test.ts — añadir (importar de './ai' SHOT_RANGE, SHOT_TAP_DIST, SHOT_LANE_LENGTH, SHOT_LANE_RADIUS,
+// PRESSURE_DIST, PASS_LANE_RADIUS, LONG_PASS_MIN_DIST, SPRINT_FREE_DIST y type AiPlan — pre-vuelo H7: los
+// umbrales se afirman aquí para que tengan consumidor, patrón DRIFT_LONG de 6a —; de './actions'
+// SHOT_CHARGE_STEPS y LONG_PASS_HOLD_STEPS si no están ya)
 // A match in open play with team 0 (attacking +x) holding the ball in player 5.
 // Everybody else is parked on the far touchline AND on the floor (downUntilStep far
 // ahead): pickPassTarget, laneBlocked and nearestRival all skip downed players, so
@@ -2195,6 +2272,22 @@ function buttonTrace(s: ReturnType<typeof scenario>, button: 'a' | 'b', max = 80
 }
 
 describe('decideTeamInput with the ball: the three-branch tree (spec "La CPU con balón")', () => {
+  it('the with-ball thresholds are the spec numbers (the tests below spell them as literals on purpose: 300, 150, 419, 60, 200, 400)', () => {
+    expect(SHOT_RANGE).toBe(420);
+    expect(SHOT_TAP_DIST).toBe(150);
+    expect(SHOT_LANE_LENGTH).toBe(200);
+    expect(SHOT_LANE_RADIUS).toBe(60);
+    expect(PRESSURE_DIST).toBe(90);
+    expect(PASS_LANE_RADIUS).toBe(50);
+    expect(LONG_PASS_MIN_DIST).toBe(350);
+    expect(SPRINT_FREE_DIST).toBe(150);
+    // AiPlan is the public name of what the state carries: a shot plan starts (and stays, charge 33) as 'shoot'.
+    const s = scenario();
+    at(s.me, PITCH.width - 300, CY, 1, 0); s.m.ball.x = s.me.x + 18; s.m.ball.y = CY;
+    decide(s);
+    const plan: AiPlan = s.state.plan;
+    expect(plan).toBe('shoot');
+  });
   it('1. shoots when < SHOT_RANGE from the goal, aligned, lane clear: A pressed, held proportionally, released', () => {
     const s = scenario();
     at(s.me, PITCH.width - 300, CY, 1, 0);                   // 300 u out, dead centre
@@ -2237,6 +2330,10 @@ describe('decideTeamInput with the ball: the three-branch tree (spec "La CPU con
     const short = scenario();
     at(short.m.players[12], short.me.x - 60, CY);             // rival 60 u behind: pressure, not on the lane
     at(short.m.players[6], short.me.x + 200, CY);             // mate straight ahead, more advanced
+    // A mate exactly on the +x axis is by construction on the EDGE of both diagonal cones too
+    // (dot = INV_SQRT2 with (1, ±1), and the assist uses `< INV_SQRT2` to exclude): three
+    // directions score the same and (1, 0) wins because tryPass keeps the lowest DIRS index on
+    // ties (`score > bestScore`, strict). Unavoidable geometry (pre-flight H8), not a fixture bug.
     expect(buttonTrace(short, 'b')).toEqual(['pressed', 'released']);
     expect([short.out.dx, short.out.dy]).toEqual([1, 0]);
     const long = scenario();
@@ -2488,7 +2585,7 @@ function tryPass(match: MatchState, team: 0 | 1, me: PlayerState, state: AiState
       const freedom = nearestRivalDist(players, team, mate.x, mate.y, match.stepCount);
       if (advance <= 0 && freedom <= myFreedom) continue;
       const score = advance + freedom;
-      if (score > bestScore) {
+      if (score > bestScore) {   // strict: ties keep the lowest DIRS index (a mate on an axis also sits on the edge of two diagonal cones)
         bestScore = score;
         bestDir = d;
         bestLong = long;
@@ -2585,6 +2682,8 @@ function chase(match: MatchState, team: 0 | 1, me: PlayerState, profile: AiProfi
     return;
   }
   if (dO >= TACKLE_DIST) return;
+  // Stage B assumption S14b, not in the spec — review in QA: slide only from the FRONT
+  // (a slide from behind is a foul by construction). D2 fixes the willingness, not this.
   const inFront = (me.x - owner.x) * owner.facingX + (me.y - owner.y) * owner.facingY > 0;
   if (!inFront) return;
   // tackleChance is the WILLINGNESS to slide at reach on each reaction tick; the
@@ -2812,7 +2911,7 @@ Run: `npx vitest run components/games/football-logic/ai.test.ts` → debe pasar 
 
 - [ ] **Step 7: Verificación de la Task 6b**
 
-Run: `npx vitest run` → verde (≈ 6a + ~30). `npx tsc --noEmit` limpio. Grep de determinismo vacío. El partido CPU vs CPU debe correr por debajo de **1,5 s** (semilla principal + 12 de fuzz + 3 de tendencia ≈ 16 partidos); si tarda más, revisar que `tryPass` (8 direcciones × 2 largos × `pickPassTarget` × `laneBlocked`) solo corre en la puerta de reacción y no cada paso. Reportar las mediciones del partido principal (pasos, marcador, chuts, pases, entradas, robos, atajadas, estrategias vistas).
+Run: `npx vitest run` → verde (≈ 6a + ~31, contando el `it` de umbrales de H7). Recorrer `grep -n "^export" components/games/football-logic/ai.ts`: los ocho umbrales y `AiPlan` tienen ya consumidor en `ai.test.ts` (Step 4). `npx tsc --noEmit` limpio. Grep de determinismo vacío. El partido CPU vs CPU debe correr por debajo de **1,5 s** (semilla principal + 12 de fuzz + 3 de tendencia ≈ 16 partidos); si tarda más, revisar que `tryPass` (8 direcciones × 2 largos × `pickPassTarget` × `laneBlocked`) solo corre en la puerta de reacción y no cada paso. Reportar las mediciones del partido principal (pasos, marcador, chuts, pases, entradas, robos, atajadas, estrategias vistas).
 
 - [ ] **Step 8: Propose commit**
 
@@ -3102,8 +3201,9 @@ Run: `npx vitest run components/games/football-logic/invariants.test.ts` → PAS
 ```ts
 // set-pieces.test.ts — añadir en describe('beginSetPiece')
   it('the kickoff taker is the outfield player nearest the centre spot in EVERY formation (ids differ, the rule does not)', () => {
-    // Hand-computed (see the note below): 3-3-2 → id 5; 3-2-3 → id 4 (exact tie with id 5, lowest id wins); 4-3-1 → id 6.
-    for (const [fi, expectedId] of [[0, 5], [1, 4], [2, 6]] as const) {
+    // Hand-computed (see the note below): 3-3-2 → id 5; 3-2-3 → id 5 (NOT a tie: 0.35 * 1300 is
+    // 454.99999999999994, so the slot at y = 845 is 5e-14 closer); 4-3-1 → id 6.
+    for (const [fi, expectedId] of [[0, 5], [1, 5], [2, 6]] as const) {
       const f = FORMATIONS[fi];
       const w = { ...world(), players: createPlayers([f, f], PITCH) };
       beginSetPiece(w.sp, 'kickoff', 0, 1000, CY, w.players, w.ball, [f, f], STRATS, ATTACK, PITCH, 0);
@@ -3115,7 +3215,7 @@ Run: `npx vitest run components/games/football-logic/invariants.test.ts` → PAS
     }
   });
 ```
-> **La tabla está calculada a mano** (regla anti-coincidencia), el implementador la re-comprueba: 3-3-2 → slot 4 (900, 650) a 100 u = id 5. 3-2-3 → mids en (900, 455) y (900, 845), ambos a `√(100² + 195²) = 219 u`; el delantero central (1400, 650) a 400 u; **empate exacto entre id 4 y id 5 → gana el 4** (`<` estricto, ids ascendentes). 4-3-1 → mid central slot 5 (840, 650) a 160 u = id 6. La última aserción (el elegido es el más cercano) es la que protege contra un cálculo mal hecho: si la tabla está mal, es ella la que lo dice. (importar `dist` de `./geometry`.)
+> **La tabla está calculada a mano** (regla anti-coincidencia), el implementador la re-comprueba: 3-3-2 → slot 4 (900, 650) a 100 u = id 5. 3-2-3 → las dos medias (ids 4 y 5) en (900, 0,35·1300) y (900, 0,65·1300), a 219,146 u de (1000, 650) las dos… pero **NO en bits iguales**: en coma flotante `0.35 * 1300 = 454.99999999999994` y `0.65 * 1300 = 845` (exacto), así que las distancias son 219,1460700081113 (id 4) y 219,14607000811125 (id 5); el slot de y = 845 está 5·10⁻¹⁴ más cerca y `nearestOutfield` (`<` estricto) devuelve **id 5**. El desempate por id NO se ejercita aquí (pre-vuelo H5); no se toca la formación (contenido aprobado) ni `nearestOutfield`. El delantero central (1400, 650) queda a 400 u. 4-3-1 → mid central slot 5 (840, 650) a 160 u = id 6. La última aserción (el elegido es el más cercano) es la que protege contra un cálculo mal hecho: si la tabla está mal, es ella la que lo dice. (importar `dist` de `./geometry`.)
 
 Run → PASS.
 
@@ -3171,7 +3271,7 @@ Run: `npx vitest run` → verde. `npx tsc --noEmit` limpio. **`npm run build` ve
 
 - [ ] **Step 9: Recorrido de exportaciones (Global Constraint) — des-exportar las 11 constantes espejo**
 
-Para cada símbolo de esta lista, `grep -rn "<símbolo>" components/games/football-logic/ --include=*.ts` debe devolver **solo su propio fichero**; entonces quitar el `export` (siguen siendo `const` del módulo): `players.ts` `SPRINT_SECONDS`, `SPRINT_COOLDOWN_SECONDS`, `TACKLE_SECONDS`; `ball.ts` `KICK_LOCK_SECONDS`, `GRAVITY`, `BALL_REST_VZ`; `actions.ts` `SHOT_CHARGE_SECONDS`, `LONG_PASS_HOLD_SECONDS`, `TACKLE_MISS_DOWN_SECONDS`, `GK_HOLD_SECONDS`; `match.ts` `GOAL_PAUSE_SECONDS`, `HALF_TIME_PAUSE_SECONDS`. Si el grep encuentra un consumidor (p. ej. un test que lo importa), se **mantiene** exportado y se anota. Dejar línea de destino en las que esperan a la etapa C: `SHOT_VZ_MAX` (QA), `SET_PIECE_COUNTDOWN_SECONDS` (HUD, Task 8), `Kit`, `ButtonState`, `ActionKind`, `PenaltySide` (Task 8). Comprobar que `OutfieldRole` tiene ahora consumidor (`teams.test.ts` o `invariants.ts`). Luego `npx tsc --noEmit` y `npx vitest run` de nuevo.
+Para cada símbolo de esta lista, `grep -rn "<símbolo>" components/games/football-logic/ --include=*.ts` debe devolver **solo su propio fichero**; entonces quitar el `export` (siguen siendo `const` del módulo): `players.ts` `SPRINT_SECONDS`, `SPRINT_COOLDOWN_SECONDS`, `TACKLE_SECONDS`; `ball.ts` `KICK_LOCK_SECONDS`, `GRAVITY`, `BALL_REST_VZ`; `actions.ts` `SHOT_CHARGE_SECONDS`, `LONG_PASS_HOLD_SECONDS`, `TACKLE_MISS_DOWN_SECONDS`, `GK_HOLD_SECONDS`; `match.ts` `GOAL_PAUSE_SECONDS`, `HALF_TIME_PAUSE_SECONDS`. Si el grep encuentra un consumidor (p. ej. un test que lo importa), se **mantiene** exportado y se anota. Dejar línea de destino en las que esperan a la etapa C: `SHOT_VZ_MAX` (QA), `SET_PIECE_COUNTDOWN_SECONDS` (HUD, Task 8), `Kit`, `ButtonState`, `ActionKind`, `PenaltySide` (Task 8). `OutfieldRole` **NO gana consumidor en esta tarea** (el Step 3 importa `Role`, no `OutfieldRole`, y `teams.test.ts` lee `slot.role` sin anotar; pre-vuelo H7): se mantiene exportado con línea de destino `// exported for v1.5 (per-role attributes) / Task 8 if the HUD paints the slot role; today only teams.ts uses it`, igual que `Kit`/`ActionKind`. Luego `npx tsc --noEmit` y `npx vitest run` de nuevo.
 
 Recorrer también `grep -n "^export" components/games/football-logic/ai.ts`: todo con consumidor en `match.ts`, `ai.test.ts` o con destino declarado "componente (Task 8)": `decideTeamInput`, `createAiState`, `humanProfile`, `profileFor`, `AiState`, `AiProfile`.
 
@@ -3190,14 +3290,41 @@ Se hace **después** de la Task 7 y antes de que Paco commitee, con la lección 
 3. **Determinismo**: `grep -rn "Math.random\|Date.now\|performance.now\|Math.sin\|Math.cos\|Math.atan2\|Math.hypot" components/games/football-logic/` vacío, tests incluidos. Además `grep -rn "new Set\|new Map" components/games/football-logic/*.ts` (sin tests): solo los `has` de `invariants.ts`.
 4. **Asignaciones por paso**: leer `positionTeam`, `keeperStep`, `keeperCatch`, `applyKickError`, `stepPlayerFree`, `freestMateDir`, `pickPassTarget`, `decideTeamInput` y sus privadas buscando `{`-literales de objeto, `[`-literales de array, `.map(`, `.filter(`, `...`, `new `, `=>` dentro del cuerpo. Cero.
 5. **Exportaciones sin consumidor**: `grep -n "^export" components/games/football-logic/*.ts` cruzado con imports; cada símbolo con consumidor o con destino declarado (lista del Step 9 de la Task 7).
-6. **Sondas ejecutables** — scripts vitest de un solo uso en el **scratchpad** (`/private/tmp/claude-501/-Users-paco-monleon-Dev-Web/<sesión>/scratchpad/wc-probes/*.test.ts`), **NUNCA dentro del repo** (vitest ejecuta cualquier `*.test.ts` bajo `.superpowers/` y las cuentas se inflan, trampa del 04-sep). Se lanzan con `npx vitest run --root <scratchpad>/wc-probes --dir .` o importando el motor por ruta absoluta; se borran al terminar. Cada sonda imprime sus mediciones y el informe de cierre las copia:
+6. **Sondas ejecutables** — scripts vitest de un solo uso en el **scratchpad** (`/private/tmp/claude-501/-Users-paco-monleon-Dev-Web/<sesión>/scratchpad/wc-probes/*.test.ts`), **NUNCA dentro del repo** (vitest ejecuta cualquier `*.test.ts` bajo `.superpowers/` y las cuentas se inflan, trampa del 04-sep). Se lanzan desde el repo con `npx vitest run --root <scratchpad>/wc-probes --dir .`, importando el motor por ruta absoluta; se borran al terminar. Ese mecanismo NO está validado (pre-vuelo H10: vite-node fuera del root, resolución de `'vitest'` desde un directorio sin `node_modules`), así que la **primera** sonda es de humo y decide cómo se lanzan las demás. Cada sonda imprime sus mediciones y el informe de cierre las copia:
+   - **P0 · Sonda de humo del mecanismo** (antes de escribir P1; tres minutos como mucho):
+     ```ts
+     // <scratchpad>/wc-probes/p0-smoke.test.ts — the engine by absolute path, nothing else
+     import { describe, expect, it } from 'vitest';
+     import { PITCH } from '/Users/paco.monleon/Dev-Web/curso-claude-code/arcade-vault/components/games/football-logic/pitch';
+     import { FORMATIONS, TEAMS } from '/Users/paco.monleon/Dev-Web/curso-claude-code/arcade-vault/components/games/football-logic/teams';
+     import { profileFor } from '/Users/paco.monleon/Dev-Web/curso-claude-code/arcade-vault/components/games/football-logic/ai';
+     import { createTeamInput } from '/Users/paco.monleon/Dev-Web/curso-claude-code/arcade-vault/components/games/football-logic/input';
+     import { createRng } from '/Users/paco.monleon/Dev-Web/curso-claude-code/arcade-vault/components/games/football-logic/rng';
+     import { HALF_STEPS, createMatch, resumePlay, stepMatch } from '/Users/paco.monleon/Dev-Web/curso-claude-code/arcade-vault/components/games/football-logic/match';
+
+     describe('P0 smoke: the engine resolves from outside the vite root', () => {
+       it('imports match.ts by absolute path and steps one match', () => {
+         expect(PITCH.width).toBe(2000);
+         expect(HALF_STEPS).toBe(5400);
+         const m = createMatch([TEAMS[0], TEAMS[1]], FORMATIONS, PITCH, [profileFor(TEAMS[0], 5), profileFor(TEAMS[1], 5)]);
+         resumePlay(m);
+         stepMatch(m, [createTeamInput(), createTeamInput()], createRng(1));
+         expect(m.players.length).toBe(18);
+         expect(m.phase).toBe('play');
+       });
+     });
+     ```
+     Lanzar: `cd <repo> && npx vitest run --root <scratchpad>/wc-probes --dir .` → **1 passed** y, en la misma salida, la suite del repo NO aparece (si aparece, `--root` no ha aislado nada: parar). Si P0 falla (típicamente `Failed to resolve import "vitest"` o un import fuera de `server.fs.allow`), **plan B, en este orden y sin instalar nada en el repo**:
+     1. Root en el repo y config ad hoc en el scratchpad: `<scratchpad>/wc-probes/vitest.probes.config.ts` con `import { defineConfig } from 'vitest/config'; export default defineConfig({ root: '/Users/paco.monleon/Dev-Web/curso-claude-code/arcade-vault', test: { include: ['/private/tmp/claude-501/-Users-paco-monleon-Dev-Web/<sesión>/scratchpad/wc-probes/**/*.test.ts'] } });` y lanzar `npx vitest run --config <scratchpad>/wc-probes/vitest.probes.config.ts` (el `include` absoluto saca las sondas del repo; la suite del repo queda fuera porque no casa con el `include`).
+     2. Si tampoco: `npx --yes tsx <scratchpad>/wc-probes/p0-smoke.ts` (mismo cuerpo sin `vitest`, con `node:assert`; `tsx` no está en `devDependencies` y **no se añade**: `npx --yes` lo trae a la caché de npm, no al repo). Las sondas P1-P6 se escriben entonces con `node:assert` y `console.log` en vez de `describe/it`.
+     Sea cual sea el camino que pase, se anota en el informe de cierre y P1-P6 usan ESE camino.
    - **P1 · Partido CPU vs CPU completo con cada formación** (3 mismas + 3 cruzadas, dificultad 8 vs 8 y 5 vs 5, dos semillas): pasos, marcador, fases, chuts/pases/entradas/robos/atajadas/saques del portero por equipo, `invalid === 0`, `keeperOutsideBox === 0`. Anomalías a buscar: partidos sin goles en gol de oro más de `4 × HALF_STEPS` (riesgo 4 del spec), un equipo con 0 chuts, robos con `victimId === -1` fuera de rango, penaltis en bucle (C1 revive con IA), balón recogido fuera del campo (C2 revive con porteros móviles), y desde D4: un paso con `ball.owner === gk.id` y `phase !== 'play' | 'golden-goal'` sin que medie fin de parte o gol (la atajada nunca debe cambiar de fase), o un `'gk-catch'` que no vaya seguido de posesión del portero en ese mismo paso.
    - **P2 · Cambio de estrategia por marcador observado**: partido 8 vs 1 con marcador forzado (`match.score[1] = 1` en el paso 600, `halfStep` a 30 s del final en la 2ª parte): registrar `out.strategy` de cada equipo en cada revisión de 5 s y comprobar la secuencia neutral → attack (el que pierde) y neutral → defend (el que gana por uno, últimos 30 s) y attack para los dos en `half === 3`.
    - **P3 · El portero respeta el área**: 20 semillas × 3 000 pasos con `checkGoalkeepersInBox` en cada paso y el contador "se aleja de su línea fuera del área pequeña en juego abierto" (la métrica de `playCpuMatch`), imprimiendo el máximo `|gk.x − lineX|` visto y en qué fase.
    - **P4 · Reacción y acierto por dificultad, extremo a extremo**: 10 semillas de 8 vs 1 y 10 de 1 vs 8: goles, chuts y atajadas por nivel. Se reporta la tendencia; si el nivel 1 gana sistemáticamente, es hallazgo para el QA (Task 11), no para relajar tests.
    - **P5 · Replay puro**: para dos de los partidos de P1, grabar los `TeamInput` y re-ejecutar solo el motor con `createRng(seed)`: `sameFinal` verdadero. Es la prueba de que la capa de decisión está de verdad fuera del paso.
-   - **P6 · Atajada → posesión → saque automático (D4) observado en juego**: sobre los partidos de P1, por cada `'gk-catch'` en `events[gk.id]` registrar el paso, y comprobar que en ese paso `ball.owner === gk.id` y la fase no cambia, que durante los `GK_HOLD_STEPS − 1` pasos siguientes el balón sigue del portero (o hasta un gol/fin de parte, que se cuenta aparte), y que en el paso `catchStep + GK_HOLD_STEPS` aparece `'gk-release'` del mismo portero. Imprimir: atajadas totales, cuántas acabaron en saque automático exacto, cuántas cortó una fase, y el número de veces que un rival intentó `'steal'` con `victimId === gk.id` (debe ser 0: `steal` rechaza al portero antes de fijar la víctima). **Debe verse al menos una atajada seguida de saque automático**; si en las 12 configuraciones de P1 no aparece ninguna, es hallazgo (el `catchChance` no se ejercita en juego) y se investiga, no se relaja. Además, una variante "humana": repetir un partido de P1 sustituyendo la entrada del equipo 1 por una política de test que, con su portero en posesión, pulse B en el 5.º paso de la posesión: contar los `'short-pass'` con `actorId === gk.id` (≥ 1) y comprobar que ninguno consumió `rng` (contador de tiradas igual con y sin la política en esos pasos).
-7. **Comparar** el resultado de las sondas con los criterios 1, 2, 4, 5, 9b, 11, 12, 14 (motor) y con los supuestos abiertos S1, S2, S4-S8, S10-S13, S15, S16, S18 y S-GK (S3, S9, S14 y S17 ya están confirmados por D1-D4): cualquier supuesto que las sondas desmientan se anota en el informe de cierre como pregunta para Paco.
+   - **P6 · Atajada → posesión → saque automático (D4) observado en juego**: sobre los partidos de P1, por cada `'gk-catch'` en `events[gk.id]` registrar el paso, y comprobar que en ese paso `ball.owner === gk.id` y la fase no cambia, que durante los `GK_HOLD_STEPS − 1` pasos siguientes el balón sigue del portero (o hasta un gol/fin de parte, que se cuenta aparte), y que en el paso `catchStep + GK_HOLD_STEPS` aparece `'gk-release'` del mismo portero. Imprimir: atajadas totales, cuántas acabaron en saque automático exacto, cuántas cortó una fase, y el número de veces que un rival intentó `'steal'` con `victimId === gk.id` (debe ser 0: `steal` rechaza al portero antes de fijar la víctima), y el número de `'gk-catch'` de un portero en los `KICK_LOCK_STEPS` (15) posteriores a su propio saque —botón o automático— (debe ser 0: `keeperCatch` no ataja su propio saque dentro del lock, H4; si no es 0 el portero hace malabares y todas las cuentas de atajadas/saques quedan invalidadas). **Debe verse al menos una atajada seguida de saque automático**; si en las 12 configuraciones de P1 no aparece ninguna, es hallazgo (el `catchChance` no se ejercita en juego) y se investiga, no se relaja. Además, una variante "humana": repetir un partido de P1 sustituyendo la entrada del equipo 1 por una política de test que, con su portero en posesión, pulse B en el 5.º paso de la posesión: contar los `'short-pass'` con `actorId === gk.id` (≥ 1) y comprobar que ninguno consumió `rng` (contador de tiradas igual con y sin la política en esos pasos).
+7. **Comparar** el resultado de las sondas con los criterios 1, 2, 4, 5, 9b, 11, 12, 14 (motor) y con los supuestos abiertos S1, S2, S4-S8, S10-S13, S14b, S15, S16, S18 y S-GK (S3, S9, S14 y S17 ya están confirmados por D1-D4): cualquier supuesto que las sondas desmientan se anota en el informe de cierre como pregunta para Paco.
 8. **Informe de cierre**: `.superpowers/sdd/2026-09-05-vault-world-cup-stage-b/final-review-report.md` (git-ignorado, mismo formato que el de la etapa A: fortalezas, cobertura de criterios, tabla de números, hallazgos por severidad, triaje de deferred con `CARRY TO Task 8/9/11`, recomendaciones para la etapa C). En él, obligatoriamente: la verificación **explícita** del criterio 11 (R19) con el test de `match.test.ts` y el de las formaciones reales; el estado de las deudas del ledger asignadas a la Task 6 (criterio 11 ✓ código; falta única por paso y robos simultáneos: documentadas sin cambio; `isSprinting` último paso: documentado sin cambio; comentario R20: corregido); la actualización del spec que toque (sección "Decisiones tomadas": los supuestos abiertos —S-GK incluido— que Paco apruebe se vuelcan como decisiones de ejecución, igual que R7/R10/R11/R14/R6).
 9. **Mensaje de commit global alternativo** (si Paco prefiere uno solo para la etapa): `feat(world-cup): stage B — in-engine AI, CPU decision layer, sixteen selections and three formations`.
 
@@ -3207,7 +3334,7 @@ Se hace **después** de la Task 7 y antes de que Paco commitee, con la lección 
 
 **Confirmados el 05-sep** (etiqueta `// confirmed by owner 2026-09-05`, no van al QA como supuestos): **S3 = D1** (persecución sin posesión: los K más cercanos, el primero controlado, el siguiente cubre a 120 u, el resto ancla + deriva), **S14 = D2** (`tackleChance` = disposición a robar/entrar a alcance en cada tick de reacción; el éxito sigue el 65 %/35 % de `STEAL_CHANCE` para los dos), **S9 = D3** (`humanProfile` con la MISMA dificultad para portero y penalti; solo error angular 0), **S17 = D4** (la CPU con su portero en posesión no pulsa nada: siempre el automático).
 
-**Abiertos** (etiqueta `// Stage B assumption, not in the spec — review in QA`): S1 (cotas del clamp), S2 (skew como rotación), S4 (separación), S5 (línea del portero), S6 (el portero solo recoge balón parado), S7 (penalización por carga lineal), S8 (dónde se aplica el error angular), S10 (balón alto), S11 (lado del penalti de la CPU), S12 (esquiva), S13 (pista libre para sprintar), S15 (rayo de chut), S16 (decisión en el acto al ganar el balón), S18 (la CPU no cambia de formación) y:
+**Abiertos** (etiqueta `// Stage B assumption, not in the spec — review in QA`): S1 (cotas del clamp), S2 (skew como rotación), S4 (separación), S5 (línea del portero), S6 (el portero solo recoge balón parado), S7 (penalización por carga lineal), S8 (dónde se aplica el error angular), S10 (balón alto), S11 (lado del penalti de la CPU), S12 (esquiva), S13 (pista libre para sprintar), **S14b (la entrada de la CPU solo de frente, `dot(me − owner, owner.facing) > 0`; D2 fija la disposición, no esto — pre-vuelo H9)**, S15 (rayo de chut), S16 (decisión en el acto al ganar el balón), S18 (la CPU no cambia de formación) y:
 
 - **S-GK · Interpretación de ejecución de D4 (portero con balón)** — lo que D4 fija está en el spec (regla 2 y 4 del portero); lo que aquí se decide y Paco debe ver: (1) cruceta en neutro = recto hacia campo contrario, `(attackDir, 0)`, nunca el `facing` del portero; (2) solo `'pressed'` saca (una B mantenida desde un robo no saca); (3) A y B en el mismo paso → gana A (pase largo), como en `applyButtons`; (4) el saque a botón sale como pronto en el paso SIGUIENTE al de hacerse con el balón, igual para atajada y recogida (`stepCount <= ball.ownerSinceStep` → nada); (5) los saques a botón llevan eventos `'short-pass'`/`'long-pass'` con `actorId = gk.id`, el automático `'gk-release'`; los saques del portero (botón o automático) nunca consumen `rng` ni llevan error angular, para los dos equipos; (6) `match.controlled[team]` sigue en el jugador de campo mientras el portero tiene el balón (el motor no mueve el cursor; la etapa C decide si lo dibuja sobre el portero leyendo `ball.owner`); (7) la CPU saca siempre con el automático a los 2 s (D4 literal), aunque un compañero esté libre antes.
 
@@ -3245,5 +3372,6 @@ Se hace **después** de la Task 7 y antes de que Paco commitee, con la lección 
 ## Self-Review (hecho al cerrar el plan; correcciones aplicadas inline)
 
 1. **Cobertura del spec.** Paso 6 → Tasks 6a + 6b: colocación por formación y estrategia (S3/S4, `positionTeam`), persecución por los K más cercanos acotada por estrategia (`CHASERS`, D1), portero (`keeperStep` línea/área pequeña/vuelta; regla 2 nueva: `keeperCatch` con `catchChance` y penalización de carga que da POSESIÓN sin cambio de fase; regla 4 nueva: con balón, `applyKeeperButtons` —B saque con la mano corto asistido, A largo asistido, cruceta apunta, exacto— y `releaseFromGoalkeeper` automático al más libre en `GK_HOLD_STEPS`, con el `TeamInput` enrutado en `applyTeamInput` y el controlado de campo colocado por IA vía `liveControlled`; tests D4 a-b-c-e en `match.test.ts`, unitarios en `actions.test.ts`, (d) en `ai.test.ts`, sonda P6; penalti ya en `set-pieces.ts` con `profiles[t].penaltyReadChance`), decisión del CPU que rellena `TeamInput` (chutar/pasar/conducir por `reactionSteps`, entrar/robar, estrategia por marcador cada 5 s con las cuatro reglas), perfil 1-8 por fórmula con `profileFor(teamDef, difficulty)` y sin tocar la velocidad, tests de entrada nunca inválida (a), monotonía 1 vs 8 en reacción y acierto (b), portero y área (c), criterio 11 en el acto (d), partido grabado CPU vs CPU con negativo de semilla y ejercitando entradas/pases/chuts (e). Paso 7 → Task 7: 16 selecciones, 3 formaciones, `checkBank`/`checkFormations` sobre lo real, tests acoplados ampliados, todas las combinaciones, IA con las tres. Criterio 12 ("CPU pasa a ataque en gol de oro") → `chooseStrategy` half 3. Criterio 14 (simetría) → `humanProfile` con la misma dificultad y el error solo en el perfil CPU. Criterio 18 (4/6/8 y 5) es de la etapa C: el perfil se deriva de cualquier dificultad y los tests usan 1, 5 y 8. Fuera a propósito (spec §Pendientes v1.5): atributos por selección/jugador, cambio manual de controlado.
-2. **Placeholders.** Ningún "TBD/TODO/similar to/add appropriate" (grep pasado el 06-sep tras volcar D4); cada test y cada implementación están completos, helpers incluidos (`freeBall`/`fixedRng`/`caught` de `match.test.ts`, `holding`/`unitTo`/`dist2` de `actions.test.ts` están definidos en su paso). Los dos únicos puntos donde el plan manda **medir** (fixture de separación 41 u, `expectedId` de la 3-2-3) traen el cálculo hecho y la aserción independiente que lo protege.
+2. **Placeholders.** Ningún "TBD/TODO/similar to/add appropriate" (grep pasado el 06-sep tras volcar D4); cada test y cada implementación están completos, helpers incluidos (`fixedRng`/`caught` nuevos en `match.test.ts` y `holding`/`unitTo` en `actions.test.ts` están definidos en su paso; `freeBall` (`match.test.ts:444`) y `dist2` (`actions.test.ts:441`) se REUTILIZAN de la etapa A y no se redeclaran — pre-vuelo H2). Los dos únicos puntos donde el plan manda **medir** (fixture de separación 41 u, `expectedId` de la 3-2-3) traen el cálculo hecho y la aserción independiente que lo protege.
 3. **Consistencia de tipos y nombres (re-comprobado el 06-sep con D4):** `releaseFromGoalkeeper(gk, ball, players, attackDir, pitch, stepCount, aim, out)` tiene UNA firma en Produces, Step 8, Step 9, Step 17 (`applyTeamInput`) y el test (c) de `match.test.ts`; ya no limpia `out` (Step 9, test de Step 8). `applyKeeperButtons(gk, input, ball, players, attackDir, stepCount, aim, out)` idéntica en Produces, Step 10 (tests), Step 11 (implementación) y Step 17; sin `rng` ni `pitch` en la firma. `keeperCatch(gk, ball, catchChance, rolled, rng, pitch, stepCount, out)` idéntica en Step 14 (tests), Step 15 (implementación) y `keeperCatchFor` (Step 17), que ahora devuelve `void` y escribe en `events[gk.id]`. `MatchState.scratch` es `{ events, liveControlled, call, aim, setPiece }` en Produces, Step 17 y `createMatch`; `gkEvent` no existe en ningún paso (6a, 6b ni Cierre); `playCpuMatch` (6b Step 6) cuenta `'gk-catch'`/`'gk-release'` en `events`. `stepPhysics` conserva la firma de la etapa A y recibe `scratch.liveControlled`; `positionTeam(players, ball, team, formation, strategy, attackDir, controlled, pitch, stepCount, scratch)` idéntica en `wantOf`, tests de persecución y `runTeamAi`, con `controlled = liveControlled[team]` (−1 = coloca también al controlado). `createMatch` recibe `profiles` como cuarto parámetro en Produces, Step 16, Step 17, Task 6b (`scenario`, `playCpuMatch`, `replay`) y Task 7. `decideTeamInput` (6b Step 5) con el portero propio en posesión devuelve entrada neutra y no toca `anchorFor` ni el `rng`, como afirma el test (d) de 6b Step 4. `HALF_STEPS` sale de `clock.ts` (Task 6b Step 1) y sigue importable desde `./match` y `./step`; `ai.ts` la importa de `./clock`. `PenaltySide` se importa como tipo desde `./set-pieces` (que no importa `ai.ts`: sin ciclo). `MatchState` en `ai.ts` es `import type`. `toAxis` vive en `input.ts` y lo usan `ai.ts`, `step.test.ts` y `match.test.ts`. `goalKickX` vive en `pitch.ts` y lo usan SOLO `referee.ts` y `pitch.test.ts` (ni `ai.ts`, ni `match.ts`, ni `match.test.ts`: D4). `ActionKind` gana `'gk-catch'` en Task 6a Step 9, lo escribe `keeperCatch` (Step 15) y lo cuenta `playCpuMatch` (6b); los saques a botón del portero son `'short-pass'`/`'long-pass'` con `actorId = gk.id` y el automático `'gk-release'`, igual en Step 11, Step 16, 6b Step 6 y P6. En `playCpuMatch` el portero es `players[t * 9]`: 9 es `TEAM_SIZE`; usar la constante importada de `./teams` en vez del literal al escribir el test.
+4. **Pre-vuelo del 06-sep aplicado (H1-H11, `.superpowers/sdd/2026-09-06-vault-world-cup-stage-b/preflight.md`), firmas re-comprobadas:** `laneBlocked(players, team, fromX, fromY, dirX, dirY, length, radius, stepCount)` tiene UNA firma en Produces, Step 13 y las tres llamadas de 6b (`tryShoot`/`tryPass`/`carry` pasan `team`), y el test del Step 12 pasa `0` (el equipo dueño del carril). `keeperCatch` conserva su firma de 8 y gana solo la guarda del kick lock (Step 15) con su `it` (Step 14) y los cinco pasos extra del test (c) (Step 16); `KICK_LOCK_STEPS` entra en el import de `ai.test.ts` (Step 12). `freeBall` y `dist2` se reutilizan de la etapa A (Steps 8 y 16). Lista de caducidad: 9 puntos (8 = C2-C, 9 = penalti "never again" + C1). `takerId` de la 3-2-3 = 5 (Task 7, Step 5). `ai.ts` importa `HALF_STEPS` de `./step` y `match.ts` el reloj de la parte de `./clock` en una línea (6b, Steps 1/3). S14b es supuesto abierto (6b Step 5, listas del Cierre 7 y final). P0 precede a P1 en el Cierre 6. Cuentas de pasos sin cambio: 6a 20, 6b 8, Task 7 10.

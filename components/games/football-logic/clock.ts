@@ -12,3 +12,10 @@ export function stepsFor(seconds: number): number {
 export function perStep(unitsPerSecond: number): number {
   return unitsPerSecond / STEPS_PER_SECOND;
 }
+
+// The duration of a half, in seconds and in steps. Here rather than in match.ts
+// (Task 6b) so ai.ts can read the clock through step.ts without importing match.ts
+// at runtime; match.ts re-exports all three, so its own consumers do not move.
+export const HALF_SECONDS = 90;
+export const HALF_SECONDS_MAX = 120;
+export const HALF_STEPS = stepsFor(HALF_SECONDS);

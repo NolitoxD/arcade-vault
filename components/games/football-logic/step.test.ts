@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { PITCH } from './pitch';
 import { FORMATIONS } from './teams';
-import { createTeamInput, type Axis, type TeamInput } from './input';
-import { createPlayers, type PlayerState } from './players';
+import { createTeamInput, toAxis, type TeamInput } from './input';
+import { createPlayers, PLAYER_SPEED, type PlayerState } from './players';
 import { createBall, givePossession, kickBall, LONG_PASS_VZ, type BallState } from './ball';
 import { STEPS_PER_SECOND, STEP_MS, perStep, stepPhysics, stepsFor, type AttackDirs } from './step';
 
@@ -38,8 +38,8 @@ function createWorld(): World {
 // Both teams move in changing directions and sprint in bursts; team 1 lags by a phase.
 function script(step: number, team: 0 | 1, out: TeamInput): void {
   const phase = Math.floor(step / 45) + team * 7;
-  out.dx = ((phase % 3) - 1) as Axis;
-  out.dy = ((Math.floor(phase / 2) % 3) - 1) as Axis;
+  out.dx = toAxis((phase % 3) - 1, 0);
+  out.dy = toAxis((Math.floor(phase / 2) % 3) - 1, 0);
   out.c = step % 240 < 100 ? 'held' : 'up';
 }
 
@@ -76,7 +76,10 @@ function samePlayer(p: PlayerState, q: PlayerState): boolean {
     p.chargeButton === q.chargeButton &&
     p.tackleStepsLeft === q.tackleStepsLeft &&
     p.tackleDirX === q.tackleDirX &&
-    p.tackleDirY === q.tackleDirY
+    p.tackleDirY === q.tackleDirY &&
+    p.wantX === q.wantX &&
+    p.wantY === q.wantY &&
+    p.wantSprint === q.wantSprint
   );
 }
 
@@ -174,17 +177,27 @@ describe('determinism — the test that rules (criterion 1)', () => {
   it('a different input sequence produces a different world (proves the comparison is not blind)', () => {
     const a = run(HALF_STEPS);
     const b = run(HALF_STEPS, (s, inputs) => {
-      if (s >= 1200) inputs[1].dx = (-inputs[1].dx) as Axis;
+      if (s >= 1200) inputs[1].dx = toAxis(-inputs[1].dx, 0);
     });
     expect(sameWorld(a, b)).toBe(false);
     expect(a.players[13].x).not.toBe(b.players[13].x);
   });
-  it('non-controlled players never move under stepPhysics (the AI arrives in Task 6)', () => {
+  it('non-controlled players move only by their want channel: still with a zero want, at PLAYER_SPEED along a unit want', () => {
     const w = run(600);
     const start = createWorld();
     for (const p of w.players) {
       if (p.id === CONTROLLED[0] || p.id === CONTROLLED[1]) continue;
       expect([p.x, p.y]).toEqual([start.players[p.id].x, start.players[p.id].y]);
     }
+    // Stage B: the same channel ai.ts writes. Player 7 is a static forward far
+    // from both controlled players (see KICK_TARGET_ID), so nothing else moves it.
+    const z = createWorld();
+    const mover = z.players[7];
+    mover.wantX = 0.6; mover.wantY = -0.8;
+    const x0 = mover.x; const y0 = mover.y;
+    const inputs: [TeamInput, TeamInput] = [createTeamInput(), createTeamInput()];
+    for (let s = 0; s < 20; s++) stepPhysics(z.players, z.ball, inputs, CONTROLLED, ATTACK, PITCH, s);
+    expect(mover.x - x0).toBeCloseTo(20 * perStep(PLAYER_SPEED) * 0.6, 6);
+    expect(mover.y - y0).toBeCloseTo(20 * perStep(PLAYER_SPEED) * -0.8, 6);
   });
 });

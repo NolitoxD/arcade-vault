@@ -8,8 +8,9 @@ import type { Rng } from './rng';
 import {
   CONTROL_HYSTERESIS, GK_HOLD_STEPS, LONG_PASS_HOLD_STEPS, LONG_PASS_SPEED, SHORT_PASS_SPEED, SHOT_CHARGE_STEPS,
   SHOT_SPEED_MAX, SHOT_SPEED_MIN, STEAL_CHANCE, STEAL_CHANCE_VS_SPRINT, STEAL_RANGE, TACKLE_MISS_DOWN_STEPS,
-  aimPass, applyButtons, createActionEvent, longPass, releaseFromGoalkeeper, shoot, shortPass, shotSpeed, startTackle,
-  steal, stepTackle, updateControlled, type ActionEvent,
+  aimPass, applyButtons, applyKeeperButtons, chargeFraction, createActionEvent, freestMateDir, longPass, pickPassTarget,
+  releaseFromGoalkeeper, shoot, shortPass, shotSpeed, startTackle, steal, stepTackle, updateControlled,
+  type ActionEvent,
 } from './actions';
 
 const F = FORMATIONS[0];
@@ -238,31 +239,237 @@ describe('sliding tackle: three outcomes', () => {
   });
 });
 
-describe('releaseFromGoalkeeper', () => {
-  it('kicks a long pass towards attackDir once GK_HOLD_STEPS have passed, and not before', () => {
+describe('chargeFraction (deferred minor #13: one ramp for shotSpeed and shoot)', () => {
+  it('is 0 at or below zero, linear in between, 1 at or beyond SHOT_CHARGE_STEPS', () => {
+    expect(chargeFraction(-5)).toBe(0);
+    expect(chargeFraction(0)).toBe(0);
+    expect(chargeFraction(15)).toBeCloseTo(0.25, 10);
+    expect(chargeFraction(SHOT_CHARGE_STEPS)).toBe(1);
+    expect(chargeFraction(SHOT_CHARGE_STEPS + 9)).toBe(1);
+  });
+  it('shoot with a negative charge lobs nothing (vz 0) instead of a negative vz', () => {
     const w = world();
-    const gk = at(w.players[9], 1975, 650, -1, 0);
+    const p = at(w.players[5], 1000, 600, 1, 0);
+    givePossession(w.ball, p, 0);
+    shoot(p, w.ball, 1, 0, -3, 0, w.out);
+    expect(w.ball.vz).toBe(0);
+    expect(Math.sqrt(w.ball.vx ** 2 + w.ball.vy ** 2)).toBeCloseTo(shotSpeed(0), 6);
+  });
+});
+
+describe('pickPassTarget: the id aimPass locks onto (same scan, so the direction is bit-identical)', () => {
+  it('returns the nearer mate in the cone for a short pass, the farther for a long one, -1 with nobody', () => {
+    const w = world();
+    const p = at(w.players[5], 1000, 600, 1, 0);
+    // Anti-coincidence: world() parks the rest of the mates at (220..420, 1290), and from the
+    // passer ids 3 and 4 fall INSIDE the -x cone (dot 0.749 and 0.731 >= INV_SQRT2). Park every
+    // mate this test does not place straight BELOW the passer instead: |dx| << |dy| keeps them
+    // out of the +x cone and the -x cone alike, so each assertion sees only its own actors.
+    for (let i = 3; i <= 8; i++) if (i !== p.id) at(w.players[i], 990 + i, 1290);
+    at(w.players[1], p.x + 150 * 0.9848078, p.y + 150 * 0.1736482); // 10 deg: (0.9848078, 0.1736482)
+    at(w.players[2], p.x + 80 * 0.8660254, p.y + 80 * 0.5);         // 30 deg: (0.8660254, 0.5)
+    expect(pickPassTarget(p, w.players, 1, 0, false, 0)).toBe(2);
+    expect(pickPassTarget(p, w.players, 1, 0, true, 0)).toBe(1);
+    expect(pickPassTarget(p, w.players, -1, 0, false, 0)).toBe(-1);
+    const aim = { x: 0, y: 0 };
+    aimPass(p, w.players, 1, 0, false, 0, aim);
+    const d = dist2(p, w.players[2]);
+    expect(aim.x).toBe((w.players[2].x - p.x) / d);   // exact: aimPass now derives the direction from the picked id
+    expect(aim.y).toBe((w.players[2].y - p.y) / d);
+  });
+});
+
+describe('freestMateDir: the outfield mate in OWN half farthest from every rival', () => {
+  it('picks the mate with the largest nearest-rival distance among those in the keeper\'s half', () => {
+    const w = world();
+    const gk = at(w.players[0], 25, 650, 1, 0);   // team 0 defends side 0: own half is x < 1000
+    const crowded = at(w.players[1], 400, 400);
+    at(w.players[10], 430, 400);                   // rival 30 u from the crowded mate
+    const free = at(w.players[2], 500, 900);
+    at(w.players[11], 750, 900);                   // nearest rival 250 u away
+    // Anti-coincidence (pre-flight H6): world() parks mates 4-8 at (260..420, 1290), in OWN half,
+    // and mate 4 has the parked rival keeper 9 at (460, 1290) EXACTLY 200 u away. With the rival
+    // at 200 u the "free" mate would win only by lowest id; at 250 u it wins by margin.
+    expect(dist2(w.players[4], w.players[9])).toBe(200);
+    at(w.players[3], 1300, 650);                   // freest of all but in the rival half: ignored
+    const out = { x: 0, y: 0 };
+    expect(freestMateDir(gk, w.players, 1, PITCH, out)).toBe(true);
+    const d = dist2(gk, free);
+    expect(out.x).toBeCloseTo((free.x - gk.x) / d, 10);
+    expect(out.y).toBeCloseTo((free.y - gk.y) / d, 10);
+    expect(dist2(gk, crowded)).toBeLessThan(d);    // not the nearest: the freest
+  });
+  it('returns false and leaves out untouched when every outfield mate is in the rival half', () => {
+    const w = world();
+    const gk = at(w.players[0], 25, 650, 1, 0);
+    for (let i = 1; i <= 8; i++) at(w.players[i], 1200 + i * 10, 650);
+    const out = { x: 7, y: 7 };
+    expect(freestMateDir(gk, w.players, 1, PITCH, out)).toBe(false);
+    expect(out).toEqual({ x: 7, y: 7 });
+  });
+});
+
+describe('releaseFromGoalkeeper', () => {
+  it('kicks a long pass at the freest own-half mate once GK_HOLD_STEPS have passed, and not before', () => {
+    const w = world();
+    const gk = at(w.players[9], 1975, 650, -1, 0);   // team 1 defends side 1: own half is x > 1000
+    const target = at(w.players[12], 1500, 300);
+    at(w.players[13], 1500, 1000);
+    at(w.players[4], 1470, 1000);                     // rival crowds mate 13, so 12 is the freest
     givePossession(w.ball, gk, 100);
-    releaseFromGoalkeeper(gk, w.ball, -1, 100 + GK_HOLD_STEPS - 7, w.out);
+    releaseFromGoalkeeper(gk, w.ball, w.players, -1, PITCH, 100 + GK_HOLD_STEPS - 7, w.aim, w.out);
     expect(w.ball.owner).toBe(9);
     expect(w.out.kind).toBe('none');
-    releaseFromGoalkeeper(gk, w.ball, -1, 100 + GK_HOLD_STEPS, w.out);
+    releaseFromGoalkeeper(gk, w.ball, w.players, -1, PITCH, 100 + GK_HOLD_STEPS, w.aim, w.out);
     expect(w.ball.owner).toBeNull();
-    expect(w.ball.vx).toBeCloseTo(-LONG_PASS_SPEED, 6);
+    const d = dist2(gk, target);
+    expect(w.ball.vx).toBeCloseTo(LONG_PASS_SPEED * (target.x - gk.x) / d, 6);
+    expect(w.ball.vy).toBeCloseTo(LONG_PASS_SPEED * (target.y - gk.y) / d, 6);
     expect(w.ball.vz).toBe(LONG_PASS_VZ);
     expect(w.out.kind).toBe('gk-release');
     expect(GK_HOLD_STEPS).toBe(120);
+  });
+  it('falls back to a straight kick along attackDir when no mate is in its half', () => {
+    const w = world();
+    const gk = at(w.players[9], 1975, 650, -1, 0);
+    for (let i = 10; i <= 17; i++) at(w.players[i], 300 + i, 650);
+    givePossession(w.ball, gk, 0);
+    releaseFromGoalkeeper(gk, w.ball, w.players, -1, PITCH, GK_HOLD_STEPS, w.aim, w.out);
+    expect(w.ball.vx).toBeCloseTo(-LONG_PASS_SPEED, 6);
+    expect(w.ball.vy).toBe(0);
   });
   it('does nothing for an outfield player or a keeper without the ball', () => {
     const w = world();
     const p = at(w.players[4], 500, 500);
     givePossession(w.ball, p, 0);
-    releaseFromGoalkeeper(p, w.ball, 1, 500, w.out);
+    releaseFromGoalkeeper(p, w.ball, w.players, 1, PITCH, 500, w.aim, w.out);
     expect(w.ball.owner).toBe(4);
-    releaseFromGoalkeeper(w.players[0], w.ball, 1, 500, w.out);
+    releaseFromGoalkeeper(w.players[0], w.ball, w.players, 1, PITCH, 500, w.aim, w.out);
     expect(w.ball.owner).toBe(4);
   });
+  it('leaves `out` alone on its no-op paths (D4: the throw applyKeeperButtons wrote in the same slot this step survives)', () => {
+    const w = world();
+    const gk = at(w.players[9], 1975, 650, -1, 0);
+    givePossession(w.ball, gk, 100);
+    w.out.kind = 'short-pass'; w.out.ok = true; w.out.actorId = 9;
+    releaseFromGoalkeeper(gk, w.ball, w.players, -1, PITCH, 100 + GK_HOLD_STEPS - 7, w.aim, w.out);   // holding: no-op
+    expect(w.out.kind).toBe('short-pass');
+    shortPass(gk, w.ball, -1, 0, 100 + GK_HOLD_STEPS, w.out);                                         // the ball left by button
+    releaseFromGoalkeeper(gk, w.ball, w.players, -1, PITCH, 100 + GK_HOLD_STEPS, w.aim, w.out);       // not the owner: no-op
+    expect(w.out.kind).toBe('short-pass');
+    expect(w.ball.owner).toBeNull();
+  });
 });
+
+describe('applyKeeperButtons (D4): the keeper holding the ball throws by button, exact, from the step after taking it', () => {
+  // Team 1 keeper (id 9) on its line, attacking -x. Its eight outfield mates are
+  // parked BEHIND it near the goal line at x = 1990, y = 100..170, so from the
+  // keeper they lie almost straight up (+15, -480..-550): outside the -x cone,
+  // the +y cone and the +x cone every test below opens. Only the mates each test
+  // places with `at` are candidates. The keeper faces +y on purpose: a neutral
+  // d-pad must open the cone along attackDir, never along the facing (S-GK.1).
+  function holding(): World & { gk: PlayerState; input: TeamInput } {
+    const w = world();
+    for (let i = 10; i <= 17; i++) at(w.players[i], 1990, 100 + (i - 10) * 10);
+    const gk = at(w.players[9], 1975, 650, 0, 1);
+    givePossession(w.ball, gk, 100);
+    return { ...w, gk, input: createTeamInput() };
+  }
+  function unitTo(from: PlayerState, to: PlayerState): { x: number; y: number } {
+    const d = dist2(from, to);
+    return { x: (to.x - from.x) / d, y: (to.y - from.y) / d };
+  }
+  it('B pressed with the d-pad on -x throws a SHORT pass at the nearest mate in the cone and turns the keeper to face it', () => {
+    const s = holding();
+    const near = at(s.players[12], 1775, 700);        // 206 u away, 14 deg off -x: in the cone
+    at(s.players[13], 1475, 550);                     // 510 u away, 11 deg off -x: in the cone, farther
+    s.input.dx = -1; s.input.b = 'pressed';
+    applyKeeperButtons(s.gk, s.input, s.ball, s.players, -1, 101, s.aim, s.out);
+    const u = unitTo(s.gk, near);
+    expect(s.ball.owner).toBeNull();
+    expect(s.ball.kickerId).toBe(9);
+    expect(speedOf(s.ball)).toBeCloseTo(SHORT_PASS_SPEED, 6);
+    expect(s.ball.vz).toBe(0);
+    expect(s.ball.vx / speedOf(s.ball)).toBeCloseTo(u.x, 10);
+    expect(s.ball.vy / speedOf(s.ball)).toBeCloseTo(u.y, 10);
+    expect([s.gk.facingX, s.gk.facingY]).toEqual([u.x, u.y]);
+    expect(s.out).toMatchObject({ kind: 'short-pass', ok: true, foul: false, actorId: 9 });
+  });
+  it('A pressed throws a LONG pass at the farthest mate in the same cone', () => {
+    const s = holding();
+    at(s.players[12], 1775, 700);
+    const far = at(s.players[13], 1475, 550);
+    s.input.dx = -1; s.input.a = 'pressed';
+    applyKeeperButtons(s.gk, s.input, s.ball, s.players, -1, 101, s.aim, s.out);
+    const u = unitTo(s.gk, far);
+    expect(s.ball.owner).toBeNull();
+    expect(speedOf(s.ball)).toBeCloseTo(LONG_PASS_SPEED, 6);
+    expect(s.ball.vz).toBe(LONG_PASS_VZ);
+    expect(s.ball.vx / speedOf(s.ball)).toBeCloseTo(u.x, 10);
+    expect(s.ball.vy / speedOf(s.ball)).toBeCloseTo(u.y, 10);
+    expect(s.out).toMatchObject({ kind: 'long-pass', ok: true, actorId: 9 });
+  });
+  it('a neutral d-pad opens the cone along attackDir (towards the rival half), not along the keeper\'s facing; the d-pad on +y opens it there', () => {
+    const neutral = holding();
+    const ahead = at(neutral.players[12], 1775, 700);   // in the -x cone only
+    at(neutral.players[14], 1975, 850);                 // 200 u straight down (+y): in the +y cone only
+    neutral.input.b = 'pressed';                        // dx = dy = 0
+    applyKeeperButtons(neutral.gk, neutral.input, neutral.ball, neutral.players, -1, 101, neutral.aim, neutral.out);
+    const u = unitTo(neutral.gk, ahead);
+    expect(neutral.ball.vx / speedOf(neutral.ball)).toBeCloseTo(u.x, 10);
+    expect(neutral.ball.vy / speedOf(neutral.ball)).toBeCloseTo(u.y, 10);
+    const down = holding();
+    at(down.players[12], 1775, 700);
+    const below = at(down.players[14], 1975, 850);
+    down.input.dy = 1; down.input.b = 'pressed';
+    applyKeeperButtons(down.gk, down.input, down.ball, down.players, -1, 101, down.aim, down.out);
+    const v = unitTo(down.gk, below);
+    expect(down.ball.vx / speedOf(down.ball)).toBeCloseTo(v.x, 10);
+    expect(down.ball.vy / speedOf(down.ball)).toBeCloseTo(v.y, 10);
+  });
+  it('with nobody in the cone the throw goes straight along the aim (d-pad on +x: no mate that way)', () => {
+    const s = holding();
+    s.input.dx = 1; s.input.b = 'pressed';
+    applyKeeperButtons(s.gk, s.input, s.ball, s.players, -1, 101, s.aim, s.out);
+    expect(s.ball.vx).toBeCloseTo(SHORT_PASS_SPEED, 6);
+    expect(s.ball.vy).toBe(0);
+    expect(s.out.kind).toBe('short-pass');
+  });
+  it('only a press fires: a held B (a steal attempt carried over) throws nothing; A and B pressed together -> A wins', () => {
+    const held = holding();
+    at(held.players[12], 1775, 700);
+    held.input.dx = -1; held.input.b = 'held';
+    applyKeeperButtons(held.gk, held.input, held.ball, held.players, -1, 101, held.aim, held.out);
+    expect(held.ball.owner).toBe(9);
+    expect(held.out.kind).toBe('none');
+    const both = holding();
+    at(both.players[12], 1775, 700);
+    both.input.dx = -1; both.input.a = 'pressed'; both.input.b = 'pressed';
+    applyKeeperButtons(both.gk, both.input, both.ball, both.players, -1, 101, both.aim, both.out);
+    expect(both.out.kind).toBe('long-pass');
+  });
+  it('never on the step the keeper took the ball (S-GK.4), never for an outfield player, never for a keeper without the ball; no rng anywhere', () => {
+    const same = holding();                           // ownerSinceStep = 100
+    at(same.players[12], 1775, 700);
+    same.input.dx = -1; same.input.b = 'pressed';
+    applyKeeperButtons(same.gk, same.input, same.ball, same.players, -1, 100, same.aim, same.out);
+    expect(same.ball.owner).toBe(9);
+    expect(same.out.kind).toBe('none');
+    applyKeeperButtons(same.gk, same.input, same.ball, same.players, -1, 101, same.aim, same.out);
+    expect(same.ball.owner).toBeNull();
+    const w = world();
+    const p = at(w.players[4], 500, 500);
+    givePossession(w.ball, p, 0);
+    const input = createTeamInput(); input.b = 'pressed';
+    applyKeeperButtons(p, input, w.ball, w.players, 1, 5, w.aim, w.out);
+    expect(w.ball.owner).toBe(4);
+    applyKeeperButtons(w.players[0], input, w.ball, w.players, 1, 5, w.aim, w.out);
+    expect(w.ball.owner).toBe(4);
+    expect(w.out.kind).toBe('none');
+    // The signature has no rng: a throw can never move the deterministic draw count.
+  });
+});
+
 
 describe('applyButtons: press/hold semantics with and without the ball', () => {
   function withBall(): World & { p: PlayerState; input: TeamInput } {

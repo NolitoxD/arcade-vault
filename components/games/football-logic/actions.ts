@@ -1,11 +1,13 @@
 import { dist, normalizeInto, INV_SQRT2, type Vec2 } from './geometry';
+import type { PitchDef } from './pitch';
 import { isDown, type TeamInput } from './input';
 import { PLAYER_HEIGHT, PLAYER_RADIUS, TACKLE_STEPS, isPlayerDown, isSprinting, type PlayerState } from './players';
 import { LONG_PASS_VZ, givePossession, kickBall, type BallState } from './ball';
 import { stepsFor } from './step';
 import type { Rng } from './rng';
 
-export type ActionKind = 'none' | 'shot' | 'short-pass' | 'long-pass' | 'steal' | 'tackle' | 'gk-release';
+// exported for Task 8: the component reads the step's events to fire sound and HUD; today only actions.ts uses it
+export type ActionKind = 'none' | 'shot' | 'short-pass' | 'long-pass' | 'steal' | 'tackle' | 'gk-release' | 'gk-catch';
 
 export type ActionEvent = {
   kind: ActionKind;
@@ -21,10 +23,13 @@ export function createActionEvent(): ActionEvent {
   return { kind: 'none', ok: false, foul: false, actorId: -1, victimId: -1, x: 0, y: 0 };
 }
 
-// Exported again (undoing half of ruling R5, whole-stage review C1): stepOpenPlay
-// wipes all 18 slots at the top of every step so "the events of this step" is a
-// property by construction. applyButtons/releaseFromGoalkeeper still reset their
-// own slot in place before deciding.
+// Exported again (undoing half of ruling R5, whole-stage review C1): stepMatch
+// wipes all 18 slots at the top of every step (final review Important #1: moved
+// there from stepOpenPlay so non-open-play steps start clean too) so "the events
+// of this step" is a property by construction. Since D4 only applyButtons still
+// resets its own slot in place before deciding; releaseFromGoalkeeper and
+// applyKeeperButtons rely on that sweep, so a throw already written this step is
+// not wiped by the other one.
 export function clearActionEvent(out: ActionEvent): void {
   out.kind = 'none';
   out.ok = false;
@@ -47,13 +52,13 @@ function setEvent(out: ActionEvent, kind: ActionKind, ok: boolean, actorId: numb
 
 export const SHOT_SPEED_MIN = 700;
 export const SHOT_SPEED_MAX = 950;
-export const SHOT_CHARGE_SECONDS = 1;
+const SHOT_CHARGE_SECONDS = 1;
 export const SHOT_CHARGE_STEPS = stepsFor(SHOT_CHARGE_SECONDS); // 60
-// Stage A addition, not in the spec — review in QA
+// exported for Task 8 (HUD/SFX): the component reads the shot's vertical speed cap; today only actions.ts uses it
 export const SHOT_VZ_MAX = 200;
 export const SHORT_PASS_SPEED = 420;
 export const LONG_PASS_SPEED = 560;
-export const LONG_PASS_HOLD_SECONDS = 0.25;
+const LONG_PASS_HOLD_SECONDS = 0.25;
 export const LONG_PASS_HOLD_STEPS = stepsFor(LONG_PASS_HOLD_SECONDS); // 15
 export const STEAL_RANGE = 28;
 export const STEAL_CHANCE = 0.65;
@@ -61,21 +66,24 @@ export const STEAL_CHANCE = 0.65;
 export const STEAL_CHANCE_VS_SPRINT = 0.35;
 export const TACKLE_BALL_REACH = 20;
 export const TACKLE_FOUL_RADIUS = 2 * PLAYER_RADIUS; // 24
-export const TACKLE_MISS_DOWN_SECONDS = 1;
+const TACKLE_MISS_DOWN_SECONDS = 1;
 export const TACKLE_MISS_DOWN_STEPS = stepsFor(TACKLE_MISS_DOWN_SECONDS); // 60
 export const CONTROL_HYSTERESIS = 40;
-export const GK_HOLD_SECONDS = 2;
+const GK_HOLD_SECONDS = 2;
 export const GK_HOLD_STEPS = stepsFor(GK_HOLD_SECONDS); // 120
+
+// Deferred minor #13: one ramp, with the <= 0 guard, shared by shotSpeed and shoot.
+export function chargeFraction(chargeSteps: number): number {
+  return chargeSteps >= SHOT_CHARGE_STEPS ? 1 : chargeSteps <= 0 ? 0 : chargeSteps / SHOT_CHARGE_STEPS;
+}
 
 // 700 -> 950 linear, capped at SHOT_CHARGE_STEPS.
 export function shotSpeed(chargeSteps: number): number {
-  const t = chargeSteps >= SHOT_CHARGE_STEPS ? 1 : chargeSteps <= 0 ? 0 : chargeSteps / SHOT_CHARGE_STEPS;
-  return SHOT_SPEED_MIN + (SHOT_SPEED_MAX - SHOT_SPEED_MIN) * t;
+  return SHOT_SPEED_MIN + (SHOT_SPEED_MAX - SHOT_SPEED_MIN) * chargeFraction(chargeSteps);
 }
 
 export function shoot(p: PlayerState, ball: BallState, dirX: number, dirY: number, chargeSteps: number, stepCount: number, out: ActionEvent): void {
-  const t = chargeSteps >= SHOT_CHARGE_STEPS ? 1 : chargeSteps / SHOT_CHARGE_STEPS;
-  kickBall(ball, p, dirX, dirY, shotSpeed(chargeSteps), SHOT_VZ_MAX * t, stepCount);
+  kickBall(ball, p, dirX, dirY, shotSpeed(chargeSteps), SHOT_VZ_MAX * chargeFraction(chargeSteps), stepCount);
   setEvent(out, 'shot', true, p.id);
 }
 
@@ -150,22 +158,6 @@ export function stepTackle(p: PlayerState, ball: BallState, players: readonly Pl
   if (p.tackleStepsLeft === 0) p.downUntilStep = stepCount + TACKLE_MISS_DOWN_STEPS;
 }
 
-// Spec goalkeeper rule 4, direction only for now: Task 6 aims at the freest teammate.
-export function releaseFromGoalkeeper(gk: PlayerState, ball: BallState, attackDir: 1 | -1, stepCount: number, out: ActionEvent): void {
-  if (gk.role !== 'gk' || ball.owner !== gk.id) {
-    clearActionEvent(out);
-    return;
-  }
-  if (stepCount - ball.ownerSinceStep < GK_HOLD_STEPS) {
-    clearActionEvent(out);
-    return;
-  }
-  gk.facingX = attackDir;
-  gk.facingY = 0;
-  kickBall(ball, gk, attackDir, 0, LONG_PASS_SPEED, LONG_PASS_VZ, stepCount);
-  setEvent(out, 'gk-release', true, gk.id);
-}
-
 function resetCharge(p: PlayerState): void {
   p.chargeSteps = 0;
   p.chargeButton = 'none';
@@ -183,11 +175,12 @@ function resetCharge(p: PlayerState): void {
 // (lowest id) candidate found at a given best distance is kept.
 // (dirX, dirY) must be a unit vector, as in kickBall: the INV_SQRT2 threshold on
 // dot(dir, normalize(mate - p)) only means 45deg when |dir| === 1.
-export function aimPass(p: PlayerState, players: readonly PlayerState[], dirX: number, dirY: number, farthest: boolean, stepCount: number, out: Vec2): boolean {
+// The scan aimPass used to do inline, returning the mate's id instead of its
+// direction so the AI (Task 6b) can judge the lane to the SAME mate the engine
+// will lock onto. -1 when nobody is inside the cone. (dirX, dirY) must be a unit vector.
+export function pickPassTarget(p: PlayerState, players: readonly PlayerState[], dirX: number, dirY: number, farthest: boolean, stepCount: number): number {
   let bestId = -1;
   let bestDist = farthest ? -1 : Infinity;
-  let bestDirX = 0;
-  let bestDirY = 0;
   for (let i = 0; i < players.length; i++) {
     const mate = players[i];
     if (mate.id === p.id || mate.team !== p.team || mate.role === 'gk') continue;
@@ -201,17 +194,99 @@ export function aimPass(p: PlayerState, players: readonly PlayerState[], dirX: n
     if (!better) continue;
     bestId = mate.id;
     bestDist = d;
-    bestDirX = ux;
-    bestDirY = uy;
   }
-  if (bestId === -1) {
+  return bestId;
+}
+
+export function aimPass(p: PlayerState, players: readonly PlayerState[], dirX: number, dirY: number, farthest: boolean, stepCount: number, out: Vec2): boolean {
+  const id = pickPassTarget(p, players, dirX, dirY, farthest, stepCount);
+  if (id === -1) {
     out.x = dirX;
     out.y = dirY;
     return false;
   }
-  out.x = bestDirX;
-  out.y = bestDirY;
+  const mate = players[id];
+  const d = dist(p.x, p.y, mate.x, mate.y);   // same formula as the scan: identical quotient, identical bits
+  out.x = (mate.x - p.x) / d;
+  out.y = (mate.y - p.y) / d;
   return true;
+}
+
+// Spec goalkeeper rule 4: the freest outfield mate in the keeper's own half --
+// the one whose nearest rival is farthest away; ties by lowest id (strict `>`
+// over ascending ids). Writes the unit direction into `out`; false = nobody.
+export function freestMateDir(gk: PlayerState, players: readonly PlayerState[], attackDir: 1 | -1, pitch: PitchDef, out: Vec2): boolean {
+  const halfX = pitch.width / 2;
+  let bestId = -1;
+  let bestFree = -1;
+  for (let i = 0; i < players.length; i++) {
+    const mate = players[i];
+    if (mate.team !== gk.team || mate.role === 'gk') continue;
+    const inOwnHalf = attackDir === 1 ? mate.x < halfX : mate.x > halfX;
+    if (!inOwnHalf) continue;
+    let nearestRival = Infinity;
+    for (let j = 0; j < players.length; j++) {
+      const q = players[j];
+      if (q.team === gk.team) continue;
+      const d = dist(mate.x, mate.y, q.x, q.y);
+      if (d < nearestRival) nearestRival = d;
+    }
+    if (nearestRival > bestFree) {
+      bestFree = nearestRival;
+      bestId = mate.id;
+    }
+  }
+  if (bestId === -1) return false;
+  const mate = players[bestId];
+  return normalizeInto(out, mate.x - gk.x, mate.y - gk.y);
+}
+
+// Spec goalkeeper rule 4 (D4), the AUTOMATIC release: once GK_HOLD_STEPS have
+// passed since the keeper took the ball (caught or picked up, one path through
+// givePossession/ownerSinceStep) and nobody released it by button, a long pass at
+// the freest own-half mate, else straight along attackDir. Exact: no error, no rng.
+// `aim` is the caller's scratch Vec2 (no module state, no allocation), exactly as
+// applyButtons receives it; match.ts passes scratch.aim. Unlike applyButtons it
+// does NOT clear `out` on its no-op paths: stepOpenPlay wipes every slot at the top
+// of the step and applyKeeperButtons may already have written this same slot.
+export function releaseFromGoalkeeper(gk: PlayerState, ball: BallState, players: readonly PlayerState[], attackDir: 1 | -1, pitch: PitchDef, stepCount: number, aim: Vec2, out: ActionEvent): void {
+  if (gk.role !== 'gk' || ball.owner !== gk.id) return;
+  if (stepCount - ball.ownerSinceStep < GK_HOLD_STEPS) return;
+  if (!freestMateDir(gk, players, attackDir, pitch, aim)) {
+    aim.x = attackDir;
+    aim.y = 0;
+  }
+  gk.facingX = aim.x;
+  gk.facingY = aim.y;
+  kickBall(ball, gk, aim.x, aim.y, LONG_PASS_SPEED, LONG_PASS_VZ, stepCount);
+  setEvent(out, 'gk-release', true, gk.id);
+}
+
+// D4 (spec goalkeeper rule 4): while the keeper holds the ball its team's TeamInput
+// comes HERE instead of applyButtons (stepOpenPlay routes it). The d-pad aims; in
+// neutral the cone opens straight towards the rival half, (attackDir, 0), never
+// along the keeper's facing (S-GK.1). B 'pressed' = hand throw = assisted short
+// pass (nearest outfield mate in the 45deg cone, aimPass, ruling R10); A 'pressed' =
+// assisted long pass (farthest mate in the cone); nobody in the cone = straight.
+// A throw is a set piece in spirit: exact, no rng, no angular error. Only 'pressed'
+// fires (S-GK.2), A wins a double press (S-GK.3), and nothing fires on the very step
+// the keeper took the ball (S-GK.4), so a catch (before the buttons) and a pickUp
+// (after them, in the physics) both release from the next step on. Like
+// releaseFromGoalkeeper it never clears `out`: stepOpenPlay wipes the slot.
+export function applyKeeperButtons(gk: PlayerState, input: TeamInput, ball: BallState, players: readonly PlayerState[], attackDir: 1 | -1, stepCount: number, aim: Vec2, out: ActionEvent): void {
+  if (gk.role !== 'gk' || ball.owner !== gk.id) return;
+  if (stepCount <= ball.ownerSinceStep) return;
+  const longOne = input.a === 'pressed';
+  if (!longOne && input.b !== 'pressed') return;
+  if (!normalizeInto(aim, input.dx, input.dy)) {
+    aim.x = attackDir;
+    aim.y = 0;
+  }
+  aimPass(gk, players, aim.x, aim.y, longOne, stepCount, aim);
+  gk.facingX = aim.x;
+  gk.facingY = aim.y;
+  if (longOne) longPass(gk, ball, aim.x, aim.y, stepCount, out);
+  else shortPass(gk, ball, aim.x, aim.y, stepCount, out);
 }
 
 // The three buttons with press/hold, for the controlled player of one team.

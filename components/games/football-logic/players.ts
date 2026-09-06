@@ -23,13 +23,19 @@ export type PlayerState = {
   tackleStepsLeft: number;
   tackleDirX: number;
   tackleDirY: number;
+  // AI movement channel (stage B, Task 6a): |want| <= 1, the magnitude scales the
+  // speed so a positioning target is reached exactly instead of overshot. The
+  // controlled player ignores it (moved by its TeamInput through stepPlayer).
+  wantX: number;
+  wantY: number;
+  wantSprint: boolean;
 };
 
 export const PLAYER_SPEED = 180;
 export const PLAYER_SPEED_WITH_BALL = 160;
 export const SPRINT_MULT = 1.4;
-export const SPRINT_SECONDS = 2;
-export const SPRINT_COOLDOWN_SECONDS = 3;
+const SPRINT_SECONDS = 2;
+const SPRINT_COOLDOWN_SECONDS = 3;
 export const SPRINT_STEPS = stepsFor(SPRINT_SECONDS);
 export const SPRINT_COOLDOWN_STEPS = stepsFor(SPRINT_COOLDOWN_SECONDS);
 export const PLAYER_RADIUS = 12;
@@ -38,7 +44,7 @@ export const GK_LINE_DIST = 25; // the goalkeeper's line, off its goal line
 export const GK_SPEED = 220; // consumed by ai.ts (stage B, Task 6)
 export const GK_CATCH_RADIUS = 40; // consumed by ai.ts (stage B, Task 6)
 export const TACKLE_DIST = 90;
-export const TACKLE_SECONDS = 0.4;
+const TACKLE_SECONDS = 0.4;
 export const TACKLE_STEPS = stepsFor(TACKLE_SECONDS);
 // Not exported (ruling R5): nothing outside this file needs the raw speed, only
 // the distance/duration constants above and the slide stepPlayer performs with it.
@@ -67,6 +73,7 @@ function createPlayer(id: number, team: 0 | 1, role: Role, slot: number, attackD
     sprintStepsLeft: 0, sprintCooldownSteps: 0, downUntilStep: 0,
     chargeSteps: 0, chargeButton: 'none',
     tackleStepsLeft: 0, tackleDirX: 0, tackleDirY: 0,
+    wantX: 0, wantY: 0, wantSprint: false,
   };
 }
 
@@ -100,6 +107,9 @@ export function placeByFormation(players: PlayerState[], team: 0 | 1, formation:
     }
     p.vx = 0;
     p.vy = 0;
+    p.wantX = 0;
+    p.wantY = 0;
+    p.wantSprint = false;
     p.facingX = attackDir;
     p.facingY = 0;
   }
@@ -109,6 +119,12 @@ export function isPlayerDown(p: PlayerState, stepCount: number): boolean {
   return stepCount < p.downUntilStep;
 }
 
+// Deferred minor #12 (stage A): this reads false on the LAST sprinting step
+// (tickSprint decrements to 0 while still applying sprint speed). The steal
+// threshold in actions.ts reads it at the START of the next step, i.e. it sees the
+// sprint state that was applied in the previous step: a one-step, deterministic
+// lag that is the same for both teams. Left as is on purpose (stage B decision);
+// the HUD of stage C may show one frame of "not sprinting" at the end of a burst.
 export function isSprinting(p: PlayerState): boolean {
   return p.sprintStepsLeft > 0;
 }
@@ -144,7 +160,10 @@ function clampToPitch(p: PlayerState, attackDir: 1 | -1, pitch: PitchDef): void 
   if (p.role === 'gk') clampToBigArea(pitch, ownGoalSide(attackDir), p);
 }
 
-export function stepPlayer(p: PlayerState, dx: Axis, dy: Axis, wantSprint: boolean, hasBall: boolean, attackDir: 1 | -1, pitch: PitchDef, stepCount: number): void {
+// (fx, fy) is the facing to apply (unit or zero); `factor` in (0, 1] scales the
+// speed. stepPlayer passes exactly the stage-A values (dx*diag, dy*diag, 1) so
+// the controlled path is bit-identical; stepPlayerFree passes the want channel.
+function movePlayer(p: PlayerState, fx: number, fy: number, factor: number, wantSprint: boolean, hasBall: boolean, attackDir: 1 | -1, pitch: PitchDef, stepCount: number): void {
   // Slides while the tackle is active; Task 3's stepTackle owns the countdown and the outcome.
   if (p.tackleStepsLeft > 0) {
     p.vx = p.tackleDirX * TACKLE_SPEED;
@@ -162,20 +181,35 @@ export function stepPlayer(p: PlayerState, dx: Axis, dy: Axis, wantSprint: boole
     clampToPitch(p, attackDir, pitch);
     return;
   }
-  const sprinting = tickSprint(p, wantSprint);
-  let speed = hasBall ? PLAYER_SPEED_WITH_BALL : PLAYER_SPEED;
+  const sprinting = tickSprint(p, p.role === 'gk' ? false : wantSprint);
+  let speed = p.role === 'gk' ? GK_SPEED : hasBall ? PLAYER_SPEED_WITH_BALL : PLAYER_SPEED;
   if (sprinting) speed *= SPRINT_MULT;
-  if (dx === 0 && dy === 0) {
+  if (fx === 0 && fy === 0) {
     p.vx = 0;
     p.vy = 0;
   } else {
-    const diag = dx !== 0 && dy !== 0 ? INV_SQRT2 : 1;
-    p.facingX = dx * diag;
-    p.facingY = dy * diag;
-    p.vx = p.facingX * speed;
-    p.vy = p.facingY * speed;
+    p.facingX = fx;
+    p.facingY = fy;
+    p.vx = p.facingX * speed * factor;
+    p.vy = p.facingY * speed * factor;
     p.x += perStep(p.vx);
     p.y += perStep(p.vy);
   }
   clampToPitch(p, attackDir, pitch);
+}
+
+export function stepPlayer(p: PlayerState, dx: Axis, dy: Axis, wantSprint: boolean, hasBall: boolean, attackDir: 1 | -1, pitch: PitchDef, stepCount: number): void {
+  const diag = dx !== 0 && dy !== 0 ? INV_SQRT2 : 1;
+  movePlayer(p, dx * diag, dy * diag, 1, wantSprint, hasBall, attackDir, pitch, stepCount);
+}
+
+// Moves a NON-controlled player by its want channel (written by ai.ts every step
+// of open play). Zero want = stand still and keep the facing.
+export function stepPlayerFree(p: PlayerState, hasBall: boolean, attackDir: 1 | -1, pitch: PitchDef, stepCount: number): void {
+  const len = Math.sqrt(p.wantX * p.wantX + p.wantY * p.wantY);
+  if (len === 0) {
+    movePlayer(p, 0, 0, 1, p.wantSprint, hasBall, attackDir, pitch, stepCount);
+    return;
+  }
+  movePlayer(p, p.wantX / len, p.wantY / len, len > 1 ? 1 : len, p.wantSprint, hasBall, attackDir, pitch, stepCount);
 }
