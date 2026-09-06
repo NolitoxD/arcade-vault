@@ -25,7 +25,7 @@ Heredadas literalmente de la etapa A, con la baseline actualizada:
 - **La IA consume azar SOLO por el `rng` inyectado.** Dentro de `stepMatch` el orden de consumo por paso queda fijado así: atajada del portero (equipo 0, equipo 1); después, por cada equipo en orden, el robo de pie dentro de `applyButtons` y a continuación el error angular de su golpeo. **El saque del portero —a botón (B/A) o automático a los 2 s— no consume `rng`** (D4: es un saque y va exacto, como los de `stepSetPiece`); el penalti se tira en la fase de saque, como en la etapa A. Fuera del paso, `decideTeamInput` consume su **propio** `rng` (el del componente/test), nunca el del partido: si compartieran instancia, el replay con solo semilla + `TeamInput` divergiría.
 - **Paso fijo: nada de `dtMs` dentro del motor.** `reactionMs` del spec se convierte a pasos con `stepsFor(ms / 1000)` en `profileFor` y el perfil guarda **`reactionSteps`**, nunca milisegundos (recomendación 3).
 - **Sin asignación de memoria por paso.** Las funciones nuevas que corren dentro de `stepMatch` (`positionTeam`, `keeperStep`, `keeperCatch`, `applyKeeperButtons`, `applyKickError`, `stepPlayerFree`, `freestMateDir`, `pickPassTarget`) y la que corre cada paso fuera (`decideTeamInput`) escriben en out-params y en el estado; nada de `filter`/`map`/spread/objetos literales/`new`/closures dentro de ellas. Las únicas asignaciones permitidas son en eventos (`createMatch`, `createAiState`, `profileFor`).
-- **Los números de las reglas de la IA del spec se transcriben a constantes con nombre** (tabla en la Task 6a), nunca literales enterrados. Lo que el spec NO da (huecos listados en el bloque "Supuestos" de cada tarea y en la respuesta final) se pone también en constantes, marcado `// Stage B assumption, not in the spec — review in QA`, igual que hizo R6. Los supuestos que Paco confirmó en el grill del 05-sep (D1 = S3, D2 = S14, D3 = S9) llevan la etiqueta `// confirmed by owner 2026-09-05` y no van al QA como supuestos; la regla nueva D4 (portero con balón) entra como supuesto de ejecución **S-GK** en la Task 6a.
+- **Los números de las reglas de la IA del spec se transcriben a constantes con nombre** (tabla en la Task 6a), nunca literales enterrados. Lo que el spec NO da (huecos listados en el bloque "Supuestos" de cada tarea y en la respuesta final) se pone también en constantes, marcado `// Stage B assumption, not in the spec — review in QA`, igual que hizo R6. Los supuestos que Paco confirmó en el grill del 05-sep (D1 = S3, D2 = S14, D3 = S9, D4 = S17) llevan la etiqueta `// confirmed by owner 2026-09-05` y no van al QA como supuestos; la interpretación de ejecución de la regla nueva D4 (portero con balón) entra como supuesto **S-GK** en la Task 6a y en la lista final "Supuestos de la etapa".
 - **Regla anti-coincidencia de fixtures (riesgo 7 del spec):** antes de dar por bueno un test, preguntarse "¿pasaría este test con otros números?". En esta etapa, concretamente: las dificultades comparadas son **1 frente a 8**, nunca vecinas; los tests de monotonía afirman el número exacto del perfil y ADEMÁS la desigualdad; el partido CPU vs CPU afirma que hubo chuts, pases cortos y largos, entradas y robos (contados por `ActionEvent.kind`), no solo que acabó; el negativo de semilla afirma el paso de divergencia; ninguna posición de fixture cae en el borde exacto de un radio (`GK_CATCH_RADIUS` se muestrea a 31 y 47, no a 39/40/41).
 - **Todo lo exportado tiene consumidor** al cerrar cada tarea: código o test. Al cerrar la Task 7 se recorre `grep -n "^export"` de toda la carpeta y se **des-exportan las 11 constantes espejo** que el informe final lista sin consumidor (Task 7, paso 9), y se deja línea de destino en las que esperan a la etapa C.
 - **Baseline verificada 2026-09-05: 760 tests en 51 ficheros verdes**, `npx tsc --noEmit` limpio, `npm run build` verde. Cada tarea suma y no regresa.
@@ -736,12 +736,165 @@ export function releaseFromGoalkeeper(gk: PlayerState, ball: BallState, players:
 
 Run: `npx vitest run components/games/football-logic/actions.test.ts components/games/football-logic/set-pieces.test.ts` → PASS (los tests de `aimPass` de la etapa A siguen exactos: el cociente es el mismo).
 
-- [ ] **Step 10: Tests que fallan — `profileFor`, `humanProfile`, `quantizeDir`, `laneBlocked`, `applyKickError` (nuevo `ai.test.ts`, parte 1)**
+- [ ] **Step 10: Test que falla — `applyKeeperButtons` (D4: B saque con la mano, A pase largo, cruceta apunta, exacto)**
+
+```ts
+// actions.test.ts — añadir (importar applyKeeperButtons de './actions')
+describe('applyKeeperButtons (D4): the keeper holding the ball throws by button, exact, from the step after taking it', () => {
+  // Team 1 keeper (id 9) on its line, attacking -x. Its eight outfield mates are
+  // parked BEHIND it near the goal line at x = 1990, y = 100..170, so from the
+  // keeper they lie almost straight up (+15, -480..-550): outside the -x cone,
+  // the +y cone and the +x cone every test below opens. Only the mates each test
+  // places with `at` are candidates. The keeper faces +y on purpose: a neutral
+  // d-pad must open the cone along attackDir, never along the facing (S-GK.1).
+  function holding(): World & { gk: PlayerState; input: TeamInput } {
+    const w = world();
+    for (let i = 10; i <= 17; i++) at(w.players[i], 1990, 100 + (i - 10) * 10);
+    const gk = at(w.players[9], 1975, 650, 0, 1);
+    givePossession(w.ball, gk, 100);
+    return { ...w, gk, input: createTeamInput() };
+  }
+  function unitTo(from: PlayerState, to: PlayerState): { x: number; y: number } {
+    const d = dist2(from, to);
+    return { x: (to.x - from.x) / d, y: (to.y - from.y) / d };
+  }
+  it('B pressed with the d-pad on -x throws a SHORT pass at the nearest mate in the cone and turns the keeper to face it', () => {
+    const s = holding();
+    const near = at(s.players[12], 1775, 700);        // 206 u away, 14° off -x: in the cone
+    at(s.players[13], 1475, 550);                     // 510 u away, 11° off -x: in the cone, farther
+    s.input.dx = -1; s.input.b = 'pressed';
+    applyKeeperButtons(s.gk, s.input, s.ball, s.players, -1, 101, s.aim, s.out);
+    const u = unitTo(s.gk, near);
+    expect(s.ball.owner).toBeNull();
+    expect(s.ball.kickerId).toBe(9);
+    expect(speedOf(s.ball)).toBeCloseTo(SHORT_PASS_SPEED, 6);
+    expect(s.ball.vz).toBe(0);
+    expect(s.ball.vx / speedOf(s.ball)).toBeCloseTo(u.x, 10);
+    expect(s.ball.vy / speedOf(s.ball)).toBeCloseTo(u.y, 10);
+    expect([s.gk.facingX, s.gk.facingY]).toEqual([u.x, u.y]);
+    expect(s.out).toMatchObject({ kind: 'short-pass', ok: true, foul: false, actorId: 9 });
+  });
+  it('A pressed throws a LONG pass at the farthest mate in the same cone', () => {
+    const s = holding();
+    at(s.players[12], 1775, 700);
+    const far = at(s.players[13], 1475, 550);
+    s.input.dx = -1; s.input.a = 'pressed';
+    applyKeeperButtons(s.gk, s.input, s.ball, s.players, -1, 101, s.aim, s.out);
+    const u = unitTo(s.gk, far);
+    expect(s.ball.owner).toBeNull();
+    expect(speedOf(s.ball)).toBeCloseTo(LONG_PASS_SPEED, 6);
+    expect(s.ball.vz).toBe(LONG_PASS_VZ);
+    expect(s.ball.vx / speedOf(s.ball)).toBeCloseTo(u.x, 10);
+    expect(s.ball.vy / speedOf(s.ball)).toBeCloseTo(u.y, 10);
+    expect(s.out).toMatchObject({ kind: 'long-pass', ok: true, actorId: 9 });
+  });
+  it('a neutral d-pad opens the cone along attackDir (towards the rival half), not along the keeper\'s facing; the d-pad on +y opens it there', () => {
+    const neutral = holding();
+    const ahead = at(neutral.players[12], 1775, 700);   // in the -x cone only
+    at(neutral.players[14], 1975, 850);                 // 200 u straight down (+y): in the +y cone only
+    neutral.input.b = 'pressed';                        // dx = dy = 0
+    applyKeeperButtons(neutral.gk, neutral.input, neutral.ball, neutral.players, -1, 101, neutral.aim, neutral.out);
+    const u = unitTo(neutral.gk, ahead);
+    expect(neutral.ball.vx / speedOf(neutral.ball)).toBeCloseTo(u.x, 10);
+    expect(neutral.ball.vy / speedOf(neutral.ball)).toBeCloseTo(u.y, 10);
+    const down = holding();
+    at(down.players[12], 1775, 700);
+    const below = at(down.players[14], 1975, 850);
+    down.input.dy = 1; down.input.b = 'pressed';
+    applyKeeperButtons(down.gk, down.input, down.ball, down.players, -1, 101, down.aim, down.out);
+    const v = unitTo(down.gk, below);
+    expect(down.ball.vx / speedOf(down.ball)).toBeCloseTo(v.x, 10);
+    expect(down.ball.vy / speedOf(down.ball)).toBeCloseTo(v.y, 10);
+  });
+  it('with nobody in the cone the throw goes straight along the aim (d-pad on +x: no mate that way)', () => {
+    const s = holding();
+    s.input.dx = 1; s.input.b = 'pressed';
+    applyKeeperButtons(s.gk, s.input, s.ball, s.players, -1, 101, s.aim, s.out);
+    expect(s.ball.vx).toBeCloseTo(SHORT_PASS_SPEED, 6);
+    expect(s.ball.vy).toBe(0);
+    expect(s.out.kind).toBe('short-pass');
+  });
+  it('only a press fires: a held B (a steal attempt carried over) throws nothing; A and B pressed together → A wins', () => {
+    const held = holding();
+    at(held.players[12], 1775, 700);
+    held.input.dx = -1; held.input.b = 'held';
+    applyKeeperButtons(held.gk, held.input, held.ball, held.players, -1, 101, held.aim, held.out);
+    expect(held.ball.owner).toBe(9);
+    expect(held.out.kind).toBe('none');
+    const both = holding();
+    at(both.players[12], 1775, 700);
+    both.input.dx = -1; both.input.a = 'pressed'; both.input.b = 'pressed';
+    applyKeeperButtons(both.gk, both.input, both.ball, both.players, -1, 101, both.aim, both.out);
+    expect(both.out.kind).toBe('long-pass');
+  });
+  it('never on the step the keeper took the ball (S-GK.4), never for an outfield player, never for a keeper without the ball; no rng anywhere', () => {
+    const same = holding();                           // ownerSinceStep = 100
+    at(same.players[12], 1775, 700);
+    same.input.dx = -1; same.input.b = 'pressed';
+    applyKeeperButtons(same.gk, same.input, same.ball, same.players, -1, 100, same.aim, same.out);
+    expect(same.ball.owner).toBe(9);
+    expect(same.out.kind).toBe('none');
+    applyKeeperButtons(same.gk, same.input, same.ball, same.players, -1, 101, same.aim, same.out);
+    expect(same.ball.owner).toBeNull();
+    const w = world();
+    const p = at(w.players[4], 500, 500);
+    givePossession(w.ball, p, 0);
+    const input = createTeamInput(); input.b = 'pressed';
+    applyKeeperButtons(p, input, w.ball, w.players, 1, 5, w.aim, w.out);
+    expect(w.ball.owner).toBe(4);
+    applyKeeperButtons(w.players[0], input, w.ball, w.players, 1, 5, w.aim, w.out);
+    expect(w.ball.owner).toBe(4);
+    expect(w.out.kind).toBe('none');
+    // The signature has no rng: a throw can never move the deterministic draw count.
+  });
+});
+```
+(`createTeamInput` y `type TeamInput` ya se importan en `actions.test.ts`.) Regla anti-coincidencia: los compañeros de prueba están a 206/510 u y a 14°/11° del eje (nunca en el borde de 45°), el `facing` del portero apunta a +y para que "neutro = `attackDir`" no pase por casualidad, y los aparcados quedan a > 85° de todos los conos usados.
+
+Run: `npx vitest run components/games/football-logic/actions.test.ts` → FAIL (`applyKeeperButtons` no existe).
+
+- [ ] **Step 11: Implementar `applyKeeperButtons` en `actions.ts`**
+
+```ts
+// actions.ts — añadir tras releaseFromGoalkeeper
+
+// D4 (spec goalkeeper rule 4): while the keeper holds the ball its team's TeamInput
+// comes HERE instead of applyButtons (stepOpenPlay routes it). The d-pad aims; in
+// neutral the cone opens straight towards the rival half, (attackDir, 0), never
+// along the keeper's facing (S-GK.1). B 'pressed' = hand throw = assisted short
+// pass (nearest outfield mate in the 45° cone, aimPass, ruling R10); A 'pressed' =
+// assisted long pass (farthest mate in the cone); nobody in the cone = straight.
+// A throw is a set piece in spirit: exact, no rng, no angular error. Only 'pressed'
+// fires (S-GK.2), A wins a double press (S-GK.3), and nothing fires on the very step
+// the keeper took the ball (S-GK.4), so a catch (before the buttons) and a pickUp
+// (after them, in the physics) both release from the next step on. Like
+// releaseFromGoalkeeper it never clears `out`: stepOpenPlay wipes the slot.
+export function applyKeeperButtons(gk: PlayerState, input: TeamInput, ball: BallState, players: readonly PlayerState[], attackDir: 1 | -1, stepCount: number, aim: Vec2, out: ActionEvent): void {
+  if (gk.role !== 'gk' || ball.owner !== gk.id) return;
+  if (stepCount <= ball.ownerSinceStep) return;
+  const longOne = input.a === 'pressed';
+  if (!longOne && input.b !== 'pressed') return;
+  if (!normalizeInto(aim, input.dx, input.dy)) {
+    aim.x = attackDir;
+    aim.y = 0;
+  }
+  aimPass(gk, players, aim.x, aim.y, longOne, stepCount, aim);
+  gk.facingX = aim.x;
+  gk.facingY = aim.y;
+  if (longOne) longPass(gk, ball, aim.x, aim.y, stepCount, out);
+  else shortPass(gk, ball, aim.x, aim.y, stepCount, out);
+}
+```
+Sin asignación: `aim` y `out` son del llamador; `normalizeInto` sobre la cruceta da el vector unitario que `aimPass` exige. `TeamInput` ya está importado en `actions.ts`.
+
+Run: `npx vitest run components/games/football-logic/actions.test.ts` → PASS.
+
+- [ ] **Step 12: Tests que fallan — `profileFor`, `humanProfile`, `quantizeDir`, `laneBlocked`, `applyKickError` (nuevo `ai.test.ts`, parte 1)**
 
 ```ts
 // components/games/football-logic/ai.test.ts
 import { describe, expect, it } from 'vitest';
-import { PITCH, centerY, goalLineX, isInsideSmallArea, goalKickX } from './pitch';
+import { PITCH, centerY, goalLineX, isInsideSmallArea } from './pitch';
 import { FORMATIONS, TEAMS, type Formation, type TeamDef } from './teams';
 import { dist } from './geometry';
 import { createTeamInput, type Axis, type TeamInput } from './input';
@@ -894,7 +1047,7 @@ describe('applyKickError: one rng draw, centred on zero, smaller at level 8 than
 
 Run: `npx vitest run components/games/football-logic/ai.test.ts` → FAIL (`./ai` no existe).
 
-- [ ] **Step 11: `ai.ts` — perfil, cuantización, carril y error angular**
+- [ ] **Step 13: `ai.ts` — perfil, cuantización, carril y error angular**
 
 ```ts
 // components/games/football-logic/ai.ts
@@ -993,7 +1146,8 @@ export function profileFor(def: TeamDef, difficulty: number): AiProfile {
 }
 
 // The human team's profile (ruling R10: no angular error on human kicks). The
-// keeper and the penalty read use the same difficulty as the CPU (assumption S9).
+// keeper and the penalty read use the same difficulty as the CPU: the ONLY
+// difference is the zero kick error. // confirmed by owner 2026-09-05 (D3, S9)
 export function humanProfile(def: TeamDef, difficulty: number): AiProfile {
   const p = profileFor(def, difficulty);
   p.passErrorDeg = 0;
@@ -1060,7 +1214,7 @@ export function applyKickError(ball: BallState, errorDeg: number, rng: Rng): voi
 ```
 Run: `npx vitest run components/games/football-logic/ai.test.ts` → los cuatro `describe` de arriba PASS (los de colocación y portero aún no existen).
 
-- [ ] **Step 12: Tests que fallan — colocación viva (`positionTeam`) y portero (`keeperStep`, `keeperCatch`)**
+- [ ] **Step 14: Tests que fallan — colocación viva (`positionTeam`) y portero (`keeperStep`, `keeperCatch`)**
 
 ```ts
 // ai.test.ts — añadir
@@ -1221,7 +1375,7 @@ describe('keeperStep: on its line closing the angle, out only inside the small a
     keeperStep(gk, w.players, w.ball, 1, PITCH, 0);
     expect(gk.wantX).toBe(0);
   });
-  it('a keeper off its line (pushed by a set piece) with a mate on the ball goes back to the line, and stands still holding the ball', () => {
+  it('a keeper off its line (pushed by a set piece) with a mate on the ball goes back to the line, and stands still holding the ball (D4: the d-pad aims its throw, it never moves it)', () => {
     const w = world();
     givePossession(w.ball, w.players[4], 0);
     const gk = at(w.players[0], 200, 800);
@@ -1311,7 +1465,7 @@ describe('keeperCatch: one roll per approach, penalised by shot charge, never on
 
 Run: `npx vitest run components/games/football-logic/ai.test.ts` → FAIL (`positionTeam`, `keeperStep`, `keeperCatch` no existen).
 
-- [ ] **Step 13: `ai.ts` — colocación viva y portero**
+- [ ] **Step 15: `ai.ts` — colocación viva y portero**
 
 ```ts
 // ai.ts — añadir
@@ -1351,8 +1505,11 @@ function chaseRank(p: PlayerState, players: readonly PlayerState[], ball: BallSt
 }
 
 // Spec "Los compañeros sin balón" 1-4, applied to every outfield player of `team`
-// except the controlled one (moved by its TeamInput). Runs inside stepMatch for
-// BOTH teams (final-review recommendation 2), so the replay stays seed + inputs.
+// except the controlled one (moved by its TeamInput; -1 = nobody is, D4: while the
+// keeper holds the ball the field player is placed here too). Runs inside stepMatch
+// for BOTH teams (final-review recommendation 2), so the replay stays seed + inputs.
+// Pursuit without possession: the CHASERS[strategy] nearest chase the ball (rank 0
+// is the controlled), the next covers, the rest anchor. // confirmed by owner 2026-09-05 (D1, S3)
 // `scratch` is the caller's Vec2 for anchorFor.
 export function positionTeam(players: PlayerState[], ball: BallState, team: 0 | 1, formation: Formation, strategy: Strategy, attackDir: 1 | -1, controlled: number, pitch: PitchDef, stepCount: number, scratch: Vec2): void {
   const inPossession = teamHasBall(players, ball, team);
@@ -1444,13 +1601,16 @@ export function keeperStep(gk: PlayerState, players: readonly PlayerState[], bal
   steerTo(gk, lineX, targetY, GK_SPEED);
 }
 
-// Spec "El portero" 2: a moving ball inside GK_CATCH_RADIUS is caught with
+// Spec "El portero" 2 (D4): a moving ball inside GK_CATCH_RADIUS is caught with
 // rng() < catchChance - penalty, ONE roll per approach (rolled[team] is reset when
-// the ball leaves the radius or gets an owner). The penalty grows linearly with
-// the ball speed from SHOT_SPEED_MIN (0) to SHOT_SPEED_MAX (CHARGED_SHOT_CATCH_PENALTY),
-// so passes are never penalised (assumption S7). A ball over a line is the
-// referee's (same strict comparisons as pickUp, ruling R17); a high ball is not
-// catchable (assumption S10, same rule as the pickup).
+// the ball leaves the radius or gets an owner). A catch is POSSESSION, nothing
+// else: givePossession, the same path pickUp takes for a ball at rest, so the
+// 2 s hold (ownerSinceStep + GK_HOLD_STEPS), the button release and the automatic
+// one are one mechanism; play stays alive, no phase changes. The penalty grows
+// linearly with the ball speed from SHOT_SPEED_MIN (0) to SHOT_SPEED_MAX
+// (CHARGED_SHOT_CATCH_PENALTY), so passes are never penalised (assumption S7). A
+// ball over a line is the referee's (same strict comparisons as pickUp, ruling
+// R17); a high ball is not catchable (assumption S10, same rule as the pickup).
 export function keeperCatch(gk: PlayerState, ball: BallState, catchChance: number, rolled: [boolean, boolean], rng: Rng, pitch: PitchDef, stepCount: number, out: ActionEvent): boolean {
   const moving = ball.vx !== 0 || ball.vy !== 0 || ball.vz !== 0 || ball.z !== 0;
   const inside = ball.x >= 0 && ball.x <= pitch.width && ball.y >= 0 && ball.y <= pitch.height;
@@ -1480,12 +1640,12 @@ export function keeperCatch(gk: PlayerState, ball: BallState, catchChance: numbe
 ```
 Run: `npx vitest run components/games/football-logic/ai.test.ts` → PASS. Si el test "two mates 41 u apart" no cuadra en el factor `1.99`, **medir** la separación real que sale de la fórmula S4 (cada uno empujado 19 u) y ajustar solo el fixture, nunca la regla.
 
-- [ ] **Step 14: Tests que fallan en `match.test.ts` — perfiles en `createMatch` (expectativas 3-4), atajada → saque de puerta, criterio 11 "responde en el acto" (R19)**
+- [ ] **Step 16: Tests que fallan en `match.test.ts` — perfiles en `createMatch` (expectativas 3-4), atajada → posesión del portero y saque a botón/automático (D4, tests a-b-c-e), criterio 11 "responde en el acto" (R19)**
 
 Cambios mecánicos primero:
 ```ts
 // match.test.ts — cabecera
-import { humanProfile, profileFor, type AiProfile } from './ai';
+import { profileFor, type AiProfile } from './ai';   // humanProfile has its consumer in ai.test.ts, not here
 const PROFILES: readonly [AiProfile, AiProfile] = [profileFor(TEAMS[0], 5), profileFor(TEAMS[1], 5)];
 function fresh(): MatchState {
   return createMatch(TEAM_PAIR, FORMATIONS, PITCH, PROFILES);
@@ -1493,24 +1653,120 @@ function fresh(): MatchState {
 ```
 `createMatch(TEAM_PAIR, three, PITCH)` en el test de "stores the formation…" pasa a `createMatch(TEAM_PAIR, three, PITCH, PROFILES)`. En el test de `createMatch`, `expect(m.gkPenaltyRead).toEqual(...)` → `expect(m.profiles).toBe(PROFILES); expect(m.catchRolled).toEqual([false, false]);` y quitar `DEFAULT_PENALTY_READ_CHANCE` del import. En `sameMatch`, sustituir la línea de `gkPenaltyRead` por `if (a.catchRolled[0] !== b.catchRolled[0] || a.catchRolled[1] !== b.catchRolled[1]) return false;`.
 
-Tests nuevos:
+Tests nuevos (helpers primero; `countingRng` y `sameMatch` ya existen en el fichero):
 ```ts
-describe('the keeper catch restarts with an automatic goal kick (spec keeper rule 2, S7)', () => {
-  it('a caught shot becomes a goal-kick set piece for the keeper\'s team at goalKickX, and the referee never sees the ball', () => {
-    const m = fresh();
-    resumePlay(m);
-    const keeper = m.players[9];
-    keeper.x = PITCH.width - GK_LINE_DIST; keeper.y = CY;
-    // A 700 u/s shot 31 u short of the keeper, straight at him; rng draw 0 catches for any profile.
-    freeBall(m, keeper.x - 31, CY, 700, 0);
-    stepMatch(m, IDLE, fixedRng([0]));
-    expect(m.phase).toBe('set-piece');
-    expect(m.setPiece?.kind).toBe('goal-kick');
-    expect(m.setPiece?.team).toBe(1);
-    expect(m.setPiece?.x).toBe(goalKickX(PITCH, 1));
-    expect(m.score).toEqual([0, 0]);
+// D4 helpers. A free, low ball with a velocity and no kicker lock; a fixed rng that counts its draws.
+function freeBall(m: MatchState, x: number, y: number, vx: number, vy: number): void {
+  const b = m.ball;
+  b.owner = null; b.x = x; b.y = y; b.z = 0; b.vx = vx; b.vy = vy; b.vz = 0;
+  b.kickerId = null; b.kickLockUntilStep = 0;
+}
+function fixedRng(values: number[]): CountingRng {
+  let i = 0;
+  const fn: CountingRng = Object.assign(function next(): number {
+    fn.calls++;
+    return values[i++ % values.length];
+  }, { calls: 0 });
+  return fn;
+}
+// Team 1's keeper (id 9) on its line; a 700 u/s shot 31 u short of it (inside GK_CATCH_RADIUS,
+// off the boundary) is caught on the first step with a draw of 0 (any profile catches). Idle
+// input: nobody presses anything. The catch step is stepCount 0, so ownerSinceStep === 0.
+function caught(): { m: MatchState; keeper: PlayerState } {
+  const m = fresh();
+  resumePlay(m);
+  const keeper = m.players[9];
+  keeper.x = PITCH.width - GK_LINE_DIST; keeper.y = CY;
+  freeBall(m, keeper.x - 31, CY, 700, 0);
+  stepMatch(m, IDLE, fixedRng([0]));
+  return { m, keeper };
+}
+
+describe('D4: a catch is possession, not a set piece; the team throws by button or the engine does at 2 s (spec keeper rules 2 and 4)', () => {
+  it('(a) the caught ball belongs to the keeper, play goes on in the same phase with a gk-catch event, and a rival at steal range cannot take it (no rng draw)', () => {
+    const { m, keeper } = caught();
+    expect(m.ball.owner).toBe(9);
+    expect(m.ball.ownerSinceStep).toBe(0);
+    expect(m.phase).toBe('play');
+    expect(m.setPiece).toBeNull();
+    expect(m.scratch.events[9]).toMatchObject({ kind: 'gk-catch', ok: true, actorId: 9 });
+    expect(m.controlled[1]).not.toBe(9);                     // the cursor never sits on the keeper (S-GK.6)
+    const thief = m.players[m.controlled[0]];
+    thief.x = keeper.x - 20; thief.y = CY;                   // inside STEAL_RANGE of the keeper
+    const inputs: [TeamInput, TeamInput] = [createTeamInput(), createTeamInput()];
+    inputs[0].b = 'pressed';
+    const rng = fixedRng([0]);
+    stepMatch(m, inputs, rng);
+    expect(m.ball.owner).toBe(9);
+    expect(rng.calls).toBe(0);                               // steal() refuses a keeper owner before rolling
+    expect(m.phase).toBe('play');
   });
-  it('the same shot with a draw that misses flies on, and the referee calls the goal two steps later', () => {
+  it('(b) B on the 10th step of the hold throws a SHORT pass to the nearest mate in the d-pad cone; A throws a LONG one to the farthest — by the keeper, exact, no rng', () => {
+    for (const button of ['b', 'a'] as const) {
+      const { m, keeper } = caught();
+      const rng = countingRng(3);
+      for (let i = 0; i < 9; i++) stepMatch(m, IDLE, rng);
+      expect(m.ball.owner).toBe(9);
+      // Two mates below the keeper (+y): 155 u and 461 u away, both inside the +y cone. Every 3-3-2
+      // mate is at x <= 1587 with |dy| <= 325 after nine steps of drift: outside that cone (dot < 0.64).
+      const near = m.players[12]; near.x = keeper.x - 40; near.y = CY + 150;
+      const far = m.players[13]; far.x = keeper.x - 100; far.y = CY + 450;
+      const target = button === 'b' ? near : far;
+      const d = dist(keeper.x, keeper.y, target.x, target.y);
+      const ux = (target.x - keeper.x) / d;
+      const uy = (target.y - keeper.y) / d;
+      const inputs: [TeamInput, TeamInput] = [createTeamInput(), createTeamInput()];
+      inputs[1].dy = 1;
+      inputs[1][button] = 'pressed';
+      stepMatch(m, inputs, rng);
+      expect(m.ball.owner).toBeNull();
+      expect(m.ball.kickerId).toBe(9);
+      expect(m.scratch.events[9]).toMatchObject({ kind: button === 'b' ? 'short-pass' : 'long-pass', ok: true, actorId: 9 });
+      expect(m.ball.vy / m.ball.vx).toBeCloseTo(uy / ux, 6);  // exact aim: a keeper's throw carries no angular error
+      if (button === 'a') expect(m.ball.z).toBeGreaterThan(0); else expect(m.ball.z).toBe(0);
+      expect(m.phase).toBe('play');
+      expect(rng.calls).toBe(0);                             // ten steps of a held ball and a throw: not one draw
+    }
+  });
+  it('(c) with nobody pressing, the automatic release fires on exactly the GK_HOLD_STEPS-th step after the catch, a long pass at the freest own-half mate, and not one step before', () => {
+    const { m, keeper } = caught();
+    const rng = countingRng(3);
+    for (let i = 0; i < GK_HOLD_STEPS - 1; i++) stepMatch(m, IDLE, rng);
+    expect(m.ball.owner).toBe(9);
+    expect(m.phase).toBe('play');
+    const expected = { x: 0, y: 0 };
+    // The target as the engine will see it: positions only change in stepPhysics, after the release.
+    expect(freestMateDir(keeper, m.players, -1, PITCH, expected)).toBe(true);
+    stepMatch(m, IDLE, rng);
+    expect(m.ball.owner).toBeNull();
+    expect(m.scratch.events[9]).toMatchObject({ kind: 'gk-release', ok: true, actorId: 9 });
+    expect(m.ball.vy / m.ball.vx).toBeCloseTo(expected.y / expected.x, 6);
+    expect(m.ball.z).toBeGreaterThan(0);                     // a long pass: airborne
+    expect(m.phase).toBe('play');
+    expect(rng.calls).toBe(0);                               // the whole hold and the release: no draw (no error on a keeper's kick)
+    expect(GK_HOLD_STEPS).toBe(stepsFor(2));
+  });
+  it('(e) while the keeper holds the ball the d-pad and the sprint do not move the field controlled: the AI places it, identically with and without input; with a free ball the same d-pad does move it', () => {
+    const a = caught().m;
+    const b = caught().m;
+    expect(sameMatch(a, b)).toBe(true);
+    const c1 = a.controlled[1];
+    const before: [number, number] = [a.players[c1].x, a.players[c1].y];
+    const inputs: [TeamInput, TeamInput] = [createTeamInput(), createTeamInput()];
+    inputs[1].dx = 1; inputs[1].dy = -1; inputs[1].c = 'held';
+    stepMatch(a, inputs, createRng(1));
+    stepMatch(b, IDLE, createRng(1));
+    expect(a.ball.owner).toBe(9);
+    expect(sameMatch(a, b)).toBe(true);
+    expect([a.players[c1].x, a.players[c1].y]).not.toEqual(before);   // moved, by positionTeam (drift towards the ball)
+    // Control, so the equality above is not vacuous: a FREE ball at rest and the same d-pad move the controlled.
+    const free = fresh(); resumePlay(free); freeBall(free, 1000, CY, 0, 0);
+    const still = fresh(); resumePlay(still); freeBall(still, 1000, CY, 0, 0);
+    stepMatch(free, inputs, createRng(1));
+    stepMatch(still, IDLE, createRng(1));
+    expect(sameMatch(free, still)).toBe(false);
+  });
+  it('the same shot with a draw that misses flies on (no free pickup of a moving ball by the keeper, S6), and the referee calls the goal a few steps later', () => {
     const m = fresh();
     resumePlay(m);
     const keeper = m.players[9];
@@ -1519,10 +1775,11 @@ describe('the keeper catch restarts with an automatic goal kick (spec keeper rul
     const rng = fixedRng([0.99]);
     stepMatch(m, IDLE, rng);
     expect(m.phase).toBe('play');
-    expect(m.ball.owner).toBeNull();                         // S6: no free pickup of a moving ball by the keeper
+    expect(m.ball.owner).toBeNull();
     for (let i = 0; i < 6 && m.phase === 'play'; i++) stepMatch(m, IDLE, rng);
     expect(m.phase).toBe('goal');
     expect(m.score).toEqual([1, 0]);
+    expect(rng.calls).toBe(1);                               // one roll per approach (catchRolled), never a second
   });
 });
 
@@ -1576,23 +1833,30 @@ describe('criterion 11: live placement responds at once to a formation or strate
   });
 });
 ```
-(importar `goalKickX` de `./pitch` y definir `fixedRng` como en `ai.test.ts`; `sameMatch` es el comparador que ya existe en este fichero.) Sustituir además el bloque de comentario del partido grabado (expectativa 6): quitar "nobody tackles, so there are no fouls and no penalties" y decir que la `policy` sí entra (I1) y que desde la etapa B el `rng` también lo consumen la atajada y el error angular, por lo que la divergencia de la run C llega por cualquiera de los cuatro consumidores.
+(importar `GK_HOLD_STEPS` y `freestMateDir` de `./actions` y `type PlayerState` ya está; `dist` de `./geometry` ya está; `CountingRng`, `countingRng` y `sameMatch` ya existen en el fichero. Regla anti-coincidencia: 31 u y no 39/40; el paso del automático se afirma por `GK_HOLD_STEPS − 1` verde y `GK_HOLD_STEPS` rojo; el control con balón libre de (e) demuestra que la igualdad no es vacía; los `rng.calls === 0` prueban que ni la posesión ni el saque del portero tocan el `rng`.) Sustituir además el bloque de comentario del partido grabado (expectativa 6): quitar "nobody tackles, so there are no fouls and no penalties" y decir que la `policy` sí entra (I1) y que desde la etapa B el `rng` también lo consumen la atajada y el error angular, por lo que la divergencia de la run C llega por cualquiera de los cuatro consumidores.
 
 Run: `npx vitest run components/games/football-logic/match.test.ts` → FAIL (aridad de `createMatch`, `profiles`, atajada, colocación viva).
 
-- [ ] **Step 15: Cablear `match.ts`**
+- [ ] **Step 17: Cablear `match.ts`**
 
 ```ts
 // match.ts — imports
 import { applyKickError, keeperCatch, keeperStep, positionTeam, type AiProfile } from './ai';
-import { goalKickX, centerX, centerY, type PitchDef } from './pitch';
+import {
+  applyButtons, applyKeeperButtons, clearActionEvent, createActionEvent, releaseFromGoalkeeper, stepTackle, updateControlled,
+  type ActionEvent,
+} from './actions';
+// (pitch.ts sigue aportando centerX, centerY y PitchDef; goalKickX NO se importa: la atajada ya no saca de puerta)
 // MatchState: quitar gkPenaltyRead; añadir
   profiles: readonly [AiProfile, AiProfile];
   catchRolled: [boolean, boolean];
+// scratch: gkEvent desaparece; entra liveControlled
+  scratch: { events: ActionEvent[]; liveControlled: [number, number]; call: RefereeCall; aim: Vec2; setPiece: SetPieceState };
 // borrar DEFAULT_PENALTY_READ_CHANCE
 
 export function createMatch(teams: [TeamDef, TeamDef], formationTable: readonly Formation[], pitch: PitchDef, profiles: readonly [AiProfile, AiProfile]): MatchState {
-  // ...igual, con `profiles,` y `catchRolled: [false, false],` en vez de gkPenaltyRead
+  // ...igual, con `profiles,` y `catchRolled: [false, false],` en vez de gkPenaltyRead, y en scratch
+  // `liveControlled: [-1, -1],` en vez de `gkEvent: createActionEvent(),`
 }
 
 // stepMatch, rama kickoff/set-piece:
@@ -1605,50 +1869,78 @@ function stepOpenPlay(match: MatchState, inputs: readonly [TeamInput, TeamInput]
   const { players, ball, scratch } = match;
   for (let i = 0; i < scratch.events.length; i++) clearActionEvent(scratch.events[i]);
   // Stage B (Task 6a): the in-engine AI, applied to BOTH teams so the replay
-  // stays seed + TeamInput. Placement and keeper write the want channel;
-  // the catch is the first rng consumer of the step (team 0, then team 1).
+  // stays seed + TeamInput. Order of the step, fixed for the rng: (1) the catch,
+  // team 0 then team 1 (the only draw before the buttons; D4: a catch is
+  // possession, play goes on); (2) who reads the TeamInput this step -- the field
+  // controlled, or nobody when the keeper holds the ball (its input goes to the
+  // keeper's throw and the field player is placed by the AI, D4); (3) placement
+  // and keeper write the want channel; (4) per team, the throw + automatic
+  // release (exact, no draw) OR the buttons (steal draw) + kick error (one draw);
+  // (5) physics, tackles, referee, clock exactly as in stage A.
+  keeperCatchFor(match, 0, rng);
+  keeperCatchFor(match, 1, rng);
+  scratch.liveControlled[0] = liveControlledFor(match, 0);
+  scratch.liveControlled[1] = liveControlledFor(match, 1);
   runTeamAi(match, 0);
   runTeamAi(match, 1);
-  if (keeperCatchFor(match, 0, rng) || keeperCatchFor(match, 1, rng)) {
-    advanceClock(match);
-    return;
-  }
-  for (let t = 0; t < 2; t++) {
-    const controlledPlayer = players[match.controlled[t]];
-    const ev = scratch.events[controlledPlayer.id];
-    applyButtons(controlledPlayer, inputs[t], ball, players, rng, match.stepCount, scratch.aim, ev);
-    if (ev.ok && (ev.kind === 'shot' || ev.kind === 'short-pass' || ev.kind === 'long-pass')) {
-      applyKickError(ball, ev.kind === 'shot' ? match.profiles[t].shotErrorDeg : match.profiles[t].passErrorDeg, rng);
-    }
-  }
-  for (let t = 0; t < 2; t++) {
-    releaseFromGoalkeeper(players[t * TEAM_SIZE], ball, players, match.attackDir[t], match.pitch, match.stepCount, scratch.aim, scratch.gkEvent);
-    if (scratch.gkEvent.kind === 'gk-release') applyKickError(ball, match.profiles[t].passErrorDeg, rng);
-  }
-  stepPhysics(players, ball, inputs, match.controlled, match.attackDir, match.pitch, match.stepCount);
+  applyTeamInput(match, 0, inputs[0], rng);
+  applyTeamInput(match, 1, inputs[1], rng);
+  stepPhysics(players, ball, inputs, scratch.liveControlled, match.attackDir, match.pitch, match.stepCount);
   // ...el resto (stepTackle, faltas, judgeBall, reloj) exactamente como en la etapa A
 }
 ```
-Las dos privadas nuevas de `match.ts` (unrolled por equipo porque las firmas piden `0 | 1`, sin ningún `as`):
+Las cuatro privadas nuevas de `match.ts` (unrolled por equipo porque las firmas piden `0 | 1`, sin ningún `as`; ninguna asigna):
 
 ```ts
+function keeperOf(match: MatchState, team: 0 | 1): PlayerState {
+  return match.players[team * TEAM_SIZE];
+}
+
+// D4: -1 while this team's keeper holds the ball (nobody reads the d-pad), else the
+// derived controlled. match.controlled itself is untouched: updateControlled keeps
+// the cursor on a field player and stage C reads ball.owner to draw it on the keeper.
+function liveControlledFor(match: MatchState, team: 0 | 1): number {
+  return match.ball.owner === keeperOf(match, team).id ? -1 : match.controlled[team];
+}
+
+// One rng draw at most, only when a roll is actually possible (keeperCatch). A catch
+// is possession -- no set piece, no early return: the step goes on.
+function keeperCatchFor(match: MatchState, team: 0 | 1, rng: Rng): void {
+  const gk = keeperOf(match, team);
+  keeperCatch(gk, match.ball, match.profiles[team].catchChance, match.catchRolled, rng, match.pitch, match.stepCount, match.scratch.events[gk.id]);
+}
+
 function runTeamAi(match: MatchState, team: 0 | 1): void {
   const { players, ball, scratch } = match;
-  positionTeam(players, ball, team, match.formationTable[match.formationIndex[team]], match.strategies[team], match.attackDir[team], match.controlled[team], match.pitch, match.stepCount, scratch.aim);
-  keeperStep(players[team * TEAM_SIZE], players, ball, match.attackDir[team], match.pitch, match.stepCount);
+  positionTeam(players, ball, team, match.formationTable[match.formationIndex[team]], match.strategies[team], match.attackDir[team], scratch.liveControlled[team], match.pitch, match.stepCount, scratch.aim);
+  keeperStep(keeperOf(match, team), players, ball, match.attackDir[team], match.pitch, match.stepCount);
 }
 
-// True when the keeper of `team` caught the ball this step: play restarts with a goal kick (S7).
-function keeperCatchFor(match: MatchState, team: 0 | 1, rng: Rng): boolean {
-  const gk = match.players[team * TEAM_SIZE];
-  if (!keeperCatch(gk, match.ball, match.profiles[team].catchChance, match.catchRolled, rng, match.pitch, match.stepCount, match.scratch.gkEvent)) return false;
-  const side = match.attackDir[team] === 1 ? 0 : 1;
-  callSetPiece(match, 'goal-kick', team, goalKickX(match.pitch, side), centerY(match.pitch));
-  return true;
+// D4 routing. Keeper holding the ball: the TeamInput is the keeper's (throw by button,
+// exact) and, failing that, the automatic release at GK_HOLD_STEPS -- both write the
+// keeper's own slot and neither draws. Otherwise the field controlled gets the
+// buttons (steal draw inside) and its kick gets the profile's angular error (one draw).
+// Team 0 acts first: a simultaneous steal by both resolves in its favour, same
+// lowest-id rule as everywhere; QA item, criterion 14.
+function applyTeamInput(match: MatchState, team: 0 | 1, input: TeamInput, rng: Rng): void {
+  const { players, ball, scratch } = match;
+  const gk = keeperOf(match, team);
+  if (ball.owner === gk.id) {
+    applyKeeperButtons(gk, input, ball, players, match.attackDir[team], match.stepCount, scratch.aim, scratch.events[gk.id]);
+    releaseFromGoalkeeper(gk, ball, players, match.attackDir[team], match.pitch, match.stepCount, scratch.aim, scratch.events[gk.id]);
+    return;
+  }
+  const controlledPlayer = players[match.controlled[team]];
+  const ev = scratch.events[controlledPlayer.id];
+  applyButtons(controlledPlayer, input, ball, players, rng, match.stepCount, scratch.aim, ev);
+  if (ev.ok && (ev.kind === 'shot' || ev.kind === 'short-pass' || ev.kind === 'long-pass')) {
+    applyKickError(ball, ev.kind === 'shot' ? match.profiles[team].shotErrorDeg : match.profiles[team].passErrorDeg, rng);
+  }
 }
 ```
+> Por qué el orden atajada → `liveControlled` → colocación: la atajada es la única que cambia `ball.owner` antes de los botones, y tanto `liveControlledFor` como `positionTeam` (`inPossession`) y `keeperStep` (parado con el balón) leen ese dueño; así, en el mismo paso de la atajada, el equipo ya se coloca en posesión y el controlado de campo ya no obedece a la cruceta. `releaseFromGoalkeeper` tras `applyKeeperButtons` es seguro sin guarda: si el botón sacó, `ball.owner !== gk.id` y sale sin tocar el evento; si no, decide por `ownerSinceStep`. `stepPhysics` conserva su firma: recibe `scratch.liveControlled` en vez de `match.controlled`.
 
-> Simultaneidad (deuda del ledger, decisión escrita): los robos simultáneos siguen resolviendo equipo 0 primero (el bucle de `applyButtons` va en orden de equipo) y solo se juzga una falta por paso (gana la víctima del equipo 0). Es un desempate determinista por `id`, el mismo criterio de toda la carpeta; se documenta con una línea de comentario junto al bucle de `applyButtons` ("team 0 acts first: a simultaneous steal by both resolves in its favour, same lowest-id rule as everywhere; QA item, criterion 14") y va a la lista de QA del handoff. Sin cambio de código en la etapa B.
+> Simultaneidad (deuda del ledger, decisión escrita): los robos simultáneos siguen resolviendo equipo 0 primero (el bucle de `applyButtons` va en orden de equipo) y solo se juzga una falta por paso (gana la víctima del equipo 0). Es un desempate determinista por `id`, el mismo criterio de toda la carpeta; queda documentado en el comentario de cabecera de `applyTeamInput` (arriba) y va a la lista de QA del handoff. Sin cambio de código en la etapa B.
 
 En `set-pieces.ts`, CARRY #20, junto a `nearestOutfield`:
 ```ts
@@ -1659,7 +1951,7 @@ En `set-pieces.ts`, CARRY #20, junto a `nearestOutfield`:
 
 Run: `npx vitest run` → **todo verde**. Contar: 760 + nuevos. `npx tsc --noEmit` limpio. Si alguna de las cuatro trazas de reloj en vacío (N1) o el partido grabado falla: **BLOCKED con la medición** (ver la lista de caducidad: no son expectativas que se relajen).
 
-- [ ] **Step 16: Test que falla — fallback de distancia cero de `pushRivalsAway` (CARRY #19), ahora alcanzable**
+- [ ] **Step 18: Test que falla — fallback de distancia cero de `pushRivalsAway` (CARRY #19), ahora alcanzable**
 
 ```ts
 // set-pieces.test.ts — añadir en describe('beginSetPiece')
@@ -1677,17 +1969,17 @@ Run: `npx vitest run` → **todo verde**. Contar: 760 + nuevos. `npx tsc --noEmi
 ```
 Run: `npx vitest run components/games/football-logic/set-pieces.test.ts` → PASS a la primera si la rama existe (existe desde la etapa A: `set-pieces.ts:81-84`); comprobar por **mutación** que el test la cubre: cambiar temporalmente `scratch.x = -attackDir[sp.team]` por `scratch.x = attackDir[sp.team]` → el test debe fallar; restaurar.
 
-- [ ] **Step 17: Verificación de la Task 6a y grep de determinismo**
+- [ ] **Step 19: Verificación de la Task 6a y grep de determinismo**
 
-Run: `npx vitest run` → verde (≈ 760 + ~45). `npx tsc --noEmit` limpio. `grep -rn "Math.random\|Date.now\|performance.now\|Math.sin\|Math.cos\|Math.atan2\|Math.hypot" components/games/football-logic/` → vacío. Recorrer `grep -n "^export" components/games/football-logic/ai.ts`: cada símbolo con consumidor en `match.ts` o `ai.test.ts`.
+Run: `npx vitest run` → verde (≈ 760 + ~57: 45 de la versión del 04-sep más los 7 de `applyKeeperButtons`/`releaseFromGoalkeeper` en `actions.test.ts` y los 5 de D4 en `match.test.ts`). `npx tsc --noEmit` limpio. `grep -rn "Math.random\|Date.now\|performance.now\|Math.sin\|Math.cos\|Math.atan2\|Math.hypot" components/games/football-logic/` → vacío. `grep -rn "gkEvent\|goalKickX" components/games/football-logic/` → `gkEvent` en ningún sitio; `goalKickX` solo en `pitch.ts`, `referee.ts` y `pitch.test.ts`. Recorrer `grep -n "^export" components/games/football-logic/ai.ts`: cada símbolo con consumidor en `match.ts` o `ai.test.ts`; `applyKeeperButtons` consumido por `match.ts` y `actions.test.ts`.
 
 Re-medir el partido grabado de `match.test.ts` (pasos, marcador, fases, tiros libres, `firstMismatchC`) y reescribir su comentario con los números nuevos (expectativa 6). Reportar en el informe de la tarea la cifra de tests y las mediciones.
 
-- [ ] **Step 18: Propose commit**
+- [ ] **Step 20: Propose commit**
 
 Working tree verificado. Mensaje propuesto (lo ejecuta Paco):
 
-`feat(world-cup): in-engine AI — want channel, live placement by formation and strategy, keeper on its line with catch and profile-driven kick error`
+`feat(world-cup): in-engine AI — want channel, live placement by formation and strategy, keeper on its line that catches and holds (throw by button or automatic release at 2 s), profile-driven kick error`
 
 ---
 
@@ -1700,7 +1992,7 @@ Working tree verificado. Mensaje propuesto (lo ejecuta Paco):
 - Test: `components/games/football-logic/ai.test.ts`
 
 **Interfaces:**
-- Consumes: todo lo de la Task 6a más `pickPassTarget`, `STEAL_RANGE`, `SHOT_CHARGE_STEPS`, `LONG_PASS_HOLD_STEPS` (`actions.ts`); `TACKLE_DIST`, `anchorFor`, `isPlayerDown` (`players.ts`); `PenaltySide` (`set-pieces.ts`, tipo); `MatchState` (`match.ts`, **solo tipo**); `HALF_STEPS` (`clock.ts`); `createTeamInput`, `checkTeamInput`, `copyTeamInput`, `toAxis` (`input.ts`).
+- Consumes: todo lo de la Task 6a más `pickPassTarget`, `STEAL_RANGE`, `SHOT_CHARGE_STEPS`, `LONG_PASS_HOLD_STEPS` (`actions.ts`); `TACKLE_DIST`, `isPlayerDown` (`players.ts`); `PenaltySide` (`set-pieces.ts`, tipo); `MatchState` (`match.ts`, **solo tipo**); `HALF_STEPS` (`clock.ts`); `createTeamInput`, `checkTeamInput`, `copyTeamInput`, `toAxis` (`input.ts`).
 - Produces (lo usan la Task 7, el componente de la etapa C y las sondas del cierre):
 
 ```ts
@@ -1734,15 +2026,15 @@ export const STRATEGY_REVIEW_SECONDS = 5;
 export const LATE_GAME_SECONDS = 30;
 ```
 
-### Supuestos de la Task 6b (marcados `// Stage B assumption, not in the spec — review in QA`)
+### Supuestos de la Task 6b (marcados `// Stage B assumption, not in the spec — review in QA`, salvo S14 y S17, confirmados por Paco el 05-sep: `// confirmed by owner 2026-09-05`)
 
 - **S11 · Lado del penalti de la CPU**: uniforme entre −1/0/1 con una tirada de su `rng`, elegido una vez por penalti y mantenido durante la cuenta atrás. Los demás saques dejan la dirección por defecto del motor (hacia el centro de la portería rival).
 - **S12 · Esquiva al conducir**: `v = unit(goal − me) − unit(rival − me) · (1 − dRival / DODGE_DIST)` con `DODGE_DIST = 150`; con presión y sin carril, `v = unit(goal − me) − unit(rival − me)` (peso completo: "hacia el lado contrario").
 - **S13 · "150 u de pista libre"**: `laneBlocked` con `SPRINT_FREE_DIST` de largo y `SPRINT_LANE_RADIUS = 60` de radio (el mismo radio que la línea de chut).
-- **S14 · Sin balón**: el controlado persigue el balón cada paso (sin puerta de reacción: es lo que hace el humano con la cruceta) y sprinta si está a más de `SPRINT_FREE_DIST`; la **acción defensiva** (robo a < `STEAL_RANGE`, entrada a < `TACKLE_DIST` **solo de frente**, `dot(me − owner, owner.facing) > 0`, y solo si `rng() < tackleChance`) se evalúa en la puerta de reacción. `tackleChance` es, por tanto, la **disposición** a entrar (como `aggression` en Vault Fighter), no el éxito de la entrada, que sigue siendo geométrico.
+- **S14 · Sin balón — CONFIRMADO por Paco el 05-sep (D2)**: el controlado persigue el balón cada paso (sin puerta de reacción: es lo que hace el humano con la cruceta) y sprinta si está a más de `SPRINT_FREE_DIST`; la **acción defensiva** (robo a < `STEAL_RANGE`, entrada a < `TACKLE_DIST` **solo de frente**, `dot(me − owner, owner.facing) > 0`, y solo si `rng() < tackleChance`) se evalúa en la puerta de reacción. `tackleChance` es la **disposición** de la CPU a intentar robo o entrada a alcance en cada tick de reacción (como `aggression` en Vault Fighter); el éxito del robo sigue siendo `STEAL_CHANCE` 65 % / 35 % frente a sprint para los dos equipos, y el de la entrada, geométrico. Etiqueta en código: `// confirmed by owner 2026-09-05 (D2)`.
 - **S15 · Un solo rayo de chut**: el chut sale por la cruceta (8 direcciones): recto `(attack, 0)` si `|me.y − cy| < goalWidth/2 − SHOT_POST_MARGIN`, diagonal `(attack, ±1)` si ese rayo entra entre los postes con el mismo margen; `SHOT_POST_MARGIN = 20`. Sin rayo que entre, no chuta y sigue conduciendo hacia `(goalX, cy)`.
 - **S16 · Al ganar el balón se decide en el acto** (`plan === 'none'` fuerza la decisión); a partir de ahí, cada `reactionSteps`.
-- **S17 · Con el portero propio en posesión**, el controlado va a su ancla (con la estrategia) hasta que el portero saque.
+- **S17 · Con el portero propio en posesión — CONFIRMADO por Paco el 05-sep (D4)**: la CPU **no pulsa botones** (saca siempre con el automático a los 2 s) y emite entrada neutra (`dx = dy = 0`, A/B/C `'up'`): el motor enruta ese `TeamInput` al saque del portero (D4), así que la cruceta no movería al controlado de campo, que se coloca por `positionTeam` (ancla + deriva) igual que el resto. Ni una tirada del `rng` de la CPU en ese estado. Etiqueta en código: `// confirmed by owner 2026-09-05 (D4)`.
 - **S18 · La CPU no cambia de formación** (el spec solo fija el cambio de estrategia): `out.formation = match.formationIndex[team]`.
 
 - [ ] **Step 1: Mover las constantes de la parte a `clock.ts` y re-exportarlas**
@@ -1819,7 +2111,8 @@ export const STRATEGY_REVIEW_SECONDS = 5;
 export const LATE_GAME_SECONDS = 30;
 const STRATEGY_REVIEW_STEPS = stepsFor(STRATEGY_REVIEW_SECONDS);
 const LATE_GAME_STEPS = stepsFor(LATE_GAME_SECONDS);
-// Stage B assumptions S12-S15, not in the spec — review in QA
+// Stage B assumptions S12, S13 and S15, not in the spec — review in QA (S14, the
+// defensive roll in `chase`, is confirmed by owner 2026-09-05, D2)
 const DODGE_DIST = 150;
 const SPRINT_LANE_RADIUS = 60;
 const SHOT_POST_MARGIN = 20;
@@ -2038,14 +2331,18 @@ describe('decideTeamInput without the ball: chase every step, act at the gate', 
     decideTeamInput(s.m, 0, s.m.profiles[0], s.state, () => { calls++; return 0; }, s.out);
     expect(calls).toBe(0);
   });
-  it('with our own keeper holding the ball, the controlled walks to its anchor', () => {
+  it('(d) with our own keeper holding the ball the CPU presses nothing and points nowhere (D4: the engine would route A/B to the keeper\'s throw; the CPU always leaves it to the automatic release) and draws nothing', () => {
     const s = scenario();
     givePossession(s.m.ball, s.m.players[0], 0);
-    at(s.me, 1500, 100, 1, 0);                                // slot 4 anchor is (900, 650): down-left
-    const out = decide(s);
-    expect([out.dx, out.dy]).toEqual([-1, 1]);
-    expect(out.a).toBe('up');
-    expect(out.b).toBe('up');
+    at(s.me, 1500, 100, 1, 0);                                // far from its anchor: a d-pad towards it would be (-1, 1)
+    let calls = 0;
+    for (let step = 0; step < 130; step++) {                   // longer than GK_HOLD_STEPS: the gate reopens several times
+      s.m.stepCount = step;
+      decideTeamInput(s.m, 0, s.m.profiles[0], s.state, () => { calls++; return 0; }, s.out);
+      expect([s.out.dx, s.out.dy, s.out.a, s.out.b, s.out.c]).toEqual([0, 0, 'up', 'up', 'up']);
+    }
+    expect(calls).toBe(0);
+    expect(s.state.plan).toBe('none');
   });
 });
 
@@ -2290,6 +2587,9 @@ function chase(match: MatchState, team: 0 | 1, me: PlayerState, profile: AiProfi
   if (dO >= TACKLE_DIST) return;
   const inFront = (me.x - owner.x) * owner.facingX + (me.y - owner.y) * owner.facingY > 0;
   if (!inFront) return;
+  // tackleChance is the WILLINGNESS to slide at reach on each reaction tick; the
+  // outcome stays geometric (stepTackle) and steals keep STEAL_CHANCE for both
+  // teams. // confirmed by owner 2026-09-05 (D2, S14)
   if (rng() < profile.tackleChance) out.a = 'pressed';
 }
 
@@ -2336,16 +2636,17 @@ export function decideTeamInput(match: MatchState, team: 0 | 1, profile: AiProfi
   }
   state.plan = 'none';
   if (ball.owner !== null && players[ball.owner].team === team) {
-    // S17: our keeper has it — offer by position (the anchor with the strategy)
-    anchorFor(match.formationTable[match.formationIndex[team]].slots[me.slot], match.strategies[team], match.attackDir[team], match.pitch, state.dir);
-    out.dx = toAxis(state.dir.x - me.x, CHASE_DEAD_ZONE);
-    out.dy = toAxis(state.dir.y - me.y, CHASE_DEAD_ZONE);
+    // A same-team owner that is not `me` can only be our keeper (updateControlled
+    // hands the cursor to any outfield owner). D4: the engine routes this TeamInput
+    // to the keeper's throw; the CPU never presses, so neutral input = the
+    // automatic release at GK_HOLD_STEPS, and positionTeam places the field
+    // controlled meanwhile. // confirmed by owner 2026-09-05 (D4, S17)
     return;
   }
   chase(match, team, me, profile, state, rng, out);
 }
 ```
-> `toAxis` se importa de `./input`. `decideTeamInput` no crea nada: `state.dir` y `state.quant` son los dos scratch creados en `createAiState`. La única tirada de `rng` con balón es ninguna; sin balón, la de la entrada; en el penalti, la del lado.
+> `toAxis` se importa de `./input`; `anchorFor` ya no hace falta en la capa de decisión (sigue en `positionTeam`): quitarlo del import de 6b si `tsc` avisa. `decideTeamInput` no crea nada: `state.dir` y `state.quant` son los dos scratch creados en `createAiState`. La única tirada de `rng` con balón es ninguna; sin balón, la de la entrada; en el penalti, la del lado; con el portero propio en posesión, ninguna.
 
 Run: `npx vitest run components/games/football-logic/ai.test.ts` → PASS. Los fixtures que no cuadren se miden y se mueven (regla del Step 4).
 
@@ -2406,9 +2707,11 @@ function playCpuMatch(seed: number, formationTable: readonly Formation[], fi: re
       if (ev.kind === 'long-pass' && ev.ok) stats.longPasses++;
       if (ev.kind === 'tackle') stats.tackles++;
       if (ev.kind === 'steal') stats.steals++;
+      // D4: each keeper writes its own slot (events[gk.id]); the CPU never throws by
+      // button, so every hold ends in a 'gk-release' unless a phase change cuts it.
+      if (ev.kind === 'gk-catch') stats.catches++;
+      if (ev.kind === 'gk-release') stats.releases++;
     }
-    if (match.scratch.gkEvent.kind === 'gk-catch') stats.catches++;
-    if (match.scratch.gkEvent.kind === 'gk-release') stats.releases++;
     if (checkGoalkeepersInBox(match.players, match.attackDir, match.pitch).length > 0) stats.keeperOutsideBox++;
     // Criterion 9b's second half: during open play (this step and the last, so a
     // set-piece push does not count), a keeper moving AWAY from its line does so
@@ -2888,16 +3191,25 @@ Se hace **después** de la Task 7 y antes de que Paco commitee, con la lección 
 4. **Asignaciones por paso**: leer `positionTeam`, `keeperStep`, `keeperCatch`, `applyKickError`, `stepPlayerFree`, `freestMateDir`, `pickPassTarget`, `decideTeamInput` y sus privadas buscando `{`-literales de objeto, `[`-literales de array, `.map(`, `.filter(`, `...`, `new `, `=>` dentro del cuerpo. Cero.
 5. **Exportaciones sin consumidor**: `grep -n "^export" components/games/football-logic/*.ts` cruzado con imports; cada símbolo con consumidor o con destino declarado (lista del Step 9 de la Task 7).
 6. **Sondas ejecutables** — scripts vitest de un solo uso en el **scratchpad** (`/private/tmp/claude-501/-Users-paco-monleon-Dev-Web/<sesión>/scratchpad/wc-probes/*.test.ts`), **NUNCA dentro del repo** (vitest ejecuta cualquier `*.test.ts` bajo `.superpowers/` y las cuentas se inflan, trampa del 04-sep). Se lanzan con `npx vitest run --root <scratchpad>/wc-probes --dir .` o importando el motor por ruta absoluta; se borran al terminar. Cada sonda imprime sus mediciones y el informe de cierre las copia:
-   - **P1 · Partido CPU vs CPU completo con cada formación** (3 mismas + 3 cruzadas, dificultad 8 vs 8 y 5 vs 5, dos semillas): pasos, marcador, fases, chuts/pases/entradas/robos/atajadas/saques del portero por equipo, `invalid === 0`, `keeperOutsideBox === 0`. Anomalías a buscar: partidos sin goles en gol de oro más de `4 × HALF_STEPS` (riesgo 4 del spec), un equipo con 0 chuts, robos con `victimId === -1` fuera de rango, penaltis en bucle (C1 revive con IA), balón recogido fuera del campo (C2 revive con porteros móviles).
+   - **P1 · Partido CPU vs CPU completo con cada formación** (3 mismas + 3 cruzadas, dificultad 8 vs 8 y 5 vs 5, dos semillas): pasos, marcador, fases, chuts/pases/entradas/robos/atajadas/saques del portero por equipo, `invalid === 0`, `keeperOutsideBox === 0`. Anomalías a buscar: partidos sin goles en gol de oro más de `4 × HALF_STEPS` (riesgo 4 del spec), un equipo con 0 chuts, robos con `victimId === -1` fuera de rango, penaltis en bucle (C1 revive con IA), balón recogido fuera del campo (C2 revive con porteros móviles), y desde D4: un paso con `ball.owner === gk.id` y `phase !== 'play' | 'golden-goal'` sin que medie fin de parte o gol (la atajada nunca debe cambiar de fase), o un `'gk-catch'` que no vaya seguido de posesión del portero en ese mismo paso.
    - **P2 · Cambio de estrategia por marcador observado**: partido 8 vs 1 con marcador forzado (`match.score[1] = 1` en el paso 600, `halfStep` a 30 s del final en la 2ª parte): registrar `out.strategy` de cada equipo en cada revisión de 5 s y comprobar la secuencia neutral → attack (el que pierde) y neutral → defend (el que gana por uno, últimos 30 s) y attack para los dos en `half === 3`.
    - **P3 · El portero respeta el área**: 20 semillas × 3 000 pasos con `checkGoalkeepersInBox` en cada paso y el contador "se aleja de su línea fuera del área pequeña en juego abierto" (la métrica de `playCpuMatch`), imprimiendo el máximo `|gk.x − lineX|` visto y en qué fase.
    - **P4 · Reacción y acierto por dificultad, extremo a extremo**: 10 semillas de 8 vs 1 y 10 de 1 vs 8: goles, chuts y atajadas por nivel. Se reporta la tendencia; si el nivel 1 gana sistemáticamente, es hallazgo para el QA (Task 11), no para relajar tests.
    - **P5 · Replay puro**: para dos de los partidos de P1, grabar los `TeamInput` y re-ejecutar solo el motor con `createRng(seed)`: `sameFinal` verdadero. Es la prueba de que la capa de decisión está de verdad fuera del paso.
-7. **Comparar** el resultado de las sondas con los criterios 1, 2, 4, 5, 9b, 11, 12, 14 (motor) y con los supuestos S1-S18: cualquier supuesto que las sondas desmientan se anota en el informe de cierre como pregunta para Paco.
-8. **Informe de cierre**: `.superpowers/sdd/2026-09-05-vault-world-cup-stage-b/final-review-report.md` (git-ignorado, mismo formato que el de la etapa A: fortalezas, cobertura de criterios, tabla de números, hallazgos por severidad, triaje de deferred con `CARRY TO Task 8/9/11`, recomendaciones para la etapa C). En él, obligatoriamente: la verificación **explícita** del criterio 11 (R19) con el test de `match.test.ts` y el de las formaciones reales; el estado de las deudas del ledger asignadas a la Task 6 (criterio 11 ✓ código; falta única por paso y robos simultáneos: documentadas sin cambio; `isSprinting` último paso: documentado sin cambio; comentario R20: corregido); la actualización del spec que toque (sección "Decisiones tomadas": los supuestos S1-S18 que Paco apruebe se vuelcan como decisiones de ejecución, igual que R7/R10/R11/R14/R6).
+   - **P6 · Atajada → posesión → saque automático (D4) observado en juego**: sobre los partidos de P1, por cada `'gk-catch'` en `events[gk.id]` registrar el paso, y comprobar que en ese paso `ball.owner === gk.id` y la fase no cambia, que durante los `GK_HOLD_STEPS − 1` pasos siguientes el balón sigue del portero (o hasta un gol/fin de parte, que se cuenta aparte), y que en el paso `catchStep + GK_HOLD_STEPS` aparece `'gk-release'` del mismo portero. Imprimir: atajadas totales, cuántas acabaron en saque automático exacto, cuántas cortó una fase, y el número de veces que un rival intentó `'steal'` con `victimId === gk.id` (debe ser 0: `steal` rechaza al portero antes de fijar la víctima). **Debe verse al menos una atajada seguida de saque automático**; si en las 12 configuraciones de P1 no aparece ninguna, es hallazgo (el `catchChance` no se ejercita en juego) y se investiga, no se relaja. Además, una variante "humana": repetir un partido de P1 sustituyendo la entrada del equipo 1 por una política de test que, con su portero en posesión, pulse B en el 5.º paso de la posesión: contar los `'short-pass'` con `actorId === gk.id` (≥ 1) y comprobar que ninguno consumió `rng` (contador de tiradas igual con y sin la política en esos pasos).
+7. **Comparar** el resultado de las sondas con los criterios 1, 2, 4, 5, 9b, 11, 12, 14 (motor) y con los supuestos abiertos S1, S2, S4-S8, S10-S13, S15, S16, S18 y S-GK (S3, S9, S14 y S17 ya están confirmados por D1-D4): cualquier supuesto que las sondas desmientan se anota en el informe de cierre como pregunta para Paco.
+8. **Informe de cierre**: `.superpowers/sdd/2026-09-05-vault-world-cup-stage-b/final-review-report.md` (git-ignorado, mismo formato que el de la etapa A: fortalezas, cobertura de criterios, tabla de números, hallazgos por severidad, triaje de deferred con `CARRY TO Task 8/9/11`, recomendaciones para la etapa C). En él, obligatoriamente: la verificación **explícita** del criterio 11 (R19) con el test de `match.test.ts` y el de las formaciones reales; el estado de las deudas del ledger asignadas a la Task 6 (criterio 11 ✓ código; falta única por paso y robos simultáneos: documentadas sin cambio; `isSprinting` último paso: documentado sin cambio; comentario R20: corregido); la actualización del spec que toque (sección "Decisiones tomadas": los supuestos abiertos —S-GK incluido— que Paco apruebe se vuelcan como decisiones de ejecución, igual que R7/R10/R11/R14/R6).
 9. **Mensaje de commit global alternativo** (si Paco prefiere uno solo para la etapa): `feat(world-cup): stage B — in-engine AI, CPU decision layer, sixteen selections and three formations`.
 
 ---
+
+## Supuestos de la etapa (lista final para Paco)
+
+**Confirmados el 05-sep** (etiqueta `// confirmed by owner 2026-09-05`, no van al QA como supuestos): **S3 = D1** (persecución sin posesión: los K más cercanos, el primero controlado, el siguiente cubre a 120 u, el resto ancla + deriva), **S14 = D2** (`tackleChance` = disposición a robar/entrar a alcance en cada tick de reacción; el éxito sigue el 65 %/35 % de `STEAL_CHANCE` para los dos), **S9 = D3** (`humanProfile` con la MISMA dificultad para portero y penalti; solo error angular 0), **S17 = D4** (la CPU con su portero en posesión no pulsa nada: siempre el automático).
+
+**Abiertos** (etiqueta `// Stage B assumption, not in the spec — review in QA`): S1 (cotas del clamp), S2 (skew como rotación), S4 (separación), S5 (línea del portero), S6 (el portero solo recoge balón parado), S7 (penalización por carga lineal), S8 (dónde se aplica el error angular), S10 (balón alto), S11 (lado del penalti de la CPU), S12 (esquiva), S13 (pista libre para sprintar), S15 (rayo de chut), S16 (decisión en el acto al ganar el balón), S18 (la CPU no cambia de formación) y:
+
+- **S-GK · Interpretación de ejecución de D4 (portero con balón)** — lo que D4 fija está en el spec (regla 2 y 4 del portero); lo que aquí se decide y Paco debe ver: (1) cruceta en neutro = recto hacia campo contrario, `(attackDir, 0)`, nunca el `facing` del portero; (2) solo `'pressed'` saca (una B mantenida desde un robo no saca); (3) A y B en el mismo paso → gana A (pase largo), como en `applyButtons`; (4) el saque a botón sale como pronto en el paso SIGUIENTE al de hacerse con el balón, igual para atajada y recogida (`stepCount <= ball.ownerSinceStep` → nada); (5) los saques a botón llevan eventos `'short-pass'`/`'long-pass'` con `actorId = gk.id`, el automático `'gk-release'`; los saques del portero (botón o automático) nunca consumen `rng` ni llevan error angular, para los dos equipos; (6) `match.controlled[team]` sigue en el jugador de campo mientras el portero tiene el balón (el motor no mueve el cursor; la etapa C decide si lo dibuja sobre el portero leyendo `ball.owner`); (7) la CPU saca siempre con el automático a los 2 s (D4 literal), aunque un compañero esté libre antes.
 
 ## Tabla CARRY del informe final → paso del plan
 
@@ -2905,32 +3217,33 @@ Se hace **después** de la Task 7 y antes de que Paco commitee, con la lección 
 |---|---|---|
 | #1 `invariants.ts` cast `as string` | limpiar al tocar el contenido | Task 7, Step 3 |
 | #3 `pitch.ts` convenciones de frontera | comentario junto a `isBetweenPosts`/`isInsideBox` | Task 6a, Step 5 |
-| #8 exports sin consumidor de la Task 2 | `GK_SPEED`/`GK_CATCH_RADIUS` consumidos por `ai.ts`/`players.ts`; los espejo en segundos se des-exportan | Task 6a Steps 3/13 · Task 7, Step 9 |
+| #8 exports sin consumidor de la Task 2 | `GK_SPEED`/`GK_CATCH_RADIUS` consumidos por `ai.ts`/`players.ts`; los espejo en segundos se des-exportan | Task 6a Steps 3/15 · Task 7, Step 9 |
 | #10 `as Axis` fuera de la excepción | `toAxis` en `input.ts`, tests migrados | Task 6a, Step 1 |
 | #12 `isSprinting` en el último paso | decisión escrita: se mantiene (lag de un paso, simétrico) | Task 6a, Step 3 |
 | #13 `shoot` clamp duplicado sin guarda | `chargeFraction` compartida | Task 6a, Steps 8-9 |
-| #19 fallback distancia cero `pushRivalsAway` | test por `beginSetPiece` con rival sobre el punto + mutación | Task 6a, Step 16 |
-| #20 `nearestOutfield` puede devolver −1 | comentario de alcance (v1.5) | Task 6a, Step 15 |
-| I2 / R19 criterio 11 | tests "live placement responds at once" + formaciones reales; verificación explícita en el cierre | Task 6a Step 14 · Task 7 Step 6 · Cierre 8 |
-| R20 comentario "nobody tackles" | reescrito con la medición nueva | Task 6a, Steps 14/17 |
-| Ledger: una falta por paso / robos simultáneos (equipo 0) | decisión escrita, comentario, lista de QA | Task 6a, Step 15 · Cierre 8 |
+| #19 fallback distancia cero `pushRivalsAway` | test por `beginSetPiece` con rival sobre el punto + mutación | Task 6a, Step 18 |
+| #20 `nearestOutfield` puede devolver −1 | comentario de alcance (v1.5) | Task 6a, Step 17 |
+| I2 / R19 criterio 11 | tests "live placement responds at once" + formaciones reales; verificación explícita en el cierre | Task 6a Step 16 · Task 7 Step 6 · Cierre 8 |
+| R20 comentario "nobody tackles" | reescrito con la medición nueva | Task 6a, Steps 16/19 |
+| Ledger: una falta por paso / robos simultáneos (equipo 0) | decisión escrita, comentario en `applyTeamInput`, lista de QA | Task 6a, Step 17 · Cierre 8 |
+| **D4 (05-sep) portero con balón** | atajada = posesión (`keeperCatch` → `givePossession`), saque a botón `applyKeeperButtons`, automático `releaseFromGoalkeeper`, enrutado `applyTeamInput` + `liveControlled`, CPU sin botones, sonda P6 | Task 6a Steps 8-11, 15-17 · Task 6b Steps 4-6 · Cierre P6 |
 | #11, #16 (QA), #14, #18 (Task 8) | fuera de la etapa B por el propio triaje | — |
 
 ## Recomendaciones del informe final incorporadas
 
 1. Canal `wantX/wantY/wantSprint` en `PlayerState` leído por `stepPhysics` para los no controlados; `step.test.ts:183` cambia a propósito → Task 6a Steps 2-4.
-2. Colocación de compañeros DENTRO de `stepMatch` para los dos equipos (`positionTeam` desde `stepOpenPlay`) → Task 6a Steps 13/15.
-3. `AiProfile` con `reactionSteps` (pasos, no ms) y `profiles: [AiProfile, AiProfile]` en `MatchState`; `gkPenaltyRead` sustituido → Task 6a Steps 11/15.
-4. Error angular sin trigonometría (skew + normalización) → Task 6a Step 11 (`applyKickError`).
-5. Atajada del portero con `catchChance`, y el orden de consumo del `rng` fijado en el primer paso de cableado (atajada → error de golpeo → robo → penalti) → Task 6a Steps 13/15 y Global Constraints.
+2. Colocación de compañeros DENTRO de `stepMatch` para los dos equipos (`positionTeam` desde `stepOpenPlay`) → Task 6a Steps 15/17.
+3. `AiProfile` con `reactionSteps` (pasos, no ms) y `profiles: [AiProfile, AiProfile]` en `MatchState`; `gkPenaltyRead` sustituido → Task 6a Steps 13/17.
+4. Error angular sin trigonometría (skew + normalización) → Task 6a Step 13 (`applyKickError`).
+5. Atajada del portero con `catchChance`, y el orden de consumo del `rng` fijado en el primer paso de cableado (atajada → robo → error de golpeo; los saques del portero, D4, fuera del `rng`; el penalti en su fase) → Task 6a Steps 15/17 y Global Constraints.
 6. `aimPass` exige vector unitario: la IA solo le pasa los literales unitarios de `DIRS` y `pickPassTarget` hereda el comentario → Task 6b Step 5.
-7. C1/C2 arreglados antes de `ai.ts`: ya lo están (ola de fix de la etapa A, R16/R17); los tests de esta etapa (atajada respeta la línea, `pickUp` del portero) los mantienen → Task 6a Steps 7/14.
+7. C1/C2 arreglados antes de `ai.ts`: ya lo están (ola de fix de la etapa A, R16/R17); los tests de esta etapa (atajada respeta la línea, `pickUp` del portero) los mantienen → Task 6a Steps 7/16.
 8. Lo que la IA ya tiene (`anchorFor`, `STRATEGIES`, `attackDir`, `goalLineX`, `isInsideSmallArea`, `checkTeamInput`, `stepsFor`) se usa tal cual → Task 6a/6b.
 
 **Descartada (con motivo):** ninguna. La única desviación respecto al informe es de detalle: el informe sugiere que `stepPlayer` lea el canal en vez de sus parámetros; aquí `stepPlayer` conserva la firma y la aritmética de la etapa A y `stepPlayerFree` lee el canal, para que el camino del controlado sea bit a bit el mismo y las trazas grabadas no se muevan por un `factor = 1` que no lo era.
 
 ## Self-Review (hecho al cerrar el plan; correcciones aplicadas inline)
 
-1. **Cobertura del spec.** Paso 6 → Tasks 6a + 6b: colocación por formación y estrategia (S3/S4, `positionTeam`), persecución por el más cercano acotada por estrategia (`CHASERS`), portero (`keeperStep` línea/área pequeña/vuelta, `keeperCatch` con `catchChance` y penalización de carga, `releaseFromGoalkeeper` al más libre en 2 s, penalti ya en `set-pieces.ts` con `profiles[t].penaltyReadChance`), decisión del CPU que rellena `TeamInput` (chutar/pasar/conducir por `reactionSteps`, entrar/robar, estrategia por marcador cada 5 s con las cuatro reglas), perfil 1-8 por fórmula con `profileFor(teamDef, difficulty)` y sin tocar la velocidad, tests de entrada nunca inválida (a), monotonía 1 vs 8 en reacción y acierto (b), portero y área (c), criterio 11 en el acto (d), partido grabado CPU vs CPU con negativo de semilla y ejercitando entradas/pases/chuts (e). Paso 7 → Task 7: 16 selecciones, 3 formaciones, `checkBank`/`checkFormations` sobre lo real, tests acoplados ampliados, todas las combinaciones, IA con las tres. Criterio 12 ("CPU pasa a ataque en gol de oro") → `chooseStrategy` half 3. Criterio 14 (simetría) → `humanProfile` con la misma dificultad y el error solo en el perfil CPU. Criterio 18 (4/6/8 y 5) es de la etapa C: el perfil se deriva de cualquier dificultad y los tests usan 1, 5 y 8. Fuera a propósito (spec §Pendientes v1.5): atributos por selección/jugador, cambio manual de controlado.
-2. **Placeholders.** Ningún "TBD/TODO/similar to"; cada test y cada implementación están completos. Los dos únicos puntos donde el plan manda **medir** (fixture de separación 41 u, `expectedId` de la 3-2-3) traen el cálculo hecho y la aserción independiente que lo protege.
-3. **Consistencia de tipos y nombres (corregido inline):** `releaseFromGoalkeeper` tiene UNA firma en Produces, Step 8, Step 9 y `match.ts` (`…, stepCount, aim, out`). `createMatch` recibe `profiles` como cuarto parámetro en Produces, Step 14, Step 15, Task 6b (`scenario`, `playCpuMatch`, `replay`) y Task 7. `keeperCatch(gk, ball, catchChance, rolled, rng, pitch, stepCount, out)` idéntica en tests, implementación y `stepOpenPlay`. `positionTeam(players, ball, team, formation, strategy, attackDir, controlled, pitch, stepCount, scratch)` idéntica en `wantOf`, tests de persecución y `stepOpenPlay`. `HALF_STEPS` sale de `clock.ts` (Task 6b Step 1) y sigue importable desde `./match` y `./step`; `ai.ts` la importa de `./clock`. `PenaltySide` se importa como tipo desde `./set-pieces` (que no importa `ai.ts`: sin ciclo). `MatchState` en `ai.ts` es `import type`. `toAxis` vive en `input.ts` y lo usan `ai.ts`, `step.test.ts` y `match.test.ts`. `goalKickX` vive en `pitch.ts` y lo usan `referee.ts`, `match.ts` y `match.test.ts`. `ActionKind` gana `'gk-catch'` en Task 6a Step 9 y lo escribe `keeperCatch` (Step 13) y lo cuenta `playCpuMatch` (6b). En `playCpuMatch` el portero es `players[t * 9]`: 9 es `TEAM_SIZE`; usar la constante importada de `./teams` en vez del literal al escribir el test.
+1. **Cobertura del spec.** Paso 6 → Tasks 6a + 6b: colocación por formación y estrategia (S3/S4, `positionTeam`), persecución por los K más cercanos acotada por estrategia (`CHASERS`, D1), portero (`keeperStep` línea/área pequeña/vuelta; regla 2 nueva: `keeperCatch` con `catchChance` y penalización de carga que da POSESIÓN sin cambio de fase; regla 4 nueva: con balón, `applyKeeperButtons` —B saque con la mano corto asistido, A largo asistido, cruceta apunta, exacto— y `releaseFromGoalkeeper` automático al más libre en `GK_HOLD_STEPS`, con el `TeamInput` enrutado en `applyTeamInput` y el controlado de campo colocado por IA vía `liveControlled`; tests D4 a-b-c-e en `match.test.ts`, unitarios en `actions.test.ts`, (d) en `ai.test.ts`, sonda P6; penalti ya en `set-pieces.ts` con `profiles[t].penaltyReadChance`), decisión del CPU que rellena `TeamInput` (chutar/pasar/conducir por `reactionSteps`, entrar/robar, estrategia por marcador cada 5 s con las cuatro reglas), perfil 1-8 por fórmula con `profileFor(teamDef, difficulty)` y sin tocar la velocidad, tests de entrada nunca inválida (a), monotonía 1 vs 8 en reacción y acierto (b), portero y área (c), criterio 11 en el acto (d), partido grabado CPU vs CPU con negativo de semilla y ejercitando entradas/pases/chuts (e). Paso 7 → Task 7: 16 selecciones, 3 formaciones, `checkBank`/`checkFormations` sobre lo real, tests acoplados ampliados, todas las combinaciones, IA con las tres. Criterio 12 ("CPU pasa a ataque en gol de oro") → `chooseStrategy` half 3. Criterio 14 (simetría) → `humanProfile` con la misma dificultad y el error solo en el perfil CPU. Criterio 18 (4/6/8 y 5) es de la etapa C: el perfil se deriva de cualquier dificultad y los tests usan 1, 5 y 8. Fuera a propósito (spec §Pendientes v1.5): atributos por selección/jugador, cambio manual de controlado.
+2. **Placeholders.** Ningún "TBD/TODO/similar to/add appropriate" (grep pasado el 06-sep tras volcar D4); cada test y cada implementación están completos, helpers incluidos (`freeBall`/`fixedRng`/`caught` de `match.test.ts`, `holding`/`unitTo`/`dist2` de `actions.test.ts` están definidos en su paso). Los dos únicos puntos donde el plan manda **medir** (fixture de separación 41 u, `expectedId` de la 3-2-3) traen el cálculo hecho y la aserción independiente que lo protege.
+3. **Consistencia de tipos y nombres (re-comprobado el 06-sep con D4):** `releaseFromGoalkeeper(gk, ball, players, attackDir, pitch, stepCount, aim, out)` tiene UNA firma en Produces, Step 8, Step 9, Step 17 (`applyTeamInput`) y el test (c) de `match.test.ts`; ya no limpia `out` (Step 9, test de Step 8). `applyKeeperButtons(gk, input, ball, players, attackDir, stepCount, aim, out)` idéntica en Produces, Step 10 (tests), Step 11 (implementación) y Step 17; sin `rng` ni `pitch` en la firma. `keeperCatch(gk, ball, catchChance, rolled, rng, pitch, stepCount, out)` idéntica en Step 14 (tests), Step 15 (implementación) y `keeperCatchFor` (Step 17), que ahora devuelve `void` y escribe en `events[gk.id]`. `MatchState.scratch` es `{ events, liveControlled, call, aim, setPiece }` en Produces, Step 17 y `createMatch`; `gkEvent` no existe en ningún paso (6a, 6b ni Cierre); `playCpuMatch` (6b Step 6) cuenta `'gk-catch'`/`'gk-release'` en `events`. `stepPhysics` conserva la firma de la etapa A y recibe `scratch.liveControlled`; `positionTeam(players, ball, team, formation, strategy, attackDir, controlled, pitch, stepCount, scratch)` idéntica en `wantOf`, tests de persecución y `runTeamAi`, con `controlled = liveControlled[team]` (−1 = coloca también al controlado). `createMatch` recibe `profiles` como cuarto parámetro en Produces, Step 16, Step 17, Task 6b (`scenario`, `playCpuMatch`, `replay`) y Task 7. `decideTeamInput` (6b Step 5) con el portero propio en posesión devuelve entrada neutra y no toca `anchorFor` ni el `rng`, como afirma el test (d) de 6b Step 4. `HALF_STEPS` sale de `clock.ts` (Task 6b Step 1) y sigue importable desde `./match` y `./step`; `ai.ts` la importa de `./clock`. `PenaltySide` se importa como tipo desde `./set-pieces` (que no importa `ai.ts`: sin ciclo). `MatchState` en `ai.ts` es `import type`. `toAxis` vive en `input.ts` y lo usan `ai.ts`, `step.test.ts` y `match.test.ts`. `goalKickX` vive en `pitch.ts` y lo usan SOLO `referee.ts` y `pitch.test.ts` (ni `ai.ts`, ni `match.ts`, ni `match.test.ts`: D4). `ActionKind` gana `'gk-catch'` en Task 6a Step 9, lo escribe `keeperCatch` (Step 15) y lo cuenta `playCpuMatch` (6b); los saques a botón del portero son `'short-pass'`/`'long-pass'` con `actorId = gk.id` y el automático `'gk-release'`, igual en Step 11, Step 16, 6b Step 6 y P6. En `playCpuMatch` el portero es `players[t * 9]`: 9 es `TEAM_SIZE`; usar la constante importada de `./teams` en vez del literal al escribir el test.

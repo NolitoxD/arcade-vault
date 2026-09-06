@@ -13,7 +13,7 @@ por el primer paso NO marcado. Nada de preguntar a Paco lo ya decidido.
       D4 REGLA NUEVA portero con balón: atajada ≠ saque de puerta; 2 s inrobable; input del equipo va al
       portero (B = saque con la mano corto asistido, A = largo asistido, cruceta apunta, sin error);
       a los 2 s automático al más libre; CPU siempre automático.
-- [ ] Revisión del plan para D4 (agente): sustituir "saque de puerta" por posesión del portero,
+- [x] Revisión del plan para D4 (agente): sustituir "saque de puerta" por posesión del portero,
       enrutado de TeamInput al portero, tests (a)-(e), etiquetas "Stage B assumption" → "confirmed by
       owner 2026-09-05" para D1-D3, supuesto S-GK. COMPROBAR si ya está: `grep -c "confirmed by owner" plan`.
 - [ ] Pre-vuelo con subagente (escaneo de pares de tareas que comparten fichero/interfaz, fixtures
