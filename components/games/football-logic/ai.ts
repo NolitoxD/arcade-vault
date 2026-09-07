@@ -369,6 +369,7 @@ export type AiState = {
   sprint: boolean;
   penaltyChosen: boolean;
   penaltySide: PenaltySide;
+  penaltyKickIndex: number;      // which kick of the shootout the side was drawn for (-1 outside one)
   dir: Vec2;                     // scratch, created once
   quant: { dx: Axis; dy: Axis }; // scratch, created once
 };
@@ -377,7 +378,7 @@ export function createAiState(): AiState {
   return {
     nextDecisionStep: 0, nextStrategyStep: 0, strategy: 'neutral',
     plan: 'none', planPressed: false, planStepsLeft: 0, aimDx: 0, aimDy: 0, sprint: false,
-    penaltyChosen: false, penaltySide: 0,
+    penaltyChosen: false, penaltySide: 0, penaltyKickIndex: -1,
     dir: { x: 0, y: 0 }, quant: { dx: 0, dy: 0 },
   };
 }
@@ -615,14 +616,21 @@ export function decideTeamInput(match: MatchState, team: 0 | 1, profile: AiProfi
   }
   out.strategy = state.strategy;
   const phase = match.phase;
-  if (phase === 'kickoff' || phase === 'set-piece') {
+  if (phase === 'kickoff' || phase === 'set-piece' || phase === 'shootout') {
     state.plan = 'none';
     const sp = match.setPiece;
     if (sp !== null && sp.kind === 'penalty' && sp.team === team) {
       // Stage B assumption S11, not in the spec -- review in QA: uniform over the
       // three sides, ONE draw per penalty, kept through the whole countdown.
-      if (!state.penaltyChosen) {
+      // Stage B2 assumption S-PK11, not in the spec -- review in QA: a shootout is ONE
+      // phase from the first kick to the last, so the reset below (which fires when the
+      // phase changes) never runs between kicks. The kick the side was drawn for is
+      // remembered instead, so each kick draws exactly once and the CPU does not shoot
+      // at the same side all shootout long.
+      const kickIndex = match.shootout === null ? -1 : match.shootout.taken[team];
+      if (!state.penaltyChosen || state.penaltyKickIndex !== kickIndex) {
         state.penaltyChosen = true;
+        state.penaltyKickIndex = kickIndex;
         const r = rng();
         state.penaltySide = r < 1 / 3 ? -1 : r < 2 / 3 ? 0 : 1;
       }
@@ -631,6 +639,7 @@ export function decideTeamInput(match: MatchState, team: 0 | 1, profile: AiProfi
     return;
   }
   state.penaltyChosen = false;
+  state.penaltyKickIndex = -1;
   if (phase !== 'play' && phase !== 'golden-goal') {
     state.plan = 'none';
     return;

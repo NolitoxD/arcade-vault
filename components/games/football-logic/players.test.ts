@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { PITCH, centerY, isInsideBigArea } from './pitch';
+import { PITCH, centerX, centerY, isInsideBigArea } from './pitch';
 import { FORMATIONS, OUTFIELD, TEAM_SIZE, slotCounts } from './teams';
+import { dist } from './geometry';
 import { STEPS_PER_SECOND } from './step';
 import {
-  GK_LINE_DIST, GK_SPEED, PLAYER_SPEED, PLAYER_SPEED_WITH_BALL, SPRINT_COOLDOWN_STEPS, SPRINT_MULT, SPRINT_STEPS,
+  GK_LINE_DIST, GK_SPEED, PLAYER_SPEED, PLAYER_SPEED_WITH_BALL, SHOOTOUT_GRID_COLUMNS, SHOOTOUT_GRID_ROWS,
+  SHOOTOUT_GRID_SPACING_X, SHOOTOUT_GRID_SPACING_Y, SPRINT_COOLDOWN_STEPS, SPRINT_MULT, SPRINT_STEPS,
   TACKLE_DIST, TACKLE_STEPS, anchorFor, createPlayers, isPlayerDown, isSprinting, ownGoalSide,
-  placeByFormation, stepPlayer, stepPlayerFree, type PlayerState,
+  placeAroundCentreSpot, placeByFormation, stepPlayer, stepPlayerFree, type PlayerState,
 } from './players';
 
 const F = FORMATIONS[0];
@@ -277,5 +279,58 @@ describe('stepPlayerFree: the AI movement channel', () => {
     const ys = sliding.y;
     stepPlayerFree(sliding, false, 1, PITCH, 0);
     expect(sliding.y).toBeGreaterThan(ys);   // slides along tackleDir, not along the want
+  });
+});
+
+// Stage B2, S-PK4: during a shootout the fifteen outfield players who are not taking
+// the kick stand still around the centre spot. S-PK7: the two keepers do NOT join them
+// -- criterion 9b forbids a keeper outside its own big area, and a keeper parked on the
+// centre circle would break the invariant on every step of the shootout.
+describe('placeAroundCentreSpot (shootout)', () => {
+  it('parks the fifteen outfield players who are not the taker on a grid inside the centre circle, and leaves both keepers alone', () => {
+    const players = createPlayers([FORMATIONS[0], FORMATIONS[0]], PITCH);
+    const keeperPositions = [players[0], players[TEAM_SIZE]].map((p) => ({ x: p.x, y: p.y }));
+    const takerId = 3;
+    for (const p of players) { p.vx = 7; p.vy = -7; p.tackleStepsLeft = 9; p.downUntilStep = 1000; }
+    const takerBefore = { x: players[takerId].x, y: players[takerId].y };
+    placeAroundCentreSpot(players, takerId, PITCH);
+    expect(players[0].x).toBe(keeperPositions[0].x);
+    expect(players[0].y).toBe(keeperPositions[0].y);
+    expect(players[TEAM_SIZE].x).toBe(keeperPositions[1].x);
+    expect(players[TEAM_SIZE].y).toBe(keeperPositions[1].y);
+    expect(players[takerId].x).toBe(takerBefore.x);
+    expect(players[takerId].y).toBe(takerBefore.y);
+    let parked = 0;
+    for (const p of players) {
+      if (p.role === 'gk' || p.id === takerId) continue;
+      parked++;
+      expect(dist(p.x, p.y, centerX(PITCH), centerY(PITCH)),
+        `player ${p.id} was parked outside the centre circle`).toBeLessThan(PITCH.centerCircleRadius);
+      expect(p.vx).toBe(0);
+      expect(p.vy).toBe(0);
+      expect(p.tackleStepsLeft).toBe(0);
+      expect(p.downUntilStep).toBe(0);
+    }
+    expect(parked).toBe(2 * OUTFIELD - 1);
+    // Stage B2 finding H4: the grid has 2 * OUTFIELD = 16 slots, one more than the
+    // fifteen players it parks -- see Step 3 for which one is left empty and why.
+    expect(SHOOTOUT_GRID_COLUMNS * SHOOTOUT_GRID_ROWS).toBe(2 * OUTFIELD);
+    expect(SHOOTOUT_GRID_SPACING_Y).toBe(80);
+  });
+  // Anti-coincidence: a grid that put two players on the same spot would still be
+  // "inside the circle" and still park fifteen. Nobody overlaps, and nobody lands on
+  // the centre spot itself (Stage B2 finding H4): with an even number of columns and
+  // an even number of rows, no slot's offset from the centre is ever (0, 0) -- unlike
+  // the 5 x 3 layout this replaces, whose middle column and row landed exactly on it.
+  it('nobody shares a spot and the grid is wider than a player', () => {
+    const players = createPlayers([FORMATIONS[0], FORMATIONS[0]], PITCH);
+    placeAroundCentreSpot(players, 3, PITCH);
+    for (const p of players) {
+      if (p.role === 'gk' || p.id === 3) continue;
+      for (const q of players) {
+        if (q.id === p.id || q.role === 'gk' || q.id === 3) continue;
+        expect(dist(p.x, p.y, q.x, q.y), `players ${p.id} and ${q.id} share a spot`).toBeGreaterThanOrEqual(SHOOTOUT_GRID_SPACING_X);
+      }
+    }
   });
 });

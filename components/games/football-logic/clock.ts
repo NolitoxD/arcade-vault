@@ -19,3 +19,9 @@ export function perStep(unitsPerSecond: number): number {
 export const HALF_SECONDS = 90;
 export const HALF_SECONDS_MAX = 120;
 export const HALF_STEPS = stepsFor(HALF_SECONDS);
+
+// Stage B2 (Paco, 06-sep): the golden goal now lives inside a capped extra time, so
+// half 3 finally has something to measure. Here, next to HALF_SECONDS, so ai.ts and
+// match.ts read it through step.ts without importing match.ts at runtime.
+export const EXTRA_TIME_SECONDS = 60;
+export const EXTRA_TIME_STEPS = stepsFor(EXTRA_TIME_SECONDS);

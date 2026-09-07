@@ -3,10 +3,10 @@ import { centerX, centerY, type PitchDef } from './pitch';
 import { TEAM_SIZE, type Formation, type Strategy, type TeamDef } from './teams';
 import type { TeamInput } from './input';
 import type { Rng } from './rng';
-import { HALF_SECONDS, HALF_SECONDS_MAX, HALF_STEPS } from './clock';
+import { HALF_SECONDS, HALF_SECONDS_MAX, HALF_STEPS, EXTRA_TIME_SECONDS, EXTRA_TIME_STEPS } from './clock';
 import { STEP_MS, stepPhysics, stepsFor } from './step';
 import { createPlayers, placeByFormation, type PlayerState } from './players';
-import { createBall, type BallState } from './ball';
+import { createBall, stepBall, type BallState } from './ball';
 import {
   applyButtons, applyKeeperButtons, clearActionEvent, createActionEvent, releaseFromGoalkeeper, stepTackle,
   updateControlled, type ActionEvent,
@@ -16,9 +16,12 @@ import {
   clearRefereeCall, createRefereeCall, judgeBall, judgeFoul,
   type RefereeCall, type RestartKind, type SetPieceKind,
 } from './referee';
-import { beginSetPiece, createSetPieceState, stepSetPiece, type SetPieceState } from './set-pieces';
+import {
+  SHOOTOUT_RESOLVE_STEPS, SHOOTOUT_ROUNDS, beginSetPiece, beginShootoutKick, createSetPieceState,
+  createShootoutState, resetShootout, shootoutWinner, stepSetPiece, type SetPieceState, type ShootoutState,
+} from './set-pieces';
 
-export type MatchPhase = 'kickoff' | 'play' | 'set-piece' | 'goal' | 'half-time' | 'golden-goal' | 'over';
+export type MatchPhase = 'kickoff' | 'play' | 'set-piece' | 'goal' | 'half-time' | 'golden-goal' | 'shootout' | 'over';
 
 export type MatchState = {
   teams: [TeamDef, TeamDef];
@@ -29,6 +32,9 @@ export type MatchState = {
   clockMs: number;
   phase: MatchPhase;
   setPiece: SetPieceState | null;
+  // Stage B2 (S-PK6): null until the extra time runs out level. The shootout keeps
+  // its own scoreboard; `score` stays as it ended and winnerOf() puts the two together.
+  shootout: ShootoutState | null;
   stepCount: number;
   controlled: [number, number];
   attackDir: [1 | -1, 1 | -1];
@@ -49,10 +55,11 @@ export type MatchState = {
   // Stage B (D4): gkEvent is gone (each keeper writes its own slot events[gk.id])
   // and liveControlled is the controlled tuple stepPhysics and positionTeam see
   // THIS step: match.controlled, or -1 for a team whose keeper holds the ball.
-  scratch: { events: ActionEvent[]; liveControlled: [number, number]; call: RefereeCall; aim: Vec2; setPiece: SetPieceState };
+  scratch: { events: ActionEvent[]; liveControlled: [number, number]; call: RefereeCall; aim: Vec2; setPiece: SetPieceState; shootout: ShootoutState };
 };
 
-export { HALF_SECONDS, HALF_SECONDS_MAX, HALF_STEPS };
+export { HALF_SECONDS, HALF_SECONDS_MAX, HALF_STEPS, EXTRA_TIME_SECONDS, EXTRA_TIME_STEPS };
+export type { ShootoutState };
 const GOAL_PAUSE_SECONDS = 2;
 export const GOAL_PAUSE_STEPS = stepsFor(GOAL_PAUSE_SECONDS);
 const HALF_TIME_PAUSE_SECONDS = 3;
@@ -110,6 +117,7 @@ export function createMatch(teams: [TeamDef, TeamDef], formationTable: readonly 
     clockMs: 0,
     phase: 'kickoff',
     setPiece: null,
+    shootout: null,
     stepCount: 0,
     controlled: [-1, -1],
     attackDir: [1, -1],
@@ -128,6 +136,7 @@ export function createMatch(teams: [TeamDef, TeamDef], formationTable: readonly 
       call: createRefereeCall(),
       aim: { x: 0, y: 0 },
       setPiece: createSetPieceState(),
+      shootout: createShootoutState(),
     },
   };
   startKickoff(match, kickoffTeamFor(1));
@@ -205,6 +214,41 @@ export function abandon(match: MatchState): boolean {
   return true;
 }
 
+// The extra time ran out level: the shootout takes over (S-PK6). The clock stops
+// here for good -- no branch of the shootout calls advanceClock.
+export function endExtraTime(match: MatchState): boolean {
+  if (match.phase !== 'golden-goal') return false;
+  match.phase = 'shootout';
+  resetShootout(match.scratch.shootout);
+  match.shootout = match.scratch.shootout;
+  startShootoutKick(match, match.scratch.shootout);
+  return true;
+}
+
+// The shootout has a winner. `shootout` is deliberately NOT cleared: the screen and
+// world-cup.ts read its scoreboard after the match is over, through winnerOf().
+export function endShootout(match: MatchState): boolean {
+  if (match.phase !== 'shootout') return false;
+  match.phase = 'over';
+  match.setPiece = null;
+  return true;
+}
+
+// Who won: the score decides, and a level score is decided by the shootout, which
+// keeps its own scoreboard. -1 while the match is undecided (or ended level with no
+// shootout, which only abandon() can produce).
+// Stage B2 assumption S-PK12, not in the spec -- review in QA: the shootout never adds
+// to match.score, so a match decided on penalties ends 'over' with a level scoreboard
+// and this is the ONE reader that puts the two together. Adding the shootout's goals to
+// match.score was the alternative, discarded: it would falsify the score the HUD paints
+// and the clean sheet of the scoring table.
+// exported for Task 9: world-cup.ts resolves the bracket with this, and the Task 8
+// HUD paints the winner with it.
+export function winnerOf(match: MatchState): 0 | 1 | -1 {
+  if (match.score[0] !== match.score[1]) return match.score[0] > match.score[1] ? 0 : 1;
+  return match.shootout === null ? -1 : shootoutWinner(match.shootout);
+}
+
 // ── The step ──────────────────────────────────────────────────────────────────
 
 function applyTeamChoices(match: MatchState, inputs: readonly [TeamInput, TeamInput]): void {
@@ -215,13 +259,12 @@ function applyTeamChoices(match: MatchState, inputs: readonly [TeamInput, TeamIn
   }
 }
 
-// Ruling R18: the golden goal has no time to measure, so half 3 never advances
-// the clock -- on ANY branch. The guard lives here rather than at the four call
-// sites (three in stepOpenPlay, one in the set-piece branch of stepMatch)
-// because the set-piece branch used to advance it and open play did not, which
-// froze the clock during play and jumped it 5 s at every set piece.
+// Stage B2 (Paco, 06-sep): ruling R18 is SUPERSEDED. It froze the clock in half 3
+// because a golden goal with no cap had nothing to measure; with a cap of
+// EXTRA_TIME_SECONDS it has, so the clock runs in the extra time exactly like in the
+// two regulation halves. The one phase with a frozen clock is now the shootout, and
+// it freezes by not calling this at all (S-PK6).
 function advanceClock(match: MatchState): void {
-  if (match.half === 3) return;
   match.halfStep++;
 }
 
@@ -340,10 +383,90 @@ function stepOpenPlay(match: MatchState, inputs: readonly [TeamInput, TeamInput]
     advanceClock(match);
     return;
   }
+  advanceClock(match);
   if (match.phase === 'play') {
-    advanceClock(match);
     if (match.halfStep >= HALF_STEPS) endHalf(match);
+    return;
   }
+  // Only 'golden-goal' is left (isOpenPlay is the entry condition of this function).
+  // Same shape as the half above: the cap is only read from open play, so an extra
+  // time whose clock runs out during a set-piece countdown ends on the first open-play
+  // step after it -- which is what the two regulation halves already do with endHalf.
+  if (match.halfStep >= EXTRA_TIME_STEPS) endExtraTime(match);
+}
+
+function startShootoutKick(match: MatchState, sh: ShootoutState): void {
+  const sp = match.scratch.setPiece;
+  beginShootoutKick(sp, sh, match.players, match.ball, formationsOf(match), match.strategies, match.attackDir, match.pitch, match.stepCount);
+  match.setPiece = sp;
+}
+
+type KickOutcome = 'goal' | 'miss' | 'pending';
+
+// S-PK2: it is a GOAL if the ball crosses the line between the posts; it is a MISS if
+// the keeper saves it, if it leaves the field, or if SHOOTOUT_RESOLVE_SECONDS go by
+// with neither. There is no rebound: the ball is collected and placed for the next one.
+function judgeShootoutKick(match: MatchState, sh: ShootoutState, keeperTeam: 0 | 1): KickOutcome {
+  if (match.ball.owner === keeperOf(match, keeperTeam).id) return 'miss';
+  judgeBall(match.ball, match.attackDir, match.pitch, match.scratch.call);
+  if (match.scratch.call.kind === 'goal') return match.scratch.call.team === sh.team ? 'goal' : 'miss';
+  if (isRestart(match.scratch.call.kind)) return 'miss';
+  return sh.resolveStepsLeft <= 0 ? 'miss' : 'pending';
+}
+
+// The kick is resolved: count it, and either the shootout has a winner (shootoutWinner
+// carries the whole of S-PK5, sudden death included) or the rival steps up.
+// Stage B2 assumption S-PK9, not in the spec -- review in QA: sudden death has no
+// engine-side cap. Termination is left entirely to penaltyReadChance being clamped to
+// [0.5125, 0.60] (ai.ts), so every kick is a miss with probability >= 0.5125 and the
+// shootout ends with probability 1, expected within under two sudden-death rounds. The
+// discarded alternative was a hard cap on the number of sudden-death rounds, resolved
+// by a coin flip if both sides were still level when the cap was hit -- that invents a
+// football rule the spec does not state, so it was left out in favour of the
+// probabilistic guarantee above.
+function finishShootoutKick(match: MatchState, sh: ShootoutState, scored: boolean): void {
+  if (scored) sh.scored[sh.team]++;
+  sh.taken[sh.team]++;
+  if (shootoutWinner(sh) >= 0) {
+    endShootout(match);
+    return;
+  }
+  sh.team = sh.team === 0 ? 1 : 0;
+  if (sh.taken[0] >= SHOOTOUT_ROUNDS && sh.taken[1] >= SHOOTOUT_ROUNDS) sh.suddenDeath = true;
+  startShootoutKick(match, sh);
+}
+
+// One step of the shootout. No clock (S-PK6), no positioning AI and no player physics
+// (S-PK4): the only things that move are the ball, once the kick is away, and the
+// defending keeper, teleported to the side it dives to by executePenalty. The referee
+// call is cleared every step so the goal of a kick is visible for exactly one step, the
+// same property ruling R28 gave the action events.
+function stepShootout(match: MatchState, inputs: readonly [TeamInput, TeamInput], rng: Rng): void {
+  const sh = match.shootout;
+  const sp = match.setPiece;
+  // Unreachable while the phase is entered through endExtraTime, which sets both (same
+  // convention as nearestOutfield's -1 in set-pieces.ts): it is the narrowing the
+  // compiler needs, and the safe way out if a v1.5 path ever forces the phase.
+  if (sh === null || sp === null) {
+    endShootout(match);
+    return;
+  }
+  clearRefereeCall(match.scratch.call);
+  const keeperTeam: 0 | 1 = sh.team === 0 ? 1 : 0;
+  if (sh.resolveStepsLeft === 0) {
+    const executed = stepSetPiece(
+      sp, inputs[sh.team], match.players, match.ball, rng, match.profiles[keeperTeam].penaltyReadChance,
+      match.attackDir, match.pitch, match.stepCount, match.scratch.aim, match.scratch.events[sp.takerId],
+    );
+    if (!executed) return;
+    sh.resolveStepsLeft = SHOOTOUT_RESOLVE_STEPS;
+  } else {
+    stepBall(match.ball, match.players, match.stepCount, match.pitch);
+    sh.resolveStepsLeft--;
+  }
+  const outcome = judgeShootoutKick(match, sh, keeperTeam);
+  if (outcome === 'pending') return;
+  finishShootoutKick(match, sh, outcome === 'goal');
 }
 
 // One FIXED step. Two symmetric inputs; the engine does not know which one is human.
@@ -395,8 +518,11 @@ export function stepMatch(match: MatchState, inputs: readonly [TeamInput, TeamIn
     case 'golden-goal':
       stepOpenPlay(match, inputs, rng);
       break;
+    case 'shootout':
+      stepShootout(match, inputs, rng);
+      break;
     default: {
-      // An eighth phase (v1.5 world cup, stage C screens) fails to compile here
+      // A ninth phase (v1.5 world cup, stage C screens) fails to compile here
       // instead of silently falling through this switch.
       const _exhaustive: never = match.phase;
       return _exhaustive;

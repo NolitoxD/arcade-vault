@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { PITCH, centerX, centerY } from './pitch';
-import { FORMATIONS, TEAMS, type Formation, type TeamDef } from './teams';
+import { FORMATIONS, TEAMS, TEAM_SIZE, type Formation, type TeamDef } from './teams';
 import { dist } from './geometry';
 import { createTeamInput, copyTeamInput, toAxis, type TeamInput } from './input';
 import { STEP_MS, stepsFor } from './step';
@@ -9,17 +9,24 @@ import { createBall, type BallState } from './ball';
 import { createRng, type Rng } from './rng';
 import { checkGoalkeepersInBox } from './invariants';
 import {
-  GOAL_PAUSE_STEPS, HALF_SECONDS, HALF_SECONDS_MAX, HALF_STEPS, HALF_TIME_PAUSE_STEPS,
-  abandon, callSetPiece, createMatch, endGoalPause, endHalf, endHalfTime, isOpenPlay, kickoffTeamFor, resumePlay,
-  scoreGoal, stepMatch, type MatchPhase, type MatchState,
+  EXTRA_TIME_SECONDS, EXTRA_TIME_STEPS, GOAL_PAUSE_STEPS, HALF_SECONDS, HALF_SECONDS_MAX, HALF_STEPS, HALF_TIME_PAUSE_STEPS,
+  abandon, callSetPiece, createMatch, endExtraTime, endGoalPause, endHalf, endHalfTime, endShootout, isOpenPlay,
+  kickoffTeamFor, resumePlay, scoreGoal, stepMatch, winnerOf, type MatchPhase, type MatchState,
 } from './match';
-import { SET_PIECE_COUNTDOWN_STEPS, type SetPieceState } from './set-pieces';
+import {
+  SET_PIECE_COUNTDOWN_STEPS, SHOOTOUT_RESOLVE_SECONDS, SHOOTOUT_RESOLVE_STEPS, SHOOTOUT_ROUNDS,
+  createShootoutState, resetShootout, shootoutWinner, type SetPieceState, type ShootoutState,
+} from './set-pieces';
 import { GK_HOLD_STEPS, SHORT_PASS_SPEED, STEAL_CHANCE, STEAL_CHANCE_VS_SPRINT, freestMateDir, shotSpeed } from './actions';
 import { applyKickError, humanProfile, profileFor, type AiProfile } from './ai';
 
 const TEAM_PAIR: [TeamDef, TeamDef] = [TEAMS[0], TEAMS[1]];
 const CY = centerY(PITCH);
-const PHASES: readonly MatchPhase[] = ['kickoff', 'play', 'set-piece', 'goal', 'half-time', 'golden-goal', 'over'];
+const PHASES: readonly MatchPhase[] = ['kickoff', 'play', 'set-piece', 'goal', 'half-time', 'golden-goal', 'shootout', 'over'];
+// Ruling R26's union assertion runs over the phases a recorded match can reach: the two
+// recordings decide the match before the extra time runs out, so neither can reach the
+// shootout. The shootout has its own recordings (Task 7b-2).
+const RECORDED_PHASES: readonly MatchPhase[] = PHASES.filter((p) => p !== 'shootout');
 const IDLE: readonly [TeamInput, TeamInput] = [createTeamInput(), createTeamInput()];
 const PROFILES: readonly [AiProfile, AiProfile] = [profileFor(TEAMS[0], 5), profileFor(TEAMS[1], 5)];
 
@@ -35,14 +42,15 @@ function idle(match: MatchState, steps: number, rng: Rng = createRng(1)): void {
 function forcePhase(match: MatchState, phase: MatchPhase): void {
   match.phase = phase;
   match.setPiece = phase === 'kickoff' || phase === 'set-piece' ? match.scratch.setPiece : null;
-  match.half = phase === 'golden-goal' ? 3 : 1;
+  match.shootout = phase === 'shootout' ? match.scratch.shootout : null;
+  match.half = phase === 'golden-goal' || phase === 'shootout' ? 3 : 1;
   match.pauseStepsLeft = phase === 'goal' || phase === 'half-time' ? 50 : 0;
 }
 
 function snapshot(match: MatchState): string {
   return JSON.stringify({
     phase: match.phase, half: match.half, score: match.score, halfStep: match.halfStep, attackDir: match.attackDir,
-    pause: match.pauseStepsLeft, sp: match.setPiece, players: match.players, ball: match.ball, controlled: match.controlled,
+    pause: match.pauseStepsLeft, sp: match.setPiece, shootout: match.shootout, players: match.players, ball: match.ball, controlled: match.controlled,
   });
 }
 
@@ -53,6 +61,15 @@ describe('constants', () => {
     expect(HALF_STEPS).toBe(5400);
     expect(GOAL_PAUSE_STEPS).toBe(stepsFor(2));
     expect(HALF_TIME_PAUSE_STEPS).toBe(stepsFor(3));
+    expect(EXTRA_TIME_SECONDS).toBe(60);
+    expect(EXTRA_TIME_STEPS).toBe(3600);
+  });
+  // Carried from the Task 7b-1 review: the two shootout constants had no assertion of
+  // their own until the resolution code of Task 7b-2 gave them a consumer.
+  it('a shootout kick has four seconds to resolve, in steps', () => {
+    expect(SHOOTOUT_RESOLVE_SECONDS).toBe(4);
+    expect(SHOOTOUT_RESOLVE_STEPS).toBe(240);
+    expect(SHOOTOUT_RESOLVE_STEPS).toBe(stepsFor(SHOOTOUT_RESOLVE_SECONDS));
   });
   it('kickoff teams: 0 in the first half and the golden goal, 1 in the second', () => {
     expect([kickoffTeamFor(1), kickoffTeamFor(2), kickoffTeamFor(3)]).toEqual([0, 1, 0]);
@@ -92,7 +109,9 @@ describe('every transition refuses every illegal phase without touching the stat
     { name: 'endGoalPause', legal: ['goal'], fire: endGoalPause },
     { name: 'endHalf', legal: ['play'], fire: endHalf },
     { name: 'endHalfTime', legal: ['half-time'], fire: endHalfTime },
-    { name: 'abandon', legal: ['kickoff', 'play', 'set-piece', 'goal', 'half-time', 'golden-goal'], fire: abandon },
+    { name: 'abandon', legal: ['kickoff', 'play', 'set-piece', 'goal', 'half-time', 'golden-goal', 'shootout'], fire: abandon },
+    { name: 'endExtraTime', legal: ['golden-goal'], fire: endExtraTime },
+    { name: 'endShootout', legal: ['shootout'], fire: endShootout },
   ];
   for (const t of table) {
     for (const phase of PHASES) {
@@ -237,23 +256,40 @@ describe('stepMatch drives the clock and the phases with idle inputs', () => {
     expect(m.attackDir).toEqual([-1, 1]);
     expect(m.setPiece?.team).toBe(1);
   });
-  it('a 0-0 match goes to a golden goal that never times out', () => {
+  // Stage B2 (Paco, 06-sep): the golden goal no longer runs forever. It lives inside
+  // an extra time of EXTRA_TIME_SECONDS, and a 0-0 extra time ends in a shootout on
+  // the step the clock reaches the cap -- not one step earlier (anti-coincidence: the
+  // N-1 sample below is what makes "exactly" mean exactly).
+  // Measured with idle inputs: half 3 opens at step 2 * HALF_STEPS + HALF_TIME_PAUSE_STEPS
+  // with halfStep 0, and from there the kickoff countdown and the open play that follows
+  // advance the clock one step per step, with no set piece in between.
+  it('a 0-0 extra time ends in a shootout at exactly EXTRA_TIME_STEPS, and not one step before', () => {
     const m = fresh();
-    idle(m, 2 * HALF_STEPS + HALF_TIME_PAUSE_STEPS);
+    const rng = createRng(1);
+    idle(m, 2 * HALF_STEPS + HALF_TIME_PAUSE_STEPS, rng);
     expect(m.half).toBe(3);
     expect(m.phase).toBe('kickoff');
-    idle(m, SET_PIECE_COUNTDOWN_STEPS);
+    expect(m.halfStep).toBe(0);
+    idle(m, EXTRA_TIME_STEPS - 1, rng);
     expect(m.phase).toBe('golden-goal');
-    const clock = m.halfStep;
-    idle(m, 3 * HALF_STEPS);
-    expect(m.phase).toBe('golden-goal');
-    expect(m.halfStep).toBe(clock);
+    expect(m.halfStep).toBe(EXTRA_TIME_STEPS - 1);
+    expect(m.shootout).toBeNull();
+    idle(m, 1, rng);
+    expect(m.phase).toBe('shootout');
+    expect(m.halfStep).toBe(EXTRA_TIME_STEPS);
+    expect(m.stepCount).toBe(2 * HALF_STEPS + HALF_TIME_PAUSE_STEPS + EXTRA_TIME_STEPS);
+    expect(m.score).toEqual([0, 0]);
+    expect(m.shootout).not.toBeNull();
+    expect(m.shootout?.taken).toEqual([0, 0]);
+    expect(m.shootout?.scored).toEqual([0, 0]);
+    expect(m.shootout?.team).toBe(0);              // S-PK3: team 0 opens the shootout
+    expect(m.shootout?.suddenDeath).toBe(false);
   });
-  // I3 / ruling R18: the clock used to be frozen during golden-goal open play
-  // (stepOpenPlay's `phase === 'play'` guard) but still ticked on the set-piece
-  // branch of stepMatch, so halfStep jumped 5 s at every set piece of the third
-  // half. The test above covers open play; this one covers the other branch.
-  it('the golden-goal clock does not move through a set piece either', () => {
+  // I3 / ruling R18, SUPERSEDED by the spec of 2026-09-06: the clock used to be frozen
+  // in half 3 on every branch. Now it runs there like in any other half, and this test
+  // pins the branch R18's own test used to pin -- the set piece -- with the sign flipped:
+  // a set-piece countdown of the extra time advances the clock, one step per step.
+  it('the golden-goal clock moves through a set piece, one step per step (R18 superseded)', () => {
     const m = fresh();
     resumePlay(m); endHalf(m); endHalfTime(m); resumePlay(m); endHalf(m);   // tied -> half 3 kickoff
     resumePlay(m);
@@ -264,7 +300,36 @@ describe('stepMatch drives the clock and the phases with idle inputs', () => {
     const rng = createRng(1);
     for (let i = 0; i < SET_PIECE_COUNTDOWN_STEPS; i++) stepMatch(m, IDLE, rng);
     expect(m.phase).not.toBe('set-piece');   // the set piece really did execute
-    expect(m.halfStep).toBe(clock);
+    expect(m.halfStep).toBe(clock + SET_PIECE_COUNTDOWN_STEPS);
+    expect(m.clockMs).toBeCloseTo(m.halfStep * STEP_MS, 6);
+  });
+  // Anti-coincidence for the cap: the boundary has two sides. The test above pins the
+  // step where a goalless extra time becomes a shootout; this one pins that a goal on
+  // that very step still ends the match as a golden goal -- scoring returns from
+  // stepOpenPlay before the clock advances, so the cap never gets to read it. Driven
+  // through stepMatch with fix C2's own fixture (freeBall + a keeper moved off the ball
+  // line, case D above), not by calling scoreGoal by hand: a hand-called goal never
+  // enters stepOpenPlay and so never exercises the order this test claims to pin.
+  it('a goal on the last step of the extra time is a golden goal, not a shootout', () => {
+    const m = fresh();
+    resumePlay(m); endHalf(m); endHalfTime(m); resumePlay(m); endHalf(m);   // tied -> half 3 kickoff
+    resumePlay(m);
+    expect(m.phase).toBe('golden-goal');
+    m.halfStep = EXTRA_TIME_STEPS - 1;
+    // Fixture recomputed (task report): case D's own coordinates MIRRORED to the other
+    // goal. Half 3 runs with the ends swapped (attackDir [-1, 1] after half-time), so
+    // team 0 attacks the x = 0 goal and it is still players[9], team 1's keeper, who
+    // defends it -- the same keeper the brief names, at the mirrored end.
+    const GOAL_Y = 612;   // same fixture as fix C2's case D: between the posts, off centerY
+    freeBall(m, 4, GOAL_Y, -700, 0);             // x = 4 - perStep(700) = -7.67, 7.67 u past the line
+    const keeper = m.players[9];
+    keeper.x = 0; keeper.y = 500;                // 112 u from the ball: out of POSSESSION_RADIUS
+    stepMatch(m, IDLE, createRng(1));
+    expect(m.phase).toBe('over');
+    expect(m.halfStep).toBe(EXTRA_TIME_STEPS - 1);   // the clock did NOT advance on the goal's own step
+    expect(m.score).toEqual([1, 0]);
+    expect(m.shootout).toBeNull();
+    expect(winnerOf(m)).toBe(0);
   });
   it('a 1-0 lead after two halves ends the match', () => {
     const m = fresh();
@@ -667,6 +732,16 @@ function sameSetPiece(a: SetPieceState | null, b: SetPieceState | null): boolean
   );
 }
 
+function sameShootout(a: ShootoutState | null, b: ShootoutState | null): boolean {
+  if (a === null || b === null) return a === b;
+  return (
+    a.taken[0] === b.taken[0] && a.taken[1] === b.taken[1] &&
+    a.scored[0] === b.scored[0] && a.scored[1] === b.scored[1] &&
+    a.team === b.team && a.takerId === b.takerId &&
+    a.suddenDeath === b.suddenDeath && a.resolveStepsLeft === b.resolveStepsLeft
+  );
+}
+
 function sameMatch(a: MatchState, b: MatchState): boolean {
   if (a.phase !== b.phase || a.half !== b.half || a.stepCount !== b.stepCount || a.halfStep !== b.halfStep) return false;
   if (a.clockMs !== b.clockMs || a.pauseStepsLeft !== b.pauseStepsLeft || a.lastGoalTeam !== b.lastGoalTeam) return false;
@@ -677,6 +752,7 @@ function sameMatch(a: MatchState, b: MatchState): boolean {
   if (a.strategies[0] !== b.strategies[0] || a.strategies[1] !== b.strategies[1]) return false;
   if (a.catchRolled[0] !== b.catchRolled[0] || a.catchRolled[1] !== b.catchRolled[1]) return false;
   if (!sameSetPiece(a.setPiece, b.setPiece)) return false;
+  if (!sameShootout(a.shootout, b.shootout)) return false;
   if (a.players.length !== b.players.length) return false;
   for (let i = 0; i < a.players.length; i++) {
     if (!samePlayer(a.players[i], b.players[i])) return false;
@@ -885,7 +961,8 @@ describe('full match with recorded inputs (criterion 1)', () => {
     // This runs after the first recording (vitest runs a file's tests in order), which is
     // what the guard below states out loud.
     expect(visitedFirst.size, 'the first recording did not run: this assertion is the union of both recordings').toBeGreaterThan(0);
-    for (const phase of PHASES) {
+    // Ruling R26 + stage B2: the union of both recordings covers every phase a recorded match can reach; 'shootout' is covered by the recordings of Task 7b-2.
+    for (const phase of RECORDED_PHASES) {
       expect(
         visitedFirst.has(phase) || visitedGolden.has(phase),
         `phase ${phase} was visited by neither recording`,
@@ -1178,5 +1255,381 @@ describe('criterion 11: live placement responds at once to a formation or strate
     stepMatch(control, IDLE, createRng(1));
     stepMatch(switched, inputs, createRng(1));
     expect(switched.players[10].x).toBeLessThan(control.players[10].x);      // team 1 attacks -x
+  });
+});
+
+// ── Stage B2: who wins a shootout (S-PK5), as a pure function of the counters ──
+describe('shootoutWinner: the mathematical cut inside the five and sudden death', () => {
+  function sh(taken: [number, number], scored: [number, number], suddenDeath = false): ShootoutState {
+    const s = createShootoutState();
+    s.taken[0] = taken[0]; s.taken[1] = taken[1];
+    s.scored[0] = scored[0]; s.scored[1] = scored[1];
+    s.suddenDeath = suddenDeath;
+    return s;
+  }
+  it('nobody has won before a kick is taken', () => {
+    expect(shootoutWinner(sh([0, 0], [0, 0]))).toBe(-1);
+    expect(SHOOTOUT_ROUNDS).toBe(5);
+  });
+  // The exact cut the spec names: 3-0 with three taken each. Team 1 has two kicks left
+  // and three goals behind, so it cannot catch up. Anti-coincidence: the neighbouring
+  // state (3-0 with three and TWO taken) leaves team 1 three kicks and must NOT cut.
+  it('cuts at 3-0 after three kicks each, and not one kick earlier', () => {
+    expect(shootoutWinner(sh([3, 3], [3, 0]))).toBe(0);
+    expect(shootoutWinner(sh([3, 2], [3, 0]))).toBe(-1);
+    expect(shootoutWinner(sh([2, 2], [2, 0]))).toBe(-1);
+  });
+  it('cuts the other way round too, and on the ninth kick when the margin is one', () => {
+    expect(shootoutWinner(sh([3, 3], [0, 3]))).toBe(1);
+    expect(shootoutWinner(sh([5, 4], [4, 2]))).toBe(0);
+    expect(shootoutWinner(sh([5, 4], [2, 4]))).toBe(1);
+  });
+  it('a level five-and-five is undecided, and a five-and-five with a margin is not', () => {
+    expect(shootoutWinner(sh([5, 5], [4, 4]))).toBe(-1);
+    expect(shootoutWinner(sh([5, 5], [4, 3]))).toBe(0);
+    expect(shootoutWinner(sh([5, 5], [3, 4]))).toBe(1);
+  });
+  // S-PK5 literally: the first to miss loses, even with the rival still to kick in the
+  // round. Both shapes are pinned: the team kicking first misses (and loses without the
+  // rival kicking), and the team kicking second misses (and loses on the scoreboard).
+  // Stage B2 finding H1: [6,5]/[6,5] is the case that used to break -- team 0 has just
+  // SCORED its sixth (one kick ahead of team 1, which still owes its sixth), and that is
+  // not a decision yet. It is the mirror of [6,5]/[5,5] one line above: same `taken`,
+  // and the only difference is whether the extra kick went in. Because the two ending
+  // clauses of shootoutWinner are mutually exclusive (a cut needs the scoreboard UNEVEN,
+  // sudden death here needs it EVEN), exactly one of "-1" and "1" can ever be right for
+  // a given `scored`, which is what makes this pair of lines a real regression guard and
+  // not two assertions that happen to agree.
+  it('sudden death: the first to miss loses, whichever of the two it is', () => {
+    expect(shootoutWinner(sh([6, 5], [5, 5], true))).toBe(1);   // team 0 kicked and missed
+    expect(shootoutWinner(sh([6, 5], [6, 5], true))).toBe(-1);  // team 0 kicked and scored: team 1 still owes its kick
+    expect(shootoutWinner(sh([6, 6], [6, 5], true))).toBe(0);   // team 1 kicked and missed
+    expect(shootoutWinner(sh([6, 6], [6, 6], true))).toBe(-1);  // both scored: another round
+  });
+});
+
+describe('winnerOf: the score decides, and a level score is decided by the shootout', () => {
+  it('reads the score when it is not level and ignores the shootout', () => {
+    const m = fresh();
+    m.score[0] = 2; m.score[1] = 1;
+    expect(winnerOf(m)).toBe(0);
+    m.score[0] = 1; m.score[1] = 2;
+    expect(winnerOf(m)).toBe(1);
+  });
+  it('is undecided while the match is level with no shootout, and reads the shootout once there is one', () => {
+    const m = fresh();
+    expect(winnerOf(m)).toBe(-1);
+    forcePhase(m, 'shootout');
+    resetShootout(m.scratch.shootout);
+    expect(winnerOf(m)).toBe(-1);
+    m.scratch.shootout.taken[0] = 3; m.scratch.shootout.taken[1] = 3;
+    m.scratch.shootout.scored[0] = 3;
+    expect(winnerOf(m)).toBe(0);
+    expect(m.score).toEqual([0, 0]);   // the shootout never touches the match score
+  });
+});
+
+// ── Stage B2: the shootout, kick by kick (S-PK1..S-PK6, criterion 23) ─────────
+//
+// The only rng draw of a shootout is the keeper's read inside executePenalty: one draw
+// below penaltyReadChance and it dives the right way, keeps the ball and the kick is a
+// MISS; one draw at or above it and a second draw picking which of the other two sides,
+// so a kick down the middle (the idle d-pad leaves sp.side at 0) goes in. That is what
+// makes a scripted shootout exact instead of lucky.
+function shootoutRng(outcomes: readonly ('save' | 'goal')[]): CountingRng {
+  const values: number[] = [];
+  for (const outcome of outcomes) {
+    if (outcome === 'save') values.push(0);          // < penaltyReadChance at any difficulty
+    else values.push(0.99, 0.5);                     // >= 0.60, the maximum read chance
+  }
+  return fixedRng(values);
+}
+
+// The engine's own route into the shootout, transition by transition: no phase is ever
+// written by hand, so the state is exactly the one a real match arrives with.
+function atShootout(): MatchState {
+  const m = fresh();
+  resumePlay(m); endHalf(m); endHalfTime(m); resumePlay(m); endHalf(m);   // tied -> half 3 kickoff
+  resumePlay(m);
+  expect(m.phase).toBe('golden-goal');
+  expect(endExtraTime(m)).toBe(true);
+  expect(m.phase).toBe('shootout');
+  return m;
+}
+
+// Steps until the number of kicks taken changes (or the match ends), and returns how
+// many steps that took. The cap is the countdown plus the resolution plus one: a kick
+// that needs more than that is a hang, and the test says so instead of looping.
+function takeKick(m: MatchState, rng: Rng): number {
+  const before = (m.shootout?.taken[0] ?? 0) + (m.shootout?.taken[1] ?? 0);
+  const cap = SET_PIECE_COUNTDOWN_STEPS + SHOOTOUT_RESOLVE_STEPS + 1;
+  for (let i = 1; i <= cap; i++) {
+    stepMatch(m, IDLE, rng);
+    if ((m.shootout?.taken[0] ?? 0) + (m.shootout?.taken[1] ?? 0) !== before) return i;
+    if (m.phase === 'over') return i;
+  }
+  throw new Error(`a shootout kick did not resolve in ${cap} steps`);
+}
+
+describe('the shootout runs kick by kick and cuts as soon as it is decided', () => {
+  it('the first kick is team 0 s, taken by its lowest outfield id, with the ball on the spot and everyone else parked', () => {
+    const m = atShootout();
+    expect(m.shootout?.team).toBe(0);
+    expect(m.shootout?.takerId).toBe(1);
+    expect(m.setPiece?.kind).toBe('penalty');
+    expect(m.setPiece?.stepsLeft).toBe(SET_PIECE_COUNTDOWN_STEPS);
+    expect(m.ball.owner).toBe(1);
+    expect(checkGoalkeepersInBox(m.players, m.attackDir, m.pitch)).toEqual([]);
+  });
+  // A kick that is saved resolves on the step it is taken: the ball is in the keeper's
+  // hands and there is nothing to wait for (S-PK2, no rebound).
+  it('a saved kick resolves on the countdown step itself, and the next kick is the rival s', () => {
+    const m = atShootout();
+    const rng = shootoutRng(['save']);
+    const steps = takeKick(m, rng);
+    expect(steps).toBe(SET_PIECE_COUNTDOWN_STEPS);
+    expect(m.shootout?.taken).toEqual([1, 0]);
+    expect(m.shootout?.scored).toEqual([0, 0]);
+    expect(m.shootout?.team).toBe(1);
+    expect(m.shootout?.takerId).toBe(TEAM_SIZE + 1);
+    expect(rng.calls).toBe(1);                       // read right: one draw, no second one
+    expect(m.score).toEqual([0, 0]);                 // the shootout never touches the match score
+  });
+  // A kick the keeper reads wrong flies down the middle and crosses the line a few steps
+  // later: 210 u at 850 u/s, airborne (vz 120), so no ground deceleration -- about 15
+  // steps, and in any case far inside SHOOTOUT_RESOLVE_STEPS.
+  it('a scored kick resolves a few steps after the countdown, well inside the four seconds', () => {
+    const m = atShootout();
+    const rng = shootoutRng(['goal']);
+    const steps = takeKick(m, rng);
+    expect(steps).toBeGreaterThan(SET_PIECE_COUNTDOWN_STEPS);
+    expect(steps).toBeLessThan(SET_PIECE_COUNTDOWN_STEPS + SHOOTOUT_RESOLVE_STEPS);
+    expect(m.shootout?.taken).toEqual([1, 0]);
+    expect(m.shootout?.scored).toEqual([1, 0]);
+    expect(m.shootout?.team).toBe(1);
+    expect(rng.calls).toBe(2);                       // read wrong: the draw plus the side
+    expect(m.score).toEqual([0, 0]);
+  });
+  // The exact cut the spec names, driven end to end: 3-0 after three kicks each.
+  it('3-0 after three kicks each ends the shootout without a fourth kick', () => {
+    const m = atShootout();
+    const rng = shootoutRng(['goal', 'save', 'goal', 'save', 'goal', 'save']);
+    for (let i = 0; i < 6; i++) takeKick(m, rng);
+    expect(m.phase).toBe('over');
+    expect(m.shootout?.taken).toEqual([3, 3]);
+    expect(m.shootout?.scored).toEqual([3, 0]);
+    expect(m.shootout?.suddenDeath).toBe(false);
+    expect(m.setPiece).toBeNull();
+    expect(winnerOf(m)).toBe(0);
+    expect(m.score).toEqual([0, 0]);
+  });
+  // Anti-coincidence for the cut: the same six kicks with one goal moved keep the
+  // shootout alive, so the cut above is the rule and not the length of the script.
+  it('2-1 after three kicks each goes on to a fourth kick', () => {
+    const m = atShootout();
+    const rng = shootoutRng(['goal', 'goal', 'goal', 'save', 'save', 'save']);
+    for (let i = 0; i < 6; i++) takeKick(m, rng);
+    expect(m.phase).toBe('shootout');
+    expect(m.shootout?.taken).toEqual([3, 3]);
+    expect(m.shootout?.scored).toEqual([2, 1]);
+    expect(m.shootout?.team).toBe(0);
+    expect(m.shootout?.takerId).toBe(4);             // fourth kick, fourth outfield id
+  });
+});
+
+// The other two ways a kick misses (S-PK2). Neither happens on its own with a penalty
+// aimed at the goal, so both are forced on the ball right after the kick is away --
+// which is the point: the engine must resolve them, not depend on them not happening.
+describe('a shootout kick that leaves the field or never arrives is a miss', () => {
+  // Runs the countdown and returns on the step the kick is taken.
+  function kickAway(m: MatchState, rng: Rng): void {
+    for (let i = 0; i < SET_PIECE_COUNTDOWN_STEPS; i++) stepMatch(m, IDLE, rng);
+  }
+  it('a ball sent over the touchline is a miss as soon as the referee sees it out', () => {
+    const m = atShootout();
+    const rng = shootoutRng(['goal']);
+    kickAway(m, rng);
+    expect(m.shootout?.resolveStepsLeft).toBe(SHOOTOUT_RESOLVE_STEPS);
+    m.ball.vx = 0;
+    m.ball.vy = -900;
+    m.ball.z = 0;
+    m.ball.vz = 0;
+    let steps = 0;
+    while (m.shootout !== null && m.shootout.taken[0] === 0 && steps < SHOOTOUT_RESOLVE_STEPS) {
+      stepMatch(m, IDLE, rng);
+      steps++;
+    }
+    expect(steps).toBeLessThan(SHOOTOUT_RESOLVE_STEPS);
+    expect(m.shootout?.taken).toEqual([1, 0]);
+    expect(m.shootout?.scored).toEqual([0, 0]);
+    expect(m.shootout?.team).toBe(1);
+  });
+  it('a ball that stops dead is a miss exactly SHOOTOUT_RESOLVE_STEPS after the kick', () => {
+    const m = atShootout();
+    const rng = shootoutRng(['goal']);
+    kickAway(m, rng);
+    // Parked where nobody can pick it up: the fifteen are on the centre grid, at y
+    // CY - 80 at the nearest, and POSSESSION_RADIUS is 22 u.
+    m.ball.x = centerX(PITCH);
+    m.ball.y = 300;
+    m.ball.z = 0;
+    m.ball.vx = 0;
+    m.ball.vy = 0;
+    m.ball.vz = 0;
+    for (let i = 0; i < SHOOTOUT_RESOLVE_STEPS - 1; i++) stepMatch(m, IDLE, rng);
+    expect(m.shootout?.taken, 'the kick timed out early').toEqual([0, 0]);
+    stepMatch(m, IDLE, rng);
+    expect(m.shootout?.taken).toEqual([1, 0]);
+    expect(m.shootout?.scored).toEqual([0, 0]);
+    expect(m.shootout?.team).toBe(1);
+  });
+});
+
+// S-PK5, the rule Paco dictated word for word: in sudden death the first team to miss
+// loses, even if the rival has not taken its kick of that round. Both shapes are pinned.
+// The second test below ('team 1 misses the second kick...') passes through the exact
+// state Stage B2 finding H1 broke -- [6,5]/[6,5], asserted mid-test at the point team 0
+// has just scored one kick ahead -- so with the un-fixed shootoutWinner this test fails
+// one line earlier than its own assertion of it: `phase` is already 'over' (the wrong
+// team having been declared the winner) instead of still 'shootout' with team 1 yet to
+// take its sixth kick.
+describe('sudden death: the first to miss loses', () => {
+  const TEN_GOALS: readonly ('save' | 'goal')[] = ['goal', 'goal', 'goal', 'goal', 'goal', 'goal', 'goal', 'goal', 'goal', 'goal'];
+  it('team 0 misses the first kick of the round and loses without team 1 kicking', () => {
+    const m = atShootout();
+    const rng = shootoutRng([...TEN_GOALS, 'save']);
+    for (let i = 0; i < 10; i++) takeKick(m, rng);
+    expect(m.phase).toBe('shootout');
+    expect(m.shootout?.taken).toEqual([5, 5]);
+    expect(m.shootout?.scored).toEqual([5, 5]);
+    expect(m.shootout?.suddenDeath).toBe(true);
+    expect(m.shootout?.team).toBe(0);
+    expect(m.shootout?.takerId).toBe(6);             // sixth kick, sixth outfield id
+    takeKick(m, rng);
+    expect(m.phase).toBe('over');
+    expect(m.shootout?.taken).toEqual([6, 5]);       // team 1 never took its kick of the round
+    expect(m.shootout?.scored).toEqual([5, 5]);
+    expect(winnerOf(m)).toBe(1);
+  });
+  it('team 1 misses the second kick of the round and loses on the scoreboard', () => {
+    const m = atShootout();
+    const rng = shootoutRng([...TEN_GOALS, 'goal', 'save']);
+    for (let i = 0; i < 11; i++) takeKick(m, rng);
+    expect(m.phase).toBe('shootout');
+    expect(m.shootout?.taken).toEqual([6, 5]);
+    expect(m.shootout?.scored).toEqual([6, 5]);
+    takeKick(m, rng);
+    expect(m.phase).toBe('over');
+    expect(m.shootout?.taken).toEqual([6, 6]);
+    expect(m.shootout?.scored).toEqual([6, 5]);
+    expect(winnerOf(m)).toBe(0);
+  });
+  // Anti-coincidence: a sudden-death round where both score is not a win for anybody,
+  // and the shootout goes into another round with the next takers.
+  it('a sudden-death round where both score goes on to another round', () => {
+    const m = atShootout();
+    const rng = shootoutRng([...TEN_GOALS, 'goal', 'goal']);
+    for (let i = 0; i < 12; i++) takeKick(m, rng);
+    expect(m.phase).toBe('shootout');
+    expect(m.shootout?.taken).toEqual([6, 6]);
+    expect(m.shootout?.scored).toEqual([6, 6]);
+    expect(m.shootout?.team).toBe(0);
+    expect(m.shootout?.takerId).toBe(7);
+  });
+});
+
+// Criterion 9b and S-PK4 held step by step through a whole shootout, not only at its
+// start: the keepers never leave their boxes, nobody leaves the pitch, and the only
+// player allowed to move while a kick is being taken is the defending keeper (on the
+// step it dives). The taker does not even move: it is placed once, when its kick begins.
+describe('nothing and nobody moves during a shootout except the ball and the diving keeper', () => {
+  // Eleven kicks: five-and-five (all scored) puts it into sudden death, and the 11th --
+  // team 0's, per S-PK3's alternation -- is the 'save' that ends it. The same script as
+  // Task 7b-1 Step 14's test 1, which pins the winner as team 1: team 0 is the one that
+  // misses.
+  it('holds for eleven kicks', () => {
+    const m = atShootout();
+    const rng = shootoutRng(['goal', 'goal', 'goal', 'goal', 'goal', 'goal', 'goal', 'goal', 'goal', 'goal', 'save']);
+    const beforeX: number[] = [];
+    const beforeY: number[] = [];
+    const visited = new Set<MatchPhase>([m.phase]);
+    let steps = 0;
+    while (m.phase === 'shootout' && steps < 12 * (SET_PIECE_COUNTDOWN_STEPS + SHOOTOUT_RESOLVE_STEPS)) {
+      const sh = m.shootout;
+      expect(sh).not.toBeNull();
+      const takenBefore = (sh?.taken[0] ?? 0) + (sh?.taken[1] ?? 0);
+      const keeperId = (sh?.team === 0 ? 1 : 0) * TEAM_SIZE;
+      for (let i = 0; i < m.players.length; i++) { beforeX[i] = m.players[i].x; beforeY[i] = m.players[i].y; }
+      stepMatch(m, IDLE, rng);
+      expect(checkGoalkeepersInBox(m.players, m.attackDir, m.pitch)).toEqual([]);
+      for (const p of m.players) {
+        expect(p.x, `player ${p.id} left the pitch in x`).toBeGreaterThanOrEqual(0);
+        expect(p.x).toBeLessThanOrEqual(PITCH.width);
+        expect(p.y, `player ${p.id} left the pitch in y`).toBeGreaterThanOrEqual(0);
+        expect(p.y).toBeLessThanOrEqual(PITCH.height);
+      }
+      const kickChanged = (m.shootout?.taken[0] ?? 0) + (m.shootout?.taken[1] ?? 0) !== takenBefore;
+      if (!kickChanged) {
+        for (let i = 0; i < m.players.length; i++) {
+          if (m.players[i].x === beforeX[i] && m.players[i].y === beforeY[i]) continue;
+          expect(m.players[i].id, 'somebody other than the defending keeper moved during a kick').toBe(keeperId);
+        }
+      }
+      visited.add(m.phase);
+      steps++;
+    }
+    expect(m.phase).toBe('over');
+    expect(winnerOf(m)).toBe(1);   // team 0's 11th kick is the miss (Stage B2 finding H2)
+    // Ruling R26, completed. RECORDED_PHASES drops exactly one phase from the union the
+    // two full-match recordings assert, because neither of them can reach it -- and the
+    // promise written there was that the shootout would be covered by the recordings of
+    // this task. This deterministic eleven-kick recording is that coverage.
+    expect(PHASES.filter((p) => !RECORDED_PHASES.includes(p))).toEqual(['shootout']);
+    expect(visited.has('shootout'), 'the shootout recording never visited the shootout phase').toBe(true);
+    expect(visited.has('over'), 'the shootout recording never reached the end of the match').toBe(true);
+  });
+});
+
+// Carried from the Task 7b-1 review. Two properties the phase's own transitions imply
+// but nothing pinned: the clock is frozen through the shootout (S-PK6), and endShootout
+// deliberately KEEPS the scoreboard so winnerOf and the stage C screen can read it.
+describe('the shootout freezes the clock and keeps its scoreboard once it is over', () => {
+  it('a step of the shootout advances stepCount and neither halfStep nor clockMs (S-PK6)', () => {
+    const m = atShootout();
+    const halfStep = m.halfStep;
+    const clockMs = m.clockMs;
+    const stepCount = m.stepCount;
+    const rng = shootoutRng(['goal']);
+    for (let i = 0; i < 3; i++) stepMatch(m, IDLE, rng);
+    expect(m.phase).toBe('shootout');
+    expect(m.stepCount).toBe(stepCount + 3);
+    expect(m.halfStep).toBe(halfStep);
+    expect(m.clockMs).toBe(clockMs);
+  });
+  it('endShootout does not clear match.shootout: the scoreboard survives the end of the match', () => {
+    const m = atShootout();
+    const rng = shootoutRng(['goal', 'save', 'goal', 'save', 'goal', 'save']);
+    for (let i = 0; i < 6; i++) takeKick(m, rng);
+    expect(m.phase).toBe('over');
+    expect(m.shootout).not.toBeNull();
+    expect(m.shootout?.taken).toEqual([3, 3]);
+    expect(m.shootout?.scored).toEqual([3, 0]);
+    expect(m.score).toEqual([0, 0]);
+    expect(winnerOf(m)).toBe(0);
+    // And the same through the transition on its own, from a forced phase: it is
+    // endShootout that keeps it, not the kick machine that happened to leave it there.
+    const forced = fresh();
+    forcePhase(forced, 'shootout');
+    resetShootout(forced.scratch.shootout);
+    forced.scratch.shootout.taken[0] = 5;
+    forced.scratch.shootout.taken[1] = 5;
+    forced.scratch.shootout.scored[0] = 4;
+    forced.scratch.shootout.scored[1] = 3;
+    expect(endShootout(forced)).toBe(true);
+    expect(forced.phase).toBe('over');
+    expect(forced.shootout).not.toBeNull();
+    expect(forced.shootout?.scored).toEqual([4, 3]);
+    expect(forced.score).toEqual([0, 0]);
+    expect(winnerOf(forced)).toBe(0);
   });
 });

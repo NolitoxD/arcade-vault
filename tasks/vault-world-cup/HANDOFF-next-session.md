@@ -1,11 +1,36 @@
-# HANDOFF — VAULT WORLD CUP · etapa B cerrada · escrito 2026-09-06
+# HANDOFF — VAULT WORLD CUP · etapas B y B2 cerradas · escrito 2026-09-06 (tarde)
 
 **Repo:** `/Users/paco.monleon/Dev-Web/curso-claude-code/arcade-vault` · rama `main`.
-**HEAD al escribir:** `5eeeb41` (Paco, 06-sep: spec con D1-D4 + plan B + checkpoint). **SIN commitear:** TODA la
-etapa B (código en `components/games/football-logic/`, `ai.ts`/`ai.test.ts` nuevos sin trackear), las
-ediciones H1-H11 del plan B, `tasks/vault-world-cup/CHECKPOINT-etapa-B.md` y este handoff — lo commitea Paco.
-**Suite real:** 861 tests en 52 ficheros verdes (760 de partida + 101) · `npx tsc --noEmit` limpio ·
-`npm run build` exit 0 · grep de determinismo vacío (tests incluidos).
+**HEAD al escribir:** `5e1e1a3` (Paco, 06-sep: etapa B entera). **En staging, SIN commitear:** la etapa B2
+(`components/games/football-logic/`: clock, match, set-pieces, players, ai, step + tests), el plan B2, el spec
+con las decisiones del 06-sep (prórroga+tanda, audio, criterio 21), este handoff y los dos CHECKPOINT — lo
+commitea Paco. **Suite real:** 916 tests en 52 ficheros verdes · `npx tsc --noEmit` limpio · `npm run build`
+exit 0 · grep de determinismo vacío (tests incluidos).
+
+## 0. Etapa B2 (misma tarde, autorizada por Paco tras el commit de la B)
+
+Decisiones de Paco del 06-sep (en el spec): **prórroga de una parte de 60 s con gol de oro y tope; sin gol,
+tanda de cinco penaltis y muerte súbita "el primero que falla pierde"** (v1, motor); **mapa de audio
+definitivo** (tabla fichero → uso → disparador en §Etapa D; silbatos: inicio de parte / final de parte /
+faltas y penaltis; ambiente 2-3 veces por parte sorteado con rng propio; larguero reservado; entrada al suelo
+sin fichero → pendiente síntesis o silencio); nombres inventados + dorsales → v1.5. Carátula: Paco la puso
+como `public/covers/vault-futbol.png` (el spec decía `vault-world-cup.png`; los mp3 también llevan prefijo
+`vault-futbol` → fijar el slug del juego en la etapa D).
+
+Ejecutado con SDD (Tasks 7b-1 y 7b-2, revisiones limpias, una ronda de etiquetas) + revisión final con 9
+sondas (40 partidos completos: 12 prórroga, 3 tanda, 1 muerte súbita, 0 sin ganador; 200 tandas forzadas,
+máx 17 lanzamientos; determinismo 10/10). Ledger: `.superpowers/sdd/2026-09-06-vault-world-cup-stage-b2/`
+(rulings R29-R31, supuestos S-PK1..S-PK12 etiquetados en código, `final-review-report.md` con el **mapa de
+lectura para el HUD** de prórroga y tanda y 8 ítems QA nuevos). Ruling R18 (reloj parado en la parte 3)
+SUSTITUIDO: el reloj corre hasta `EXTRA_TIME_STEPS`. **Lo que existe ahora:** `'shootout'` en la máquina de
+fases, `ShootoutState`, `winnerOf(match)` como único lector del ganador (la tanda NO toca `match.score`),
+`placeAroundCentreSpot`, `beginShootoutKick`, `AiState.penaltyKickIndex`.
+
+**Para la etapa C, además de lo de la B:** el HUD recorta el reloj con `min(halfStep, EXTRA_TIME_STEPS)` (el
+tope se difiere hasta 301 pasos si vence en una cuenta atrás); en la resolución de una atajada
+`shootout.takerId` ya apunta al siguiente lanzador → atribuir con el anterior; `abandon()` desde `'shootout'`
+deja `winnerOf = -1` (Task 9 lo tiene que tratar); cámara alternando porterías en la tanda (S-PK8); los 15
+aparcados en el círculo central.
 
 ---
 
@@ -38,14 +63,12 @@ revisiones por tarea, `final-review-report.md` (veredicto, sondas, criterios, n�
 
 ## 2. Próximos pasos, en orden
 
-1. **Paco commitea la etapa B.** Mensaje recomendado por la revisión final (opción A, global):
-   `feat(world-cup): stage B — in-engine AI, CPU decision layer, sixteen selections and three formations`
-   (opción B, tres por tarea, en `final-review-report.md` §9; exigiría `git add` por rutas). Antes:
-   `git status` debe mostrar solo `components/games/football-logic/`, `docs/`, `tasks/`. No hay
-   `node_modules` colado (se borró una caché `.vite` de las sondas).
-2. **`retomar` con este documento.** Comprobar árbol limpio y 861 verdes.
-3. **Etapa C (Tasks 8-10 del spec: la pantalla).** Plan con `writing-plans` leyendo OBLIGATORIAMENTE
-   `final-review-report.md` §8 "Recomendaciones para la etapa C" (6 puntos: `abandon()` para el gol de oro
+1. **Paco commitea la etapa B2** (ya en staging): mensaje global en
+   `.superpowers/sdd/2026-09-06-vault-world-cup-stage-b2/final-review-report.md` §9 (o los dos por tarea).
+2. **`retomar` con este documento.** Comprobar árbol limpio y 916 verdes.
+3. **Etapa C (Tasks 8-9 del spec: la pantalla).** Plan con `writing-plans` leyendo OBLIGATORIAMENTE
+   los DOS `final-review-report.md` (etapa B §8 "Recomendaciones para la etapa C" y etapa B2 §8 "mapa de
+   lectura del HUD") (6 puntos: `abandon()` para el gol de oro
    sin techo; cursor durante los 2 s del portero, S-GK.6, decisión visible; A/B tragados en la cuenta atrás →
    el HUD debe decirlo; `applyTeamChoices` corre cada paso, el HUD escribe `TeamInput` sin ceremonia) y el
    triaje "CARRY TO Task 8" del ledger (5 ítems: guarda −1 en `applyTeamInput`, `SHOT_VZ_MAX` y

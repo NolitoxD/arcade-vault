@@ -1,5 +1,5 @@
 import { INV_SQRT2, type Vec2 } from './geometry';
-import { centerY, clampToBigArea, goalLineX, type PitchDef, type Side } from './pitch';
+import { centerX, centerY, clampToBigArea, goalLineX, type PitchDef, type Side } from './pitch';
 import { OUTFIELD, STRATEGIES, TEAM_SIZE, type Formation, type FormationSlot, type Role, type Strategy } from './teams';
 import type { Axis } from './input';
 import { perStep, stepsFor } from './clock';
@@ -112,6 +112,59 @@ export function placeByFormation(players: PlayerState[], team: 0 | 1, formation:
     p.wantSprint = false;
     p.facingX = attackDir;
     p.facingY = 0;
+  }
+}
+
+// Stage B2, S-PK4: the fifteen outfield players who are not taking the kick stand
+// still around the centre spot and the live positioning AI does not run for them.
+// The grid is 4 x 4 = 2 * OUTFIELD slots, laid out by ascending id with integer
+// arithmetic -- spreading them on a circle would need trigonometry, which the engine
+// bans (risk 3). Its far corner sits at sqrt(105^2 + 120^2) = 159.45 u from the centre
+// spot, inside the 175 u circle.
+// Stage B2 finding H4: this used to be a 5 x 3 grid (2 * OUTFIELD - 1 slots, exactly
+// the fifteen needed), but its middle column and row are both exact integers
+// ((5-1)/2 = 2, (3-1)/2 = 1), so slot k = 7 landed at offset (0, 0) -- one player
+// parked exactly on the centre spot itself, which is where the ball of the shootout's
+// NEXT kick sits. A 4 x 4 grid has no middle column or row (both (4-1)/2 = 1.5), so no
+// slot's offset is ever (0, 0) regardless of which one is used -- that is what actually
+// fixes the coincidence, not the choice of which slot to drop. One slot has to be
+// dropped anyway, since 16 slots is one more than the fifteen players parked here;
+// slot 7 is it, kept only because it is the smallest possible diff from the old
+// layout's dropped centre and carries no geometric meaning of its own now.
+// Stage B2 assumption S-PK7, not in the spec -- review in QA: the goalkeepers are NOT
+// parked. The spec's "the sixteen remaining" would put the attacking keeper on the
+// centre circle, and criterion 9b (checkGoalkeepersInBox) forbids a keeper outside its
+// own big area -- so both keepers stay where placeByFormation left them, on their lines.
+// Stage B2 assumption S-PK10, not in the spec -- review in QA: an extra time that ended
+// mid-slide would otherwise leave a parked player frozen in the air for the whole
+// shootout, so the slide, the floor and the charge are cleared here as well.
+export const SHOOTOUT_GRID_COLUMNS = 4;
+export const SHOOTOUT_GRID_ROWS = 4;
+export const SHOOTOUT_GRID_SPACING_X = 70;
+export const SHOOTOUT_GRID_SPACING_Y = 80;
+
+export function placeAroundCentreSpot(players: PlayerState[], takerId: number, pitch: PitchDef): void {
+  const cx = centerX(pitch);
+  const cy = centerY(pitch);
+  let k = 0;
+  for (let i = 0; i < players.length; i++) {
+    const p = players[i];
+    if (p.role === 'gk' || p.id === takerId) continue;
+    if (k === 7) k++;   // Stage B2 (H4): the sixteenth slot is dropped so fifteen fit
+    const col = k % SHOOTOUT_GRID_COLUMNS;
+    const row = (k - col) / SHOOTOUT_GRID_COLUMNS;
+    p.x = cx + (col - (SHOOTOUT_GRID_COLUMNS - 1) / 2) * SHOOTOUT_GRID_SPACING_X;
+    p.y = cy + (row - (SHOOTOUT_GRID_ROWS - 1) / 2) * SHOOTOUT_GRID_SPACING_Y;
+    p.vx = 0;
+    p.vy = 0;
+    p.wantX = 0;
+    p.wantY = 0;
+    p.wantSprint = false;
+    p.tackleStepsLeft = 0;
+    p.downUntilStep = 0;
+    p.chargeSteps = 0;
+    p.chargeButton = 'none';
+    k++;
   }
 }
 

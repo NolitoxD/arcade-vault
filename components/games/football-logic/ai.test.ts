@@ -7,10 +7,14 @@ import { HALF_STEPS, perStep, stepsFor } from './step';
 import { GK_LINE_DIST, GK_SPEED, PLAYER_HEIGHT, PLAYER_SPEED, createPlayers, type PlayerState } from './players';
 import { KICK_LOCK_STEPS, createBall, givePossession, type BallState } from './ball';
 import { createRng, type Rng } from './rng';
+import { SET_PIECE_COUNTDOWN_STEPS, SHOOTOUT_RESOLVE_STEPS, SHOOTOUT_ROUNDS } from './set-pieces';
 import {
   LONG_PASS_HOLD_STEPS, SHOT_CHARGE_STEPS, SHOT_SPEED_MAX, SHOT_SPEED_MIN, createActionEvent, type ActionEvent,
 } from './actions';
-import { callSetPiece, createMatch, resumePlay, stepMatch, type MatchPhase, type MatchState } from './match';
+import {
+  callSetPiece, createMatch, endExtraTime, endHalf, endHalfTime, resumePlay, stepMatch, winnerOf,
+  type MatchPhase, type MatchState,
+} from './match';
 import { checkGoalkeepersInBox } from './invariants';
 import {
   CHARGED_SHOT_CATCH_PENALTY, CHASERS, COVER_DIST, DRIFT_LONG, DRIFT_SHORT, LATE_GAME_SECONDS, LONG_PASS_MIN_DIST,
@@ -676,6 +680,33 @@ describe('decideTeamInput during set pieces and pauses', () => {
     decideTeamInput(m, 1, m.profiles[1], createAiState(), rng, other);
     expect([other.dx, other.dy]).toEqual([0, 0]);
   });
+  // S-PK11: the whole shootout is one phase, so the phase change that used to reset the
+  // choice never comes. Each kick draws exactly once, and two consecutive kicks of the
+  // same team draw again instead of repeating the first side for ever.
+  it('during a shootout the CPU draws its side once per kick, not once per shootout', () => {
+    const m = createMatch([TEAMS[0], TEAMS[1]], FORMATIONS, PITCH, [profileFor(TEAMS[0], 5), profileFor(TEAMS[1], 5)]);
+    resumePlay(m); endHalf(m); endHalfTime(m); resumePlay(m); endHalf(m);
+    resumePlay(m);
+    expect(endExtraTime(m)).toBe(true);
+    const state = createAiState();
+    const out = createTeamInput();
+    let calls = 0;
+    const rng = () => { calls++; return 0.7; };                 // -> side +1 (S11: thirds)
+    for (let i = 0; i < 5; i++) decideTeamInput(m, 0, m.profiles[0], state, rng, out);
+    expect(out.dy).toBe(1);
+    expect(calls).toBe(1);
+    // The defending team does not touch the d-pad while the rival kicks.
+    const other = createTeamInput();
+    decideTeamInput(m, 1, m.profiles[1], createAiState(), rng, other);
+    expect([other.dx, other.dy]).toEqual([0, 0]);
+    expect(calls).toBe(1);
+    // Second kick of team 0: a new draw.
+    const sh = m.shootout;
+    expect(sh).not.toBeNull();
+    if (sh !== null) sh.taken[0] = 1;
+    decideTeamInput(m, 0, m.profiles[0], state, rng, out);
+    expect(calls).toBe(2);
+  });
   it('is neutral input (formation kept, strategy from the scoreboard) during goal, half-time and over', () => {
     const m = createMatch([TEAMS[0], TEAMS[1]], FORMATIONS, PITCH, [profileFor(TEAMS[0], 5), profileFor(TEAMS[1], 5)]);
     const state = createAiState();
@@ -804,7 +835,7 @@ function sameFinal(a: MatchState, b: MatchState): boolean {
   return true;
 }
 
-const ALL_PHASES: readonly MatchPhase[] = ['kickoff', 'play', 'set-piece', 'goal', 'half-time', 'golden-goal', 'over'];
+const ALL_PHASES: readonly MatchPhase[] = ['kickoff', 'play', 'set-piece', 'goal', 'half-time', 'golden-goal', 'shootout', 'over'];
 
 describe('CPU vs CPU: a recorded, deterministic full match that exercises the whole AI (criteria 1, 9b, 12 and the never-invalid input)', () => {
   // Seed 14 (fixture recomputed, task report): the brief's seed 7 completes ZERO shots
@@ -905,5 +936,75 @@ describe('criterion 11 with the real formations: switching 3-3-2 → 4-3-1 mid-p
     expect(m.formationIndex[0]).toBe(2);
     expect(fwd.x).not.toBe(before);                // moved this very step (the direction depends on the drift; the move does not)
     expect(m.players[8].role).toBe('fwd');         // roles are fixed at creation (v1: slots keep their player)
+  });
+});
+
+// Criterion 23 and risk 8: the shootout is deterministic with the injected rng and it
+// ALWAYS ends -- never a match without a winner. Thirty seeds of CPU vs CPU, entered
+// through the engine's own transitions instead of playing 14 580 steps of football
+// first, which is what makes this affordable inside the suite.
+describe('the shootout always ends with a winner (criterion 23)', () => {
+  function playShootout(seed: number, difficulty: readonly [number, number]): { m: MatchState; steps: number; kicks: number } {
+    const profiles: [AiProfile, AiProfile] = [profileFor(TEAMS[0], difficulty[0]), profileFor(TEAMS[1], difficulty[1])];
+    const m = createMatch([TEAMS[0], TEAMS[1]], FORMATIONS, PITCH, profiles);
+    resumePlay(m); endHalf(m); endHalfTime(m); resumePlay(m); endHalf(m);
+    resumePlay(m);
+    endExtraTime(m);
+    const matchRng = createRng(seed);
+    const aiRng = createRng(seed ^ 0x5bd1e995);
+    const states: [AiState, AiState] = [createAiState(), createAiState()];
+    const live: [TeamInput, TeamInput] = [createTeamInput(), createTeamInput()];
+    // A ceiling, not a rule: the engine has no cap on sudden death (S-PK9). Each kick is
+    // saved with probability penaltyReadChance >= 0.5125, so 60 kicks without a single
+    // miss has probability below 1e-18; a run that hits this ceiling is a hang.
+    const cap = 60 * (SET_PIECE_COUNTDOWN_STEPS + SHOOTOUT_RESOLVE_STEPS);
+    let steps = 0;
+    while (m.phase !== 'over' && steps < cap) {
+      for (const t of [0, 1] as const) decideTeamInput(m, t, profiles[t], states[t], aiRng, live[t]);
+      stepMatch(m, live, matchRng);
+      steps++;
+    }
+    const sh = m.shootout;
+    return { m, steps, kicks: (sh?.taken[0] ?? 0) + (sh?.taken[1] ?? 0) };
+  }
+  it('thirty seeds: every one of them ends, with a winner, inside the ceiling', () => {
+    let suddenDeaths = 0;
+    let earlyCuts = 0;
+    const winners = [0, 0];
+    for (let seed = 1; seed <= 30; seed++) {
+      const difficulty: readonly [number, number] = seed % 2 === 0 ? [8, 8] : [1, 8];
+      const { m, steps, kicks } = playShootout(seed, difficulty);
+      expect(m.phase, `seed ${seed} never finished its shootout`).toBe('over');
+      const winner = winnerOf(m);
+      expect(winner, `seed ${seed} ended without a winner`).toBeGreaterThanOrEqual(0);
+      expect(steps).toBeLessThan(60 * (SET_PIECE_COUNTDOWN_STEPS + SHOOTOUT_RESOLVE_STEPS));
+      expect(kicks).toBeGreaterThanOrEqual(2);
+      expect(m.score).toEqual([0, 0]);
+      winners[winner]++;
+      if (m.shootout?.suddenDeath === true) suddenDeaths++;
+      if (kicks < 2 * SHOOTOUT_ROUNDS) earlyCuts++;
+    }
+    // Anti-coincidence: thirty shootouts that all ended in the same shape would prove
+    // nothing about the rules. Both endings and both winners have to show up.
+    expect(suddenDeaths + earlyCuts, 'no shootout was cut early and none reached sudden death').toBeGreaterThan(0);
+    expect(winners[0] + winners[1]).toBe(30);
+    expect(winners[0], 'team 0 never won a shootout in thirty seeds').toBeGreaterThan(0);
+    expect(winners[1], 'team 1 never won a shootout in thirty seeds').toBeGreaterThan(0);
+  });
+  // Criterion 1 on the shootout: same seed, same shootout; another seed, another one.
+  it('the same seed replays to the same shootout, and another seed does not', () => {
+    const a = playShootout(7, [8, 8]);
+    const b = playShootout(7, [8, 8]);
+    expect(b.m.shootout?.taken).toEqual(a.m.shootout?.taken);
+    expect(b.m.shootout?.scored).toEqual(a.m.shootout?.scored);
+    expect(b.steps).toBe(a.steps);
+    expect(winnerOf(b.m)).toBe(winnerOf(a.m));
+    const other = playShootout(8, [8, 8]);
+    // Ruling R3's shape: the negative names WHAT differs, not just "not equal".
+    const differs = other.kicks !== a.kicks
+      || other.m.shootout?.scored[0] !== a.m.shootout?.scored[0]
+      || other.m.shootout?.scored[1] !== a.m.shootout?.scored[1]
+      || winnerOf(other.m) !== winnerOf(a.m);
+    expect(differs, 'seed 8 produced exactly the same shootout as seed 7').toBe(true);
   });
 });

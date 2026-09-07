@@ -1,6 +1,8 @@
 # SPEC 31 — VAULT WORLD CUP
 
-> **Estado:** Approved (leído por Paco, 2026-09-03; grill hecho 2026-09-04, decisiones incorporadas)
+> **Estado:** Approved (leído por Paco, 2026-09-03; grill hecho 2026-09-04, decisiones incorporadas;
+> decisiones de Paco del 2026-09-06 —prórroga con tope + tanda de penaltis, y mapa de audio— también
+> incorporadas, con los supuestos S-PK1..S-PK6 pendientes de su visto bueno)
 > **Depende de:** 29-vault-fighter (patrón de motor puro y capa de modo), 30-vault-fighter-tournament
 > (cuadro de eliminatoria y su pantalla, como referencia), 15-pong (primer SPORTS, con 2 jugadores
 > en local), 24-games-registry-credits-f2, 10 (mando táctil, tercer botón C), 12 (patrones de
@@ -40,7 +42,10 @@
   eligiendo lado y el portero tirándose. **Sin tarjetas y sin fuera de juego.**
 - **Saques automáticos con dirección**: saque inicial, banda, córner, puerta, falta y penalti. El
   jugador elige con la cruceta, cuenta atrás grande de cinco segundos, y sale solo.
-- **Dos partes de 90 segundos** (constante, techo 120) y **gol de oro** en el empate.
+- **Dos partes de 90 segundos** (constante, techo 120) y, con empate al final de la segunda,
+  **prórroga de una sola parte de 60 segundos con gol de oro dentro de ella** y, si acaba sin gol,
+  **tanda de cinco penaltis por equipo con muerte súbita** (Paco, 06-sep). Es regla del partido y no
+  del modo: el motor no sabe si está jugando un amistoso o una eliminatoria del Mundial.
 - **IA rival**: colocación por formación y estrategia, persecución del balón, portero, y cambio de
   estrategia según el marcador.
 - **Dos modos**: **Amistoso** (un partido: contra la CPU, o **dos jugadores en el mismo teclado**)
@@ -54,11 +59,13 @@
   levantando la copa; lo único en movimiento es el confeti (amistoso) o los fuegos artificiales
   (Mundial). Corta, y CONTINUAR devuelve al selector de modo. **ELIMINADO** y la derrota del
   amistoso son rótulos sobre la pantalla del partido, sin pantalla propia.
-- **Audio por fichero (cambio de Paco, 04-sep):** **dos pistas de música**, una de gameplay y otra
-  de menú (selector de selección, alineación y estrategia, y la pausa en partido), y **SFX de
-  fichero**: gol, pitido de árbitro (falta, penalti, gol, saque de centro al inicio, al final y
-  tras cada gol), público animando, entrada al suelo, golpeo del balón. Los trae Paco con sufijo;
-  síntesis WebAudio solo como respaldo si falta alguno.
+- **Audio por fichero (cambio de Paco, 04-sep; mapa definitivo 06-sep):** **dos pistas de música**,
+  una de gameplay y otra de menú/previa (selector de modo y de selección, alineación y estrategia,
+  cuadro del Mundial y pausa en partido), y **SFX de fichero**: la cadena de gol de tres sonidos,
+  los tres pitidos de árbitro (inicio de parte, final de parte, falta y penalti), público animando
+  a ráfagas, golpeo del balón y cánticos de la victoria. Los ficheros ya están en `public/` con
+  prefijo `vault-futbol` y el mapa completo fichero → uso → disparador está en la **etapa D, paso
+  10**. **Falta el de entrada al suelo**: síntesis WebAudio breve o silencio, pendiente de Paco.
 - **Rótulos superpuestos al partido** (como el ELIMINADO de Vault Fighter): INICIO, FALTA, PENALTI,
   FUERA, CÓRNER, GOL, FINAL, con su pitido. **Sin figura de árbitro** en la v1.
 - **Celebración de gol fija**, la misma siempre: los que marcan se abrazan, los que reciben quedan
@@ -79,8 +86,9 @@
 - **Figura de árbitro → v1.5** (opcional: un muñeco de negro siguiendo el balón). En la v1 el
   árbitro es pitido + rótulo.
 - **Octavos de final → v1.5** si el Mundial de 8 queda corto; **nunca más de 16**.
-- **Fase de grupos, prórroga y tanda de penaltis como desempate**: no. Eliminatoria directa y gol
-  de oro.
+- **Fase de grupos**: no. Eliminatoria directa. **La prórroga y la tanda de penaltis, que el 03-sep
+  estaban fuera y aplazadas a un spec aparte, entran en la v1** por decisión de Paco del 06-sep, y
+  entran en el motor (etapa B2) antes que la pantalla.
 - **Diferencias entre selecciones más allá del nombre y los colores → v1.5**, con los atributos.
 - **Clubes → v2**, si llega.
 - **La variante a lo Kick Off** (balón libre, chut con efecto) → después de producción, sobre este
@@ -111,8 +119,8 @@ siempre por parámetro. Las funciones del bucle escriben en el estado que recibe
 | `actions.ts` | Chut, pase corto, pase largo, robo de pie, entrada al suelo. Resuelven sobre el estado y devuelven el resultado en un out-param. |
 | `ai.ts` | Colocación por formación y estrategia, persecución del balón, portero, y la decisión del equipo CPU (rellena un `TeamInput`). |
 | `referee.ts` | Gol, balón fuera (banda, córner, puerta), falta y penalti. Devuelve **qué saque toca y dónde**. |
-| `set-pieces.ts` | La fase de saque: tipo, posición, dirección elegida, cuenta atrás, ejecución automática. |
-| `match.ts` | `MatchState`: reloj, partes, marcador, fase, gol de oro. **Y `stepMatch(match, inputs, rng)`**, el paso completo del partido (etapa A, ruling R7). |
+| `set-pieces.ts` | La fase de saque: tipo, posición, dirección elegida, cuenta atrás, ejecución automática. **Y los lanzamientos de la tanda**, que reutilizan la pieza de `kind: 'penalty'` (etapa B2). |
+| `match.ts` | `MatchState`: reloj, partes, marcador, fase, prórroga con gol de oro y **tanda de penaltis**. **Y `stepMatch(match, inputs, rng)`**, el paso completo del partido (etapa A, ruling R7). |
 | `world-cup.ts` | Sorteo de 8 del banco, cuadro, eliminación. Mismo patrón que `tournament.ts`, no el mismo código (aquél es de luchadores). |
 | `invariants.ts` | La red: formaciones que suman ocho, banco sin ids ni colores repetidos, geometría del campo coherente. |
 | `mode.ts` | Unión `'friendly' \| 'world-cup'`, igual que la de Vault Fighter. |
@@ -148,18 +156,33 @@ export type BallState = {
 };
 
 // match.ts
-export type MatchPhase = 'kickoff' | 'play' | 'set-piece' | 'goal' | 'half-time' | 'golden-goal' | 'over';
+// Etapa B2 (Paco, 06-sep): UNA sola fase nueva, 'shootout'. No hace falta una 'extra-time':
+// `half === 3` ya ES la prórroga y su juego abierto sigue siendo 'golden-goal'; lo único que
+// cambia es que ahora el reloj SÍ corre en la parte 3, con tope de EXTRA_TIME_SECONDS.
+export type MatchPhase = 'kickoff' | 'play' | 'set-piece' | 'goal' | 'half-time' | 'golden-goal' | 'shootout' | 'over';
 export type MatchState = {
   teams: [TeamDef, TeamDef];
   players: PlayerState[];                 // los 18, creados una vez
   ball: BallState;
   score: [number, number];
-  half: 1 | 2 | 3;                        // 3 = gol de oro
+  half: 1 | 2 | 3;                        // 3 = prórroga de 60 s con gol de oro dentro
   clockMs: number;
   phase: MatchPhase;
   setPiece: SetPieceState | null;
+  shootout: ShootoutState | null;         // null hasta que la prórroga se agota empatada
   stepCount: number;                      // reloj en pasos, no en ms reales: 90 s = 5 400 pasos
   controlled: [number, number];           // CACHÉ del controlado, derivado al final de cada paso (ver abajo)
+};
+
+// La tanda. Mientras `phase === 'shootout'` el reloj de la parte NO avanza (S-PK6): el marcador
+// de la tanda es lo único que se mueve, y el partido termina siempre por marcador, nunca por tiempo.
+export type ShootoutState = {
+  taken: [number, number];                // lanzamientos ya ejecutados por equipo
+  scored: [number, number];               // marcador de la tanda
+  team: 0 | 1;                            // a quién le toca lanzar
+  takerId: number;                        // el lanzador de campo de este turno
+  suddenDeath: boolean;                   // false durante los cinco primeros de cada equipo
+  resolveStepsLeft: number;               // cuenta atrás de resolución tras el chut (S-PK2)
 };
 ```
 
@@ -198,6 +221,7 @@ Todos en constantes, ninguno enterrado en el código:
 | Robo de pie | alcance 28 u, 65 % de éxito frente a un rival que no sprinta |
 | Entrada al suelo | avance 90 u en 0,4 s · si falla, 1 s en el suelo |
 | Partes | 2 × 90 s (techo 120) · cuenta atrás de saque 5 s |
+| Prórroga y tanda (Paco, 06-sep) | prórroga 1 × 60 s (`EXTRA_TIME_SECONDS`) con gol de oro dentro · 5 penaltis por equipo · resolución de cada lanzamiento 4 s (`SHOOTOUT_RESOLVE_SECONDS`) |
 | Portero | se mueve en su línea a 220 u/s, ataja lo que llega a menos de 40 u |
 | Añadidos en la etapa A (no estaban en el spec; revisar en QA) | robo de pie frente a rival que SÍ sprinta 35 % · el chut cargado se eleva hasta `vz` 200 (ápex 22 u, nunca por encima del larguero solo) |
 
@@ -298,8 +322,12 @@ Un Mundial perfecto vale **61 000 sin contar goles** (3 × 5 000 + 3 × 2 000 + 
 por gol: con 2-3 goles por partido **ronda los 70 000**. Los goles son lo único sin techo y donde
 se expresa la habilidad; no hay tope.
 
-**Gol de oro sin tope**, con la CPU pasando a estrategia de ataque al entrar en él para que el
-partido se abra solo.
+**Prórroga de 60 s con gol de oro dentro, y tanda de penaltis si no lo hay** (Paco, 06-sep;
+sustituye al gol de oro sin tope del 03-sep). La CPU pasa a estrategia de ataque al entrar en la
+prórroga, para que el partido se abra solo; si los 60 s se agotan con empate, cinco penaltis por
+equipo alternando y, si el empate sigue, muerte súbita alternando en la que **el primero que falla
+pierde**. La regla es del partido, no del modo: el motor no sabe si es un amistoso o una
+eliminatoria, y por eso también un amistoso empatado acaba en penaltis.
 
 **Banco de dieciséis selecciones**, ocho por Mundial, sorteadas. Todas iguales en el campo,
 distintas en nombre y equipación (Italia azul, España roja, Brasil amarilla — las inconfundibles).
@@ -316,7 +344,7 @@ formación suma ocho y ninguna posición se sale del campo.
 
 ## Plan de implementación
 
-Once pasos en **cuatro etapas**, cada una cerrable por sí sola. **Máximo una etapa al día**; si una
+Doce pasos en **cinco etapas** (la B2 entró el 06-sep), cada una cerrable por sí sola. **Máximo una etapa al día**; si una
 necesita dos, se le dan, y al terminarla se para. La red antes que el contenido, la lógica pura
 antes que la pantalla, y el refactor nunca mezclado con funcionalidad.
 
@@ -346,7 +374,8 @@ dirección elegida con la cruceta, cuenta atrás, ejecución automática. El pen
 portero.
 
 **5. `match.ts` — el partido entero.**
-Reloj, dos partes, marcador, gol de oro sin tope, y la máquina de fases. **Guarda de precondición
+Reloj, dos partes, marcador, gol de oro, y la máquina de fases. El tope de la prórroga y la tanda
+de penaltis no son de aquí: llegan enteros en la etapa B2. **Guarda de precondición
 en todas las transiciones**, sin excepciones. Test de un partido completo simulado con entradas
 grabadas.
 
@@ -360,6 +389,47 @@ produce una entrada inválida y de que a más dificultad reacciona antes y acier
 
 **7. El contenido: las 16 selecciones y las 3 formaciones**, con la red del paso 1 cerrándose
 sobre los datos reales. Debe pasar a la primera, como en Vault Fighter.
+
+### Etapa B2 — prórroga con tope y tanda de penaltis
+
+**7b. `match.ts` y `set-pieces.ts`: prórroga de 60 s con gol de oro y la tanda de penaltis.**
+Motor sin pantalla, y con los mismos criterios que la etapa A: determinismo con el `rng` inyectado,
+ninguna asignación de memoria por paso, guarda de precondición en cada transición nueva, y un test
+integrador con entradas grabadas que llegue hasta la tanda y hasta la muerte súbita. Entra la
+constante `EXTRA_TIME_SECONDS = 60`, el reloj empieza a correr en la parte 3 —hasta ahora el ruling
+R18 lo congelaba porque el gol de oro no tenía nada que medir; con tope sí lo tiene, y **R18 queda
+sustituido**—, y la máquina de fases gana `'shootout'`. La CPU sigue pasando a ataque al entrar en
+la prórroga, exactamente como ya hace con `half === 3`.
+
+**Interpretación de ejecución, para que Paco la confirme o la cambie** (son supuestos de Claude, no
+decisiones suyas; van etiquetados en el código como los S de la etapa B):
+
+- **S-PK1 · La pieza se reutiliza.** Cada lanzamiento es la pieza de penalti que ya existe
+  (`setPiece.kind === 'penalty'`): el lanzador apunta el lado con la cruceta y chuta con A, el
+  portero IA lee el lado con `penaltyReadChance`, y la CPU elige lado con una tirada uniforme de su
+  `rng` (S11 de la etapa B). Cada lanzamiento arranca con la cuenta atrás de cinco segundos de las
+  piezas y, si nadie chuta al agotarse, sale solo y recto, como el resto de saques.
+- **S-PK2 · Cuándo está resuelto un lanzamiento.** Es GOL si el balón cruza la línea entre los
+  postes; es FALLO si el portero lo ataja, si sale fuera, o si pasan cuatro segundos desde el chut
+  sin gol (`SHOOTOUT_RESOLVE_SECONDS = 4`). **No hay rechace**: el balón se recoge y se coloca para
+  el siguiente.
+- **S-PK3 · Orden de lanzamiento.** Empieza el equipo 0 —el humano en el amistoso; en el Mundial,
+  el que figure primero en el cruce— y luego alternan. El lanzador de campo va por orden de `id`
+  ascendente sin repetir hasta agotar los ocho, y después se vuelve a empezar. **Los porteros no
+  lanzan.**
+- **S-PK4 · Los demás.** Durante la tanda los dieciséis restantes se colocan en el círculo central
+  y no se mueven: la colocación viva de la IA no actúa.
+- **S-PK5 · Cuándo acaba.** Dentro de los cinco, la tanda se corta en cuanto es matemáticamente
+  imposible remontar, como en el fútbol real. En muerte súbita, **el primero que falla pierde**
+  (literal de Paco), aunque el rival todavía no haya lanzado en esa ronda. *(Esto difiere del
+  fútbol real, que resuelve la muerte súbita por pares: allí el fallo solo pierde si el rival
+  acierta su turno de esa misma ronda.)*
+- **S-PK6 · Estado y reloj.** `MatchState` gana un `shootout: ShootoutState | null` —lanzamientos
+  por equipo, marcador de la tanda, lanzador actual— y la fase `'shootout'` en la máquina. **No se
+  añade una fase `'extra-time'`**: `half === 3` con tope ya es la prórroga y su juego abierto sigue
+  siendo `'golden-goal'`, así que una fase más solo duplicaría estado; es lo más simple y es lo que
+  se hace. Durante la tanda el reloj no avanza. `abandon()` no se toca: su única guarda es
+  `phase === 'over'`, así que sigue sacando el partido de `'shootout'` sin caso especial.
 
 ### Etapa C — la pantalla
 
@@ -378,9 +448,37 @@ confeti en el amistoso, fuegos artificiales en el Mundial.
 
 **10. Registro, tipos, migración, play-page, música y carátula.**
 La entrada en el catálogo con instrucciones que expliquen los tres botones y el pulsar/mantener,
-la fila en base de datos, la play-page espejo de la de Vault Fighter, las dos pistas (gameplay y
-menú) y los SFX de fichero, la carátula, y el **bloqueo por viewport**: deshabilitado en el
+la fila en base de datos, la play-page espejo de la de Vault Fighter, **las dos pistas y los SFX de
+fichero según la tabla de abajo**, la carátula, y el **bloqueo por viewport**: deshabilitado en el
 catálogo en pantalla pequeña y parada + redirect si el viewport se reduce en partida.
+
+#### Audio (ficheros definitivos, 2026-09-06)
+
+Todos los ficheros están ya en `public/` con prefijo `vault-futbol`. Nada de esto entra en
+`football-logic/`: el motor solo produce fases y `ActionEvent`/`RefereeCall`, y la capa de pantalla
+los traduce a sonido.
+
+| Fichero (`public/`) | Uso | Disparador |
+|---|---|---|
+| `vault-futbol-theme-pre-game-lobby.mp3` | Música de menú y previa | Selector de modo, selección de selección, alineación y estrategia, cuadro del Mundial y **pausa** del partido |
+| `vault-futbol-theme-game-play.mp3` | Música de gameplay, en bucle | Desde el primer `phase === 'kickoff'` hasta `phase === 'over'`; se calla en la pausa |
+| `vault-futbol_Silbato_que_señala_el_inicio_de_un_partido_de_fútbol,_nítido_y_claro.mp3` | Pitido de inicio | Entrada en `'kickoff'` de cada parte (`half` 1, 2 y **la prórroga**) y arranque de la cuenta atrás de cada lanzamiento de la tanda |
+| `vault-futbol_Árbitro_pitando_el_final_del_partido,_autoritario_y_claro.mp3` | Pitido final | `endHalf` de cada parte y `phase === 'over'` |
+| `vault-futbol-football_refereex27s-486448.mp3` | Pitido de falta y de penalti | `RefereeCall.kind === 'free-kick'` o `'penalty'`; y también en el gol (`kind === 'goal'`), como pitido del árbitro junto a la cadena de gol |
+| `vault-futbol-a-football-hits-the-net-goal-313216.mp3` | Red — **1º de la cadena de gol** | El balón cruza la línea: `RefereeCall.kind === 'goal'` |
+| `vault-futbol-gol-055969_golom4a-45775.mp3` | Grito de GOL — **2º de la cadena** | Con el rótulo GOL, al entrar en `phase === 'goal'` |
+| `vault-futbol_El_público_vitorea_con_fuerza_cuando_un_equipo_marca_un_gol,_sonido_eufórico.mp3` | Público eufórico — **3º de la cadena** | Durante la celebración fija (`GOAL_PAUSE_STEPS`) |
+| `vault-futbol-live-football-match-stadium-crowd-cheering-563439.mp3` | Público animando | **No en bucle**: dos o tres ráfagas por parte, en instantes sorteados y deterministas, también en la prórroga, y nunca los mismos instantes en dos partes |
+| `vault-futbol_Potente_patada_de_fútbol,_un_fuerte_golpe_al_impactar_el_balón.mp3` | Golpeo del balón al chutar | `ActionEvent.kind === 'shot'` con `ok` |
+| `vault-futbol.crowd_explosions-football39s-chants-in-street-celebration-in-the-boca-juniors-fan-national-day-12-12-2012-54413.mp3` | Cánticos de celebración | Pantalla de CAMPEONES DEL MUNDO con los fuegos artificiales; **a volumen bajo** en el confeti del amistoso |
+| `vault-futbol_Balón_de_fútbol_golpeando_el_larguero_con_un_fuerte_ruido,_impacto_resonante.mp3` | Larguero | **Reservado, sin consumidor en la v1**: el motor no tiene los postes como colisión → v1.5 |
+| *(sin fichero)* | Entrada al suelo | `ActionEvent.kind === 'tackle'` → síntesis WebAudio breve o silencio. **Decisión pendiente de Paco.** |
+
+**Los instantes del público no se sortean con el `rng` del partido.** Sortearlos con él haría que la
+capa de audio consumiera tiradas y cambiara la simulación, que es justo lo que el criterio 1
+prohíbe. Se sortean una vez al empezar cada parte con **un `createRng` propio derivado de la misma
+semilla del partido**: deterministas, reproducibles con el replay, y sin tocar la secuencia del
+motor.
 
 **11. `verify-plan` y QA humano.**
 Los criterios de aceptación del spec, y el QA de Paco: que el fútbol se sienta fútbol, que el
@@ -418,8 +516,8 @@ amistoso a dos sea justo, y que el Mundial dé ganas de otro.
     visible, y sale solo.
 11. **Alineación y estrategia se cambian en pleno partido** y la colocación del equipo responde en
     el acto.
-12. **Dos partes de 90 segundos y gol de oro sin tope**, con la CPU pasando a ataque al entrar en
-    gol de oro.
+12. **Dos partes de 90 s; con empate, prórroga de 60 s con gol de oro y la CPU en ataque; sin gol,
+    tanda de cinco penaltis y muerte súbita.**
 13. **La cámara sigue al balón sin salirse del campo**, y el minimapa muestra a los dieciocho.
 
 **Modos y flujo**
@@ -438,9 +536,11 @@ amistoso a dos sea justo, y que el Mundial dé ganas de otro.
 **Calidad**
 20. **Ninguna asignación de memoria por frame** en el bucle ni en el dibujo, incluido el confeti
     (depósito de partículas creado una vez).
-21. **La suite sigue verde y no baja de los 504 tests** de partida.
+21. **La suite sigue verde y no baja de los 861 tests (cierre de la etapa B, 2026-09-06)** de partida.
 22. **QA humano:** el fútbol se siente fútbol, el amistoso a dos es justo, y el Mundial da ganas de
     otro. Los criterios se revisan tras este QA.
+23. **La tanda de penaltis es determinista con el `rng` inyectado y termina siempre** (nunca un
+    partido sin ganador).
 
 ---
 
@@ -469,9 +569,13 @@ amistoso a dos sea justo, y que el Mundial dé ganas de otro.
 - **No: fuera de juego.** En un arcade es motivo de abandono. (2026-09-03)
 - **Sí: saques automáticos con dirección y cuenta atrás de cinco segundos**, todos: inicial, banda,
   córner, puerta, falta y penalti. Descartada la fase de saque controlada. (Paco, 2026-09-03)
-- **Sí: dos partes de 90 segundos y gol de oro sin tope**, con la CPU pasando a ataque. Descartados
-  prórroga y tanda de penaltis: spec aparte. Techo de 120 por parte; un partido nunca más de cinco
-  minutos. (Paco, 2026-09-03)
+- **Sí: dos partes de 90 segundos y gol de oro**, con la CPU pasando a ataque. Techo de 120 por
+  parte. (Paco, 2026-09-03) **Corregido el 06-sep:** el gol de oro deja de ser sin tope y pasa a
+  vivir dentro de una prórroga de 60 s, con la tanda de penaltis detrás. El reloj de un partido
+  llega así a 240 s (90 + 90 + 60), y sumadas las pausas de gol y descanso, las cuentas atrás de
+  cinco segundos de los saques y una tanda de diez lanzamientos, **la frase "un partido nunca más
+  de cinco minutos" ya no vale**: el peor caso razonable ronda los siete, y una muerte súbita larga
+  lo estira más. (Paco, 2026-09-06)
 - **Sí: jugadores idénticos con identificador propio en la v1.** Atributos por posición,
   resistencia y cambios de banquillo van juntos a la **v1.5**: sin atributos un cambio no significa
   nada. El identificador propio es lo que hará posibles los cambios sin reescribir. (Paco, 2026-09-03)
@@ -542,6 +646,23 @@ amistoso a dos sea justo, y que el Mundial dé ganas de otro.
   pase largo; si a los 2 segundos no has sacado, saque automático". Interpretación de ejecución
   como supuesto S-GK en el plan de la etapa B (neutro = recto hacia campo contrario; la CPU siempre
   usa el automático). (Paco, 2026-09-05)
+- **Dos decisiones del 06-sep, las dos vinculantes y las dos sustituyendo a lo anterior (Paco).**
+  **(A) Prórroga con tope y tanda de penaltis, en la v1 y en el motor, antes que la pantalla:** con
+  empate al final de la segunda parte, una sola prórroga de 60 s con gol de oro dentro y, si acaba
+  sin gol, cinco penaltis por equipo alternando y muerte súbita en la que el primero que falla
+  pierde —literal de Paco: "si hay empate, como es eliminatorias, prórroga buscando el gol de oro;
+  poner un límite en la prórroga, y si no se ha marcado antes de ese límite pasamos a una tanda de
+  cinco penaltis y si se empata, penaltis: el primero que falla es el que pierde"—, y se aplica al
+  partido con independencia del modo, porque el motor no sabe en cuál está. Sustituye al gol de oro
+  sin tope del 03-sep y al "prórroga y tanda descartadas: spec aparte". **La interpretación de
+  ejecución está como supuestos S-PK1..S-PK6 en la etapa B2 del plan, pendientes de que Paco los
+  confirme o los cambie.** **(B) Mapa definitivo de audio:** los ficheros de `public/` quedan
+  asignados uno a uno —dos pistas (menú/previa y gameplay), tres silbatos distintos (inicio de
+  parte, final de parte, falta y penalti), la cadena de gol de tres sonidos encadenados, el público
+  a ráfagas de dos o tres por parte en instantes deterministas, el golpeo del balón y los cánticos
+  de la victoria—, con el larguero reservado sin consumidor hasta la v1.5 y la entrada al suelo sin
+  fichero. La tabla completa está en la etapa D, paso 10. Sustituye a las "tres pistas sorteadas"
+  y a los SFX por síntesis. (Paco, 2026-09-06)
 - **Sí: los criterios se revisan tras el QA.** Están bien de partida, pero hasta que no se juega no
   se sabe qué hay que refinar. (Paco, 2026-09-03)
 
@@ -558,6 +679,15 @@ La v1 es el MVP; la v1.5 es el producto fino. Lo apuntado en el grill del 04-sep
   cambios de banquillo (ya en el spec).
 - `profileFor(teamDef, difficulty)` ya recibe la selección: aquí es donde entra.
 - Afinar la fórmula de dificultad y los equipos después de jugar.
+- **Nombres inventados y dorsales (Paco, 2026-09-06, v1.5 seguro):** cada jugador de cada selección
+  lleva un nombre inventado que suene al país de esa selección y un dorsal fijo (no editables). En
+  la v1.5 se decide además si el nombre se pinta siempre sobre el jugador o solo en los eventos
+  (gol, penalti, falta, tarjeta). En la v1 los jugadores siguen siendo anónimos.
+- **Postes y larguero como colisión**, con su SFX: el fichero del larguero ya está en `public/` y en
+  la v1 se queda sin consumidor porque el motor no tiene los postes como obstáculo, solo la línea
+  entre ellos.
+- **Tarjetas** (ya anotado en el alcance como fuera de la v1): amarilla y roja tras varias faltas,
+  con el dibujo de la tarjeta como rótulo.
 
 ---
 
@@ -574,8 +704,9 @@ La v1 es el MVP; la v1.5 es el producto fino. Lo apuntado en el grill del 04-sep
    `Date.now()`, un `dtMs` que entre en el motor, un orden de iteración que dependa de un `Set`, un
    `Math.sin` en la física: cualquiera deja la simulación no reproducible y ningún partido lo nota hoy — se notará el día del online. El test de misma
    semilla y mismas entradas es la única red, y hay que correrlo sobre un partido largo.
-4. **El gol de oro sin tope puede no acabar.** La CPU pasando a ataque lo hace improbable, no
-   imposible. Si el QA lo ve, el tope y la tanda de penaltis serán su propio spec.
+4. **Resuelto el 06-sep: el gol de oro sin tope podía no acabar.** La CPU pasando a ataque lo hacía
+   improbable, no imposible. Con el tope de 60 s y la tanda detrás, el riesgo desaparece del juego
+   abierto y se muda a la tanda (riesgo 8).
 5. **La cámara y el minimapa multiplican el dibujo.** Todo pasa por una transformación de mundo a
    pantalla. Con la norma de no asignar memoria cabe en 60 fps, pero es el juego con más elementos
    en pantalla del catálogo y el primero con cámara.
@@ -585,3 +716,10 @@ La v1 es el MVP; la v1.5 es el producto fino. Lo apuntado en el grill del 04-sep
 7. **Los tests que pasan por coincidencia del fixture volverán a aparecer.** Ya pasó tres veces en
    Vault Fighter. En un motor con física las coincidencias son más fáciles todavía. Regla para cada
    test: preguntarse si pasaría con otros números.
+8. **La tanda puede no terminar: un bucle de fallos encadenados.** Dos equipos que fallan a la vez
+   ronda tras ronda alargarían la muerte súbita indefinidamente, y sería el mismo agujero del gol
+   de oro sin tope, movido de sitio. La mitigación es la regla literal de Paco, S-PK5: en muerte
+   súbita **el primero que falla pierde**, sin esperar a que el rival lance, así que cada ronda
+   tiene como mucho un lanzamiento perdedor y la tanda no puede empatarse; dentro de los cinco
+   primeros el marcador decide siempre. `SHOOTOUT_RESOLVE_SECONDS` cierra el otro extremo: ningún
+   lanzamiento se queda colgado esperando un desenlace que no llega. Es lo que fija el criterio 23.

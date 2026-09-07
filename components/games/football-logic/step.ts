@@ -4,7 +4,7 @@ import { stepPlayer, stepPlayerFree, type PlayerState } from './players';
 import { stepBall, type BallState } from './ball';
 
 // The public contract of the fixed step: everything outside players.ts/ball.ts imports the clock from here.
-export { STEPS_PER_SECOND, STEP_MS, HALF_SECONDS, HALF_SECONDS_MAX, HALF_STEPS, stepsFor, perStep } from './clock';
+export { STEPS_PER_SECOND, STEP_MS, HALF_SECONDS, HALF_SECONDS_MAX, HALF_STEPS, EXTRA_TIME_SECONDS, EXTRA_TIME_STEPS, stepsFor, perStep } from './clock';
 
 export type AttackDirs = readonly [1 | -1, 1 | -1];
 

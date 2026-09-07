@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { PITCH, centerY, goalLineX, isInsideBigArea } from './pitch';
-import { FORMATIONS, TEAM_SIZE, type Formation, type Strategy } from './teams';
+import { FORMATIONS, OUTFIELD, TEAM_SIZE, type Formation, type Strategy } from './teams';
 import { dist } from './geometry';
 import { createTeamInput, type TeamInput } from './input';
 import { GK_LINE_DIST, createPlayers, type PlayerState } from './players';
@@ -8,9 +8,11 @@ import { CONTROL_DIST, LONG_PASS_VZ, createBall, type BallState } from './ball';
 import { createRng, type Rng } from './rng';
 import type { AttackDirs } from './step';
 import { LONG_PASS_SPEED, SHORT_PASS_SPEED, createActionEvent, shotSpeed, type ActionEvent } from './actions';
+import { checkGoalkeepersInBox } from './invariants';
 import {
   FREE_KICK_CHARGE_STEPS, PENALTY_CHARGE_STEPS, PENALTY_SIDE_OFFSET, SET_PIECE_CLEARANCE, SET_PIECE_COUNTDOWN_STEPS,
-  beginSetPiece, createSetPieceState, stepSetPiece, type SetPieceState,
+  beginSetPiece, beginShootoutKick, createSetPieceState, createShootoutState, shootoutTakerId, stepSetPiece,
+  type SetPieceState, type ShootoutState,
 } from './set-pieces';
 import type { SetPieceKind } from './referee';
 
@@ -268,5 +270,86 @@ describe('penalty', () => {
     expect(w.players[TEAM_SIZE].x).toBe(goalLineX(PITCH, 1) - GK_LINE_DIST);
     expect(w.players[TEAM_SIZE].y).toBe(CY);
     expect(w.ball.x).toBeCloseTo(PITCH.width - PITCH.penaltySpotDist, 10);
+  });
+});
+
+// ── Stage B2: the shootout kick is the penalty set piece (S-PK1) ─────────────
+describe('shootout kick', () => {
+  function sh(team: 0 | 1, taken: [number, number]): ShootoutState {
+    const s = createShootoutState();
+    s.team = team;
+    s.taken[0] = taken[0];
+    s.taken[1] = taken[1];
+    return s;
+  }
+  // S-PK3: the outfield takers go by ascending id without repeating until the eight are
+  // used up, and then it starts again. Keepers never take one.
+  it('the taker cycles through the eight outfield ids of its team and wraps around', () => {
+    expect(shootoutTakerId(0, 0)).toBe(1);
+    expect(shootoutTakerId(0, 7)).toBe(8);
+    expect(shootoutTakerId(0, 8)).toBe(1);
+    expect(shootoutTakerId(1, 0)).toBe(TEAM_SIZE + 1);
+    expect(shootoutTakerId(1, 7)).toBe(TEAM_SIZE + 8);
+    expect(shootoutTakerId(1, 8)).toBe(TEAM_SIZE + 1);
+    // Anti-coincidence: the eight ids of a team are all different and none is a keeper.
+    const seen = new Set<number>();
+    for (let taken = 0; taken < OUTFIELD; taken++) seen.add(shootoutTakerId(1, taken));
+    expect(seen.size).toBe(OUTFIELD);
+    expect(seen.has(TEAM_SIZE)).toBe(false);
+  });
+  it('team 0 kicks at the goal it attacks, with its taker on the spot and the ball at his feet', () => {
+    const w = world();
+    beginShootoutKick(w.sp, sh(0, [0, 0]), w.players, w.ball, FORMS, STRATS, ATTACK, PITCH, 0);
+    expect(w.sp.kind).toBe('penalty');
+    expect(w.sp.team).toBe(0);
+    expect(w.sp.takerId).toBe(1);
+    expect(w.sp.stepsLeft).toBe(SET_PIECE_COUNTDOWN_STEPS);
+    expect(w.sp.side).toBe(0);
+    expect(w.ball.x).toBeCloseTo(PITCH.width - PITCH.penaltySpotDist, 10);
+    expect(w.ball.y).toBeCloseTo(CY, 10);
+    expect(w.ball.owner).toBe(1);
+    // The defending keeper is on its line at the centre of the goal it defends.
+    expect(w.players[TEAM_SIZE].x).toBe(goalLineX(PITCH, 1) - GK_LINE_DIST);
+    expect(w.players[TEAM_SIZE].y).toBe(CY);
+  });
+  it('team 1 kicks at the other goal, with the third kick taken by its third outfield id', () => {
+    const w = world();
+    beginShootoutKick(w.sp, sh(1, [3, 2]), w.players, w.ball, FORMS, STRATS, ATTACK, PITCH, 0);
+    expect(w.sp.team).toBe(1);
+    expect(w.sp.takerId).toBe(TEAM_SIZE + 3);
+    expect(w.ball.x).toBeCloseTo(PITCH.penaltySpotDist, 10);
+    expect(w.ball.owner).toBe(TEAM_SIZE + 3);
+    expect(w.players[0].x).toBe(GK_LINE_DIST);   // team 0's keeper defends side 0
+  });
+  // S-PK4 + S-PK7 through the real entry point, not through placeAroundCentreSpot alone.
+  it('everyone but the taker and the two keepers is parked inside the centre circle, and the keepers stay in their boxes', () => {
+    const w = world();
+    beginShootoutKick(w.sp, sh(0, [0, 0]), w.players, w.ball, FORMS, STRATS, ATTACK, PITCH, 0);
+    expect(checkGoalkeepersInBox(w.players, ATTACK, PITCH)).toEqual([]);
+    for (const p of w.players) {
+      if (p.role === 'gk' || p.id === w.sp.takerId) continue;
+      expect(dist(p.x, p.y, PITCH.width / 2, CY), `player ${p.id} is not in the centre circle`).toBeLessThan(PITCH.centerCircleRadius);
+    }
+  });
+  // Stage B2 finding H7: placeByFormation (all beginSetPiece does to the keepers)
+  // resets vx/vy/want*/facing but not a slide, a tackle or a charge -- so without this,
+  // a keeper whose extra time ended mid-tackle would stay frozen in that pose for the
+  // whole shootout, the same artefact S-PK10 already fixes for the fifteen outfield
+  // players parked around the centre spot.
+  it('S-PK10 also clears a slide, a tackle or a charge left on either keeper', () => {
+    const w = world();
+    for (const gk of [w.players[0], w.players[TEAM_SIZE]]) {
+      gk.tackleStepsLeft = 9;
+      gk.downUntilStep = 1000;
+      gk.chargeSteps = 5;
+      gk.chargeButton = 'a';
+    }
+    beginShootoutKick(w.sp, sh(0, [0, 0]), w.players, w.ball, FORMS, STRATS, ATTACK, PITCH, 0);
+    for (const gk of [w.players[0], w.players[TEAM_SIZE]]) {
+      expect(gk.tackleStepsLeft).toBe(0);
+      expect(gk.downUntilStep).toBe(0);
+      expect(gk.chargeSteps).toBe(0);
+      expect(gk.chargeButton).toBe('none');
+    }
   });
 });
