@@ -462,16 +462,16 @@ los traduce a sonido.
 |---|---|---|
 | `vault-futbol-theme-pre-game-lobby.mp3` | Música de menú y previa | Selector de modo, selección de selección, alineación y estrategia, cuadro del Mundial y **pausa** del partido |
 | `vault-futbol-theme-game-play.mp3` | Música de gameplay, en bucle | Desde el primer `phase === 'kickoff'` hasta `phase === 'over'`; se calla en la pausa |
-| `vault-futbol_Silbato_que_señala_el_inicio_de_un_partido_de_fútbol,_nítido_y_claro.mp3` | Pitido de inicio | Entrada en `'kickoff'` de cada parte (`half` 1, 2 y **la prórroga**) y arranque de la cuenta atrás de cada lanzamiento de la tanda |
-| `vault-futbol_Árbitro_pitando_el_final_del_partido,_autoritario_y_claro.mp3` | Pitido final | `endHalf` de cada parte y `phase === 'over'` |
-| `vault-futbol-football_refereex27s-486448.mp3` | Pitido de falta y de penalti | `RefereeCall.kind === 'free-kick'` o `'penalty'`; y también en el gol (`kind === 'goal'`), como pitido del árbitro junto a la cadena de gol |
-| `vault-futbol-a-football-hits-the-net-goal-313216.mp3` | Red — **1º de la cadena de gol** | El balón cruza la línea: `RefereeCall.kind === 'goal'` |
-| `vault-futbol-gol-055969_golom4a-45775.mp3` | Grito de GOL — **2º de la cadena** | Con el rótulo GOL, al entrar en `phase === 'goal'` |
-| `vault-futbol_El_público_vitorea_con_fuerza_cuando_un_equipo_marca_un_gol,_sonido_eufórico.mp3` | Público eufórico — **3º de la cadena** | Durante la celebración fija (`GOAL_PAUSE_STEPS`) |
-| `vault-futbol-live-football-match-stadium-crowd-cheering-563439.mp3` | Público animando | **No en bucle**: dos o tres ráfagas por parte, en instantes sorteados y deterministas, también en la prórroga, y nunca los mismos instantes en dos partes |
-| `vault-futbol_Potente_patada_de_fútbol,_un_fuerte_golpe_al_impactar_el_balón.mp3` | Golpeo del balón al chutar | `ActionEvent.kind === 'shot'` con `ok` |
-| `vault-futbol.crowd_explosions-football39s-chants-in-street-celebration-in-the-boca-juniors-fan-national-day-12-12-2012-54413.mp3` | Cánticos de celebración | Pantalla de CAMPEONES DEL MUNDO con los fuegos artificiales; **a volumen bajo** en el confeti del amistoso |
-| `vault-futbol_Balón_de_fútbol_golpeando_el_larguero_con_un_fuerte_ruido,_impacto_resonante.mp3` | Larguero | **Reservado, sin consumidor en la v1**: el motor no tiene los postes como colisión → v1.5 |
+| `vault-futbol-whistle-start.mp3` | Pitido de inicio | Entrada en `'kickoff'` de cada parte (`half` 1, 2 y **la prórroga**) y arranque de la cuenta atrás de cada lanzamiento de la tanda |
+| `vault-futbol-whistle-end.mp3` | Pitido final | `endHalf` de cada parte y `phase === 'over'` |
+| `vault-futbol-whistle-foul.mp3` | Pitido de falta y de penalti | `RefereeCall.kind === 'free-kick'` o `'penalty'`; y también en el gol (`kind === 'goal'`), como pitido del árbitro junto a la cadena de gol |
+| `vault-futbol-goal-net.mp3` | Red — **1º de la cadena de gol** | El balón cruza la línea: `RefereeCall.kind === 'goal'` |
+| `vault-futbol-goal-shout.mp3` | Grito de GOL — **2º de la cadena** | Con el rótulo GOL, al entrar en `phase === 'goal'` |
+| `vault-futbol-goal-crowd.mp3` | Público eufórico — **3º de la cadena** | Durante la celebración fija (`GOAL_PAUSE_STEPS`) |
+| `vault-futbol-crowd-ambience.mp3` | Público animando | **No en bucle**: dos o tres ráfagas por parte, en instantes sorteados y deterministas, también en la prórroga, y nunca los mismos instantes en dos partes |
+| `vault-futbol-kick.mp3` | Golpeo del balón al chutar | `ActionEvent.kind === 'shot'` con `ok` |
+| `vault-futbol-chants-victory.mp3` | Cánticos de celebración | Pantalla de CAMPEONES DEL MUNDO con los fuegos artificiales; **a volumen bajo** en el confeti del amistoso |
+| `vault-futbol-crossbar.mp3` | Larguero | **Reservado, sin consumidor en la v1**: el motor no tiene los postes como colisión → v1.5 |
 | *(sin fichero)* | Entrada al suelo | `ActionEvent.kind === 'tackle'` → síntesis WebAudio breve o silencio. **Decisión pendiente de Paco.** |
 
 **Los instantes del público no se sortean con el `rng` del partido.** Sortearlos con él haría que la
@@ -690,6 +690,10 @@ La v1 es el MVP; la v1.5 es el producto fino. Lo apuntado en el grill del 04-sep
   con el dibujo de la tarjeta como rótulo.
 
 ---
+
+- **Selecciones de la v1.5 (Paco, 2026-09-07):** máximo 20. Lista cerrada de Paco: las 16 de la v1 más
+  **COLOMBIA, COREA DEL SUR, NORUEGA y EGIPTO**. En la v1.5 entran las cuatro con la red de invariantes
+  (`BANK_SIZE` 16 → 20) y el sorteo del Mundial elige 16 de 20.
 
 ## Riesgos identificados
 
