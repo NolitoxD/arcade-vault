@@ -497,6 +497,70 @@ describe('applyButtons: press/hold semantics with and without the ball', () => {
     expect(s.p.chargeSteps).toBe(0);
     expect(rng.calls).toBe(0);
   });
+  // M9 (final review of stage C, I3). The screen's pad clears a button to 'up' with
+  // no 'released' edge when the window blurs or the game is paused -- deliberately,
+  // or the resumed match would fire a shot the player never asked for. The charge it
+  // leaves behind used to survive for ever: the next tap of J went out at 950 instead
+  // of 700, measured end to end.
+  it('an armed charge whose button reads up is dropped, so the next press starts at zero', () => {
+    const s = withBall();
+    const rng = fixedRng([0.5]);
+    s.input.a = 'pressed';
+    applyButtons(s.p, s.input, s.ball, s.players, rng, 0, s.aim, s.out);
+    s.input.a = 'held';
+    for (let step = 1; step < 60; step++) applyButtons(s.p, s.input, s.ball, s.players, rng, step, s.aim, s.out);
+    expect(s.p.chargeSteps).toBe(60);
+    expect(s.p.chargeButton).toBe('a');
+
+    // The blur: 'up' without ever passing through 'released'.
+    s.input.a = 'up';
+    applyButtons(s.p, s.input, s.ball, s.players, rng, 60, s.aim, s.out);
+    expect(s.p.chargeSteps).toBe(0);
+    expect(s.p.chargeButton).toBe('none');
+    expect(s.out.kind).toBe('none');
+    expect(s.ball.owner).toBe(5);
+
+    // And the shot that follows the reset is a tap, not the cannon of the old charge.
+    s.input.a = 'pressed';
+    applyButtons(s.p, s.input, s.ball, s.players, rng, 61, s.aim, s.out);
+    expect(s.p.chargeSteps).toBe(1);
+    s.input.a = 'released';
+    applyButtons(s.p, s.input, s.ball, s.players, rng, 62, s.aim, s.out);
+    expect(s.out.kind).toBe('shot');
+    expect(speedOf(s.ball)).toBeCloseTo(shotSpeed(1), 6);
+    expect(rng.calls).toBe(0);
+  });
+  it('a stale released, after the charge was dropped, fires nothing', () => {
+    const s = withBall();
+    const rng = fixedRng([0.5]);
+    s.input.a = 'pressed';
+    applyButtons(s.p, s.input, s.ball, s.players, rng, 0, s.aim, s.out);
+    s.input.a = 'up';
+    applyButtons(s.p, s.input, s.ball, s.players, rng, 1, s.aim, s.out);
+    expect(s.p.chargeButton).toBe('none');
+    // The key really coming up later: an edge the engine never saw armed.
+    s.input.a = 'released';
+    applyButtons(s.p, s.input, s.ball, s.players, rng, 2, s.aim, s.out);
+    expect(s.out.kind).toBe('none');
+    expect(s.ball.owner).toBe(5);
+    expect(s.ball.vx).toBe(0);
+    expect(s.ball.vy).toBe(0);
+  });
+  it('the charge of B is dropped the same way, and B held normally still accumulates', () => {
+    const s = withBall();
+    const rng = fixedRng([0.5]);
+    s.input.b = 'pressed';
+    applyButtons(s.p, s.input, s.ball, s.players, rng, 0, s.aim, s.out);
+    s.input.b = 'held';
+    for (let step = 1; step < 30; step++) applyButtons(s.p, s.input, s.ball, s.players, rng, step, s.aim, s.out);
+    expect(s.p.chargeSteps).toBe(30);   // a normal hold still ramps
+    expect(s.p.chargeButton).toBe('b');
+    s.input.b = 'up';
+    applyButtons(s.p, s.input, s.ball, s.players, rng, 30, s.aim, s.out);
+    expect(s.p.chargeSteps).toBe(0);
+    expect(s.p.chargeButton).toBe('none');
+    expect(s.out.kind).toBe('none');
+  });
   it('a tap of B is a short pass along the facing when the d-pad is idle', () => {
     const s = withBall();
     s.input.b = 'pressed';

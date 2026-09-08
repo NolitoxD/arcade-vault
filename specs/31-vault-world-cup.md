@@ -70,8 +70,9 @@
   FUERA, CÓRNER, GOL, FINAL, con su pitido. **Sin figura de árbitro** en la v1.
 - **Celebración de gol fija**, la misma siempre: los que marcan se abrazan, los que reciben quedan
   cabizbajos.
-- **Una sola versión visual** (sin skins) y **solo desktop** en la v1: en viewport pequeño el juego
-  aparece en el catálogo deshabilitado; si el viewport se reduce en partida, se para y redirige.
+- **Una sola versión visual** (sin skins) y **solo desktop** en la v1: en viewport pequeño —**por
+  debajo de 768 × 560 (tablet mediana, breakpoint `md`)**— el juego aparece en el catálogo
+  deshabilitado; si el viewport se reduce por debajo de ese umbral en partida, se para y redirige.
 - Registro, migración, play-page, carátula (la hace Claude con `design`) y puntuación en la tabla
   de `vault-world-cup`.
 

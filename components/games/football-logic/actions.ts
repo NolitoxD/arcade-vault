@@ -331,6 +331,15 @@ export function applyButtons(p: PlayerState, input: TeamInput, ball: BallState, 
       resetCharge(p);
       return;
     }
+    // M9 (final review of stage C, I3): a charge armed by a button that now reads
+    // 'up' -- never 'released' -- is stale. The screen lifts a button that way on
+    // purpose (padBlur/padClear) when the window blurs or the game is paused, so the
+    // 'released' this charge is waiting for never arrives and the next press would
+    // inherit the whole ramp: a tap of J leaving at 950 instead of 700, measured.
+    // Dropping it here means the next 'pressed' starts from zero.
+    if ((p.chargeButton === 'a' && input.a === 'up') || (p.chargeButton === 'b' && input.b === 'up')) {
+      resetCharge(p);
+    }
     return;
   }
   resetCharge(p);

@@ -6,11 +6,12 @@ import { PITCH } from '../football-logic/pitch';
 import { FORMATIONS, TEAMS } from '../football-logic/teams';
 import { humanProfile, profileFor } from '../football-logic/ai';
 import { createShootoutState } from '../football-logic/set-pieces';
-import type { CaptionKind } from './captions';
+import type { CaptionKind, ShowingCaption } from './captions';
 import { CAPTION_TEXT, createMatchWatch, updateWatch } from './captions';
 import {
   AMBIENCE_MAX, AMBIENCE_MIN, ambienceDue, ambienceSeedFor, createAmbienceMarks,
-  goalCrowdDue, goalNetDue, halfEndWhistleDue, planAmbience, sfxForCaption, shotFiredThisStep,
+  captionSfxOnEdge, goalCrowdDue, goalNetDue, halfEndWhistleDue, planAmbience, sfxForCaption,
+  shotFiredThisStep,
 } from './sfx-map';
 
 function newMatch(): MatchState {
@@ -21,6 +22,40 @@ function newMatch(): MatchState {
     [humanProfile(TEAMS[0], 5), profileFor(TEAMS[1], 5)],
   );
 }
+
+describe('captionSfxOnEdge', () => {
+  it('sounds a caption once, on the step it starts showing', () => {
+    expect(captionSfxOnEdge('none', 'kickoff')).toBe('whistle_start');
+    expect(captionSfxOnEdge('kickoff', 'kickoff')).toBe('none');
+  });
+
+  it('sounds the hand-over of the queue, GOL -> FINAL', () => {
+    expect(captionSfxOnEdge('goal', 'full-time')).toBe('whistle_end');
+  });
+
+  it('is silent when the band empties', () => {
+    expect(captionSfxOnEdge('full-time', 'none')).toBe('none');
+    expect(captionSfxOnEdge('none', 'none')).toBe('none');
+  });
+
+  // I2: the viewport guard pushes FINAL from outside the loop and then EMPATE behind
+  // it, and before this seam existed nobody checked that edge -- measured whistle_end
+  // = 0 in five blocks. The whole blocked path, step by step, must whistle exactly
+  // once: FINAL rings, EMPATE is silent by design, and the standing captions of the
+  // frames in between ring nothing.
+  it('a blocked match whistles the end exactly once', () => {
+    const path: ShowingCaption[] = ['none', 'full-time', 'full-time', 'draw', 'draw', 'none'];
+    let ends = 0;
+    let sounds = 0;
+    for (let i = 1; i < path.length; i++) {
+      const name = captionSfxOnEdge(path[i - 1], path[i]);
+      if (name === 'whistle_end') ends++;
+      if (name !== 'none') sounds++;
+    }
+    expect(ends).toBe(1);
+    expect(sounds).toBe(1);
+  });
+});
 
 describe('sfxForCaption', () => {
   it('whistles the start of every half and of the extra time', () => {

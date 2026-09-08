@@ -19,14 +19,14 @@ function buildClockText(): string[] {
   }
   return out;
 }
-export const CLOCK_TEXT: readonly string[] = buildClockText();
+const CLOCK_TEXT: readonly string[] = buildClockText();
 
 function buildSmallNumbers(): string[] {
   const out: string[] = [];
   for (let n = 0; n <= 99; n++) out.push(String(n));
   return out;
 }
-export const SMALL_NUMBER_TEXT: readonly string[] = buildSmallNumbers();
+const SMALL_NUMBER_TEXT: readonly string[] = buildSmallNumbers();
 
 export function smallNumber(n: number): string {
   if (n <= 0) return SMALL_NUMBER_TEXT[0];

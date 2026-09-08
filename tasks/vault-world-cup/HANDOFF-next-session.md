@@ -1,11 +1,28 @@
-# HANDOFF — VAULT WORLD CUP · etapas B y B2 cerradas · escrito 2026-09-06 (tarde)
+# HANDOFF — VAULT WORLD CUP · paso 8 (pantalla) cerrado · escrito 2026-09-07 (noche)
 
 **Repo:** `/Users/paco.monleon/Dev-Web/curso-claude-code/arcade-vault` · rama `main`.
-**HEAD al escribir:** `5e1e1a3` (Paco, 06-sep: etapa B entera). **En staging, SIN commitear:** la etapa B2
-(`components/games/football-logic/`: clock, match, set-pieces, players, ai, step + tests), el plan B2, el spec
-con las decisiones del 06-sep (prórroga+tanda, audio, criterio 21), este handoff y los dos CHECKPOINT — lo
-commitea Paco. **Suite real:** 916 tests en 52 ficheros verdes · `npx tsc --noEmit` limpio · `npm run build`
-exit 0 · grep de determinismo vacío (tests incluidos).
+**HEAD al escribir:** `d91277f` (Paco, 07-sep: paso 8 entero). **SIN commitear (12 ficheros, dos commits
+propuestos en `.superpowers/sdd/2026-09-07-vault-world-cup-stage-c-screen/final-fix-report.md` §3):** A) pantalla
++ docs (viewport 768×560 R35, silbato FINAL al bloquear, casillas de carga apagadas con el botón suelto,
+exports, plan/spec) y B) motor M9 aparte (`actions.ts` + test: resetCharge cuando el botón pasa a 'up' sin
+'released'). **Suite real:** 1050 tests en 62 ficheros · `tsc`/eslint limpios · `npm run build` exit 0.
+
+## -1. Paso 8 (07-sep, misma sesión que la B2, autorizado por Paco)
+
+`components/games/football-screen/` (loop, keyboard, camera, minimap, hud, captions, sfx-map, match-loop,
+viewport-guard; todos puros con test), `lib/sfx-vault-world-cup.ts`, `components/games/VaultWorldCupGame.tsx`
+(970 líneas, amistoso contra la CPU) y la página provisional `app/games/vault-world-cup/play/page.tsx`.
+Rulings R32-R36 en el ledger (teclas J/K/L + 1-6 + P/R; cursor al portero con aviso; FINAL + GANADOR/ELIMINADO;
+**barra de carga de 3 casillas**; viewport md = 768×560; M9). Mp3 renombrados a slugs ASCII (git mv). Selecciones
+v1.5 anotadas (las 16 + Colombia, Corea del Sur, Noruega, Egipto). **QA de Paco pendiente**: lista de 25 puntos
+en castellano en `final-review-report.md` §7 (60 fps, cámara, casillas de carga, rótulos, prórroga/tanda,
+viewport, audio). Sondas: 40 partidos por la tubería de pantalla a 60/144 Hz sin errores.
+
+**Siguiente = paso 9** (`mode.ts`, `world-cup.ts`, selector de modo y de selección, segundo teclado del
+amistoso a dos, sorteo y cuadro del Mundial, pantallas de victoria): plan con writing-plans leyendo
+`final-review-report.md` §8 del paso 8 (recomendaciones: `winnerOf` puede ser -1 en un partido 'over' → el
+cuadro lo trata como vivo; atribución del lanzador anterior; `chants-victory` en fuegos artificiales) y el
+patrón `fighter-logic/mode.ts`/`tournament.ts`. Slug del juego (`vault-futbol`) a fijar en el paso 10.
 
 ## 0. Etapa B2 (misma tarde, autorizada por Paco tras el commit de la B)
 
@@ -63,10 +80,9 @@ revisiones por tarea, `final-review-report.md` (veredicto, sondas, criterios, n�
 
 ## 2. Próximos pasos, en orden
 
-1. **Paco commitea la etapa B2** (ya en staging): mensaje global en
-   `.superpowers/sdd/2026-09-06-vault-world-cup-stage-b2/final-review-report.md` §9 (o los dos por tarea).
-2. **`retomar` con este documento.** Comprobar árbol limpio y 916 verdes.
-3. **Etapa C (Tasks 8-9 del spec: la pantalla).** Plan con `writing-plans` leyendo OBLIGATORIAMENTE
+1. **Paco hace los dos commits del paso 8** (final-fix-report.md §3) y **juega el QA** de §7.
+2. **`retomar` con este documento.** Comprobar árbol limpio y 1050 verdes.
+3. **Paso 9 (modos y flujo).** Plan con `writing-plans` leyendo OBLIGATORIAMENTE el `final-review-report.md` §8 del paso 8 y además
    los DOS `final-review-report.md` (etapa B §8 "Recomendaciones para la etapa C" y etapa B2 §8 "mapa de
    lectura del HUD") (6 puntos: `abandon()` para el gol de oro
    sin techo; cursor durante los 2 s del portero, S-GK.6, decisión visible; A/B tragados en la cuenta atrás →

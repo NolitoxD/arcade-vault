@@ -2,7 +2,7 @@ import { stepsFor } from '../football-logic/clock';
 import { GOAL_PAUSE_STEPS, type MatchState } from '../football-logic/match';
 import type { Rng } from '../football-logic/rng';
 import type { VaultWorldCupSfx } from '@/lib/sfx-vault-world-cup';
-import type { CaptionKind, MatchWatch } from './captions';
+import type { CaptionKind, MatchWatch, ShowingCaption } from './captions';
 
 // The audio table of the spec, one row per caption. The goal is a CHAIN of three:
 // the net fires the moment the ball crosses the line (RefereeCall.kind === 'goal',
@@ -31,6 +31,18 @@ export function sfxForCaption(kind: CaptionKind): VaultWorldCupSfx | 'none' {
     case 'draw':
       return 'none';
   }
+}
+
+// The caption edge rule, in one place instead of three. A caption's sound belongs
+// to the caption that is SHOWING, and only on the step it starts showing: the same
+// kind twice in a row is the queue standing still, and 'none' is the band being
+// empty. The screen has three callers -- the loop's step, the captions-only step of
+// a finished or blocked match, and the viewport guard, which pushes its captions
+// outside the loop (I2 of the final review: that third caller had no sound check at
+// all, so the FINAL whistle of an abandoned match never played).
+export function captionSfxOnEdge(before: ShowingCaption, after: ShowingCaption): VaultWorldCupSfx | 'none' {
+  if (after === before || after === 'none') return 'none';
+  return sfxForCaption(after);
 }
 
 // The FIRST link of the goal chain, on the EDGE of the referee's call.
@@ -70,7 +82,7 @@ export function halfEndWhistleDue(match: MatchState, w: MatchWatch): boolean {
 
 // S-SC11: 0.7 s into the two-second celebration, so the crowd answers the shout
 // instead of talking over it.
-export const GOAL_CROWD_DELAY_STEPS = stepsFor(0.7);
+const GOAL_CROWD_DELAY_STEPS = stepsFor(0.7);
 
 export function goalCrowdDue(match: MatchState): boolean {
   if (match.phase !== 'goal') return false;
@@ -95,7 +107,7 @@ export const AMBIENCE_MAX = 3;
 // Spec, and criterion 1: the ambience must NOT draw from the match rng, or the audio
 // layer would change the simulation. Its own stream, derived from the same seed by
 // integer arithmetic, keeps it reproducible with the replay and out of the engine's way.
-export const AMBIENCE_SALT = 0x5bf03635;
+const AMBIENCE_SALT = 0x5bf03635;
 
 export function ambienceSeedFor(seed: number, half: 1 | 2 | 3): number {
   return ((seed ^ Math.imul(AMBIENCE_SALT, half)) >>> 0);

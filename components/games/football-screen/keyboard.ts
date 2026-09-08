@@ -4,8 +4,12 @@ import type { Strategy } from '../football-logic/teams';
 // S-SC1: the repo's shared mapping (games-registry, every one of the thirteen games):
 // arrows or WASD for the d-pad, j/k/l for A/B/C. Matching is always on
 // e.key.toLowerCase(), never e.code, because MobileGamepad synthesises key events.
+// consumed by the component (padDown/padUp/padClear take one) and, in step 9, by the
+// second keyboard: it derives its own table over the same seven pad keys.
 export type PadKey = 'up' | 'down' | 'left' | 'right' | 'a' | 'b' | 'c';
 
+// consumed by padKeyFor below, and exported for step 9: the two-player mapping is
+// built FROM this table (§8.2 of the final review), not written a second time.
 export const KEY_BINDINGS: Readonly<Record<string, PadKey>> = {
   arrowup: 'up',
   w: 'up',
@@ -22,6 +26,8 @@ export const KEY_BINDINGS: Readonly<Record<string, PadKey>> = {
 
 // S-SC5: formation and strategy are changed mid-match (spec, criterion 11) on the
 // number row, out of the way of both the d-pad and the three buttons.
+// The three are consumed by padChoice below, and exported for step 9, which gives the
+// second player its own number row derived from these (§8.2 of the final review).
 export const FORMATION_KEYS: readonly string[] = ['1', '2', '3'];
 export const STRATEGY_KEYS: readonly string[] = ['4', '5', '6'];
 export const STRATEGY_BY_KEY: readonly Strategy[] = ['attack', 'neutral', 'defend'];

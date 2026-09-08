@@ -14,6 +14,9 @@ export type CaptionKind =
   | 'half-time' | 'extra-time' | 'shootout' | 'shootout-goal' | 'shootout-miss'
   | 'full-time' | 'winner' | 'eliminated' | 'draw';
 
+// What the caption band is showing right now: one of the kinds, or nothing.
+export type ShowingCaption = CaptionKind | 'none';
+
 export const CAPTION_TEXT: Readonly<Record<CaptionKind, string>> = {
   kickoff: 'INICIO',
   foul: 'FALTA',
@@ -69,7 +72,7 @@ export const CAPTION_STEPS: Readonly<Record<CaptionKind, number>> = {
 export const CAPTION_QUEUE_MAX = 4;
 
 export type CaptionState = {
-  kind: CaptionKind | 'none';
+  kind: ShowingCaption;
   stepsLeft: number;
   queue: CaptionKind[];
   queueLen: number;

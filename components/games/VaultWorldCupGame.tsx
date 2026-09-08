@@ -20,6 +20,7 @@ import {
 } from './football-screen/camera';
 import {
   CAPTION_TEXT, collectCaptions, createCaptionState, createMatchWatch, stepCaption, updateWatch,
+  type ShowingCaption,
 } from './football-screen/captions';
 import {
   SHOT_CHARGE_SEGMENTS, buttonsIdle, chargeSegments, clockText, countdownSeconds, cursorPlayerId,
@@ -34,7 +35,7 @@ import {
   MINIMAP_H, MINIMAP_PAD, MINIMAP_W, createMinimapRect, minimapViewRect, minimapX, minimapY,
 } from './football-screen/minimap';
 import {
-  ambienceDue, createAmbienceMarks, goalCrowdDue, goalNetDue, halfEndWhistleDue, sfxForCaption,
+  ambienceDue, captionSfxOnEdge, createAmbienceMarks, goalCrowdDue, goalNetDue, halfEndWhistleDue,
   shotFiredThisStep,
 } from './football-screen/sfx-map';
 import { MIN_VIEWPORT_H, MIN_VIEWPORT_W, viewportAllowed } from './football-screen/viewport-guard';
@@ -227,7 +228,6 @@ function VaultWorldCupGame({
 
     const pad = createPadState(homeStrategy, homeFormation);
     const inputs: [TeamInput, TeamInput] = [createTeamInput(), createTeamInput()];
-    inputs[CPU_TEAM].formation = awayFormation;
     const cpuState: AiState = createAiState();
 
     const cam: Camera = createCamera();
@@ -275,11 +275,13 @@ function VaultWorldCupGame({
       }
     }
 
-    function playCaptionSfx(): void {
-      // The caption that is showing NOW is the trigger, so the sound and the words
-      // always agree.
-      if (captions.kind === 'none') return;
-      const name = sfxForCaption(captions.kind);
+    // The caption that is showing NOW is the trigger, so the sound and the words
+    // always agree, and only on the step it starts showing. The edge rule itself
+    // lives in sfx-map (captionSfxOnEdge, tested there) because there are three
+    // callers of it: the loop's step, the captions-only step, and the viewport
+    // guard, which pushes its captions outside the loop.
+    function playCaptionEdge(before: ShowingCaption): void {
+      const name = captionSfxOnEdge(before, captions.kind);
       if (name !== 'none') sfxVaultWorldCup.play(name);
     }
 
@@ -367,7 +369,7 @@ function VaultWorldCupGame({
       collectCaptions(match, watch, HUMAN_TEAM, captions);
       updateWatch(match, watch);
       stepCaption(captions);
-      if (captions.kind !== before && captions.kind !== 'none') playCaptionSfx();
+      playCaptionEdge(before);
 
       // 8. The camera. During the shootout the target is the alternating penalty
       //    spot and the cut is instant (S-SC8): panning 1600 units between kicks
@@ -392,7 +394,7 @@ function VaultWorldCupGame({
       for (let i = 0; i < steps; i++) {
         const before = captions.kind;
         stepCaption(captions);
-        if (captions.kind !== before && captions.kind !== 'none') playCaptionSfx();
+        playCaptionEdge(before);
       }
     }
 
@@ -560,9 +562,16 @@ function VaultWorldCupGame({
         // chargeSegments reads the engine's own ramp, so a notch always means the
         // same shot -- 1 = tap (700), 2 = half (~825), 3 = full (950) -- and the
         // player can deliberately aim for one instead of guessing at a bar. They
-        // only appear while J is actually held (chargeSteps > 0): three empty boxes
-        // floating over the cursor the rest of the match would be noise.
-        if (p.chargeSteps > 0) {
+        // only appear while J is actually held: three empty boxes floating over the
+        // cursor the rest of the match would be noise.
+        //
+        // I3 (final review): `chargeSteps > 0` alone is NOT "J is held". A pause or
+        // an alt-tab lifts the button through padClear/padBlur, which deliberately
+        // produce no 'released' edge, so the engine keeps the armed charge (its half
+        // of the fix is M9 in actions.ts) and the notches stayed lit next to a player
+        // who was touching nothing. The pad is the truth about the key, and it is
+        // also what keeps a long pass charging on K from lighting the shot notches.
+        if (p.chargeSteps > 0 && pad.a !== 'up') {
           const lit = chargeSegments(p.chargeSteps);
           const nx = x - NOTCH_TOTAL_W / 2;
           const ny = y - PLAYER_RADIUS + NOTCH_DY;
@@ -923,7 +932,15 @@ function VaultWorldCupGame({
       // collectCaptions would take its `!w.started` branch, print INICIO and return.
       updateWatch(match, watch);
       abandon(match);
+      // I2 (final review): the same caption-sound check the loop makes, because this
+      // pass is the only one this caption ever gets. pushCaption writes `kind`
+      // directly when the queue is empty, so by the next frame the edge is gone and
+      // the FINAL whistle the spec's audio table asks for at phase === 'over' would
+      // never play -- measured whistle_end = 0 in five blocks. EMPATE, queued behind
+      // it, is silent by design and rings nothing when its turn comes.
+      const beforeBlocked = captions.kind;
       collectCaptions(match, watch, HUMAN_TEAM, captions);
+      playCaptionEdge(beforeBlocked);
       updateWatch(match, watch);
       padBlur(pad);   // the keyboard is off from here: nothing may survive the block
       if (!endFired) {

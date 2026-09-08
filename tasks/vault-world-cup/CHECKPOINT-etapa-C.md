@@ -6,7 +6,7 @@ Si lees esto tras recargar: `/retomar tasks/vault-world-cup/CHECKPOINT-etapa-C.m
 - [x] Selecciones v1.5 anotadas en el spec (las 16 + Colombia, Corea del Sur, Noruega, Egipto; máx 20). Spec SIN commitear.
 - [x] Plan paso 8 escrito (3396 líneas, 5 tareas) + grill corto (R32: teclas catálogo, cursor al portero, FINAL+GANADOR/ELIMINADO, mp3 renombrados con git mv a slugs ASCII). Agente volcando decisiones+renombres al plan y al spec.
 - [x] Pre-vuelo HECHO y aplicado (H1-H15). Plan definitivo 4072 líneas.
-- [ ] SDD: 8-1 (940) → 8-2 (959) → 8-3 (998) → 8-4 (1029) DONE → 8-5 en curso → 8-4 → 8-5 (paquetes git diff 09a6001 + nuevos; motor NO se toca). QA visual Paco en :3000.
-- [ ] Revisión final del paso 8 + ola de arreglo + re-revisión → commit de Paco → handoff/memoria.
+- [x] SDD: 8-1..8-5 hechas y revisadas (1042)
+- [x] Revisión final + ola de arreglo (I1 viewport 768×560, I2 silbato FINAL, I3+M9 carga) + re-revisión limpia → 1050/1050, build 0. PENDIENTE: dos commits de Paco (pantalla+docs / motor M9) y su QA en :3000
 
 Reglas: commits SOLO Paco · nunca next dev · duda de diseño → grill corto · ningún *.ts bajo .superpowers/ (usar .txt).
