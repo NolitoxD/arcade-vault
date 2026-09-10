@@ -3,6 +3,7 @@ import {
   GOAL_PAUSE_STEPS, HALF_TIME_PAUSE_STEPS, winnerOf,
   type MatchPhase, type MatchState,
 } from '../football-logic/match';
+import { sideIsHuman, type HumanSide } from '../football-logic/mode';
 import type { CallKind } from '../football-logic/referee';
 
 // Spec: the seven captions of the v1 (INICIO, FALTA, PENALTI, FUERA, CÓRNER, GOL,
@@ -140,7 +141,13 @@ export function createMatchWatch(): MatchWatch {
   };
 }
 
-export function collectCaptions(match: MatchState, w: MatchWatch, humanTeam: 0 | 1, cs: CaptionState): void {
+// `human` is who the keyboard drives (mode.ts HumanSide): 0 or 1 in a solo mode and in
+// the World Cup (S-PK3 may put the human on either side), 'both' in the two-player
+// friendly, 'none' for a CPU pair watched on screen. `victoryScreen` (Task 9-5, S-FL3,
+// final review §8.5): when the mode shows a victory screen for a human win, GANADOR is
+// NOT queued -- the screen replaces it; FINAL still runs its three seconds and the flow
+// moves on when the queue drains. Defaults keep every step-8 call and test unchanged.
+export function collectCaptions(match: MatchState, w: MatchWatch, human: HumanSide, cs: CaptionState, victoryScreen = false): void {
   if (!w.started) {
     pushCaption(cs, 'kickoff');
     return;
@@ -198,17 +205,18 @@ export function collectCaptions(match: MatchState, w: MatchWatch, humanTeam: 0 |
   }
 
   // 5. The end. winnerOf is the ONE reader of the winner (stage B2 §8) and it can
-  //    return -1 with the match over -- abandon() at a level score, from any of the
-  //    seven phases it is legal in, which is the only draw this ruleset has (S-PK5:
-  //    sudden death always resolves). S-SC12 (confirmed by
-  //    owner 2026-09-07): FINAL always whistles, and then GANADOR, ELIMINADO or, only
-  //    in that abandon case, EMPATE -- never silence.
+  //    return -1 with the match over -- abandon() at a level score, the only draw this
+  //    ruleset has (S-PK5). S-SC12: FINAL always whistles; then EMPATE on an abandon,
+  //    nothing for a spectated pair (the bracket names the winner), GANADOR for a
+  //    human win without a screen, ELIMINADO for a human loss.
   if (match.phase === 'over' && w.phase !== 'over') {
     pushCaption(cs, 'full-time');
     const winner = winnerOf(match);
-    if (winner === humanTeam) pushCaption(cs, 'winner');
-    else if (winner >= 0) pushCaption(cs, 'eliminated');
-    else pushCaption(cs, 'draw');
+    if (winner === -1) pushCaption(cs, 'draw');
+    else if (human === 'none') return;
+    else if (sideIsHuman(human, winner)) {
+      if (!victoryScreen) pushCaption(cs, 'winner');
+    } else pushCaption(cs, 'eliminated');
   }
 }
 
@@ -224,4 +232,24 @@ export function updateWatch(match: MatchState, w: MatchWatch): void {
   w.scored0 = sh === null ? 0 : sh.scored[0];
   w.scored1 = sh === null ? 0 : sh.scored[1];
   w.call = match.scratch.call.kind;
+}
+
+// Task 9-7: a new match on the same screen (no remount) reuses the queue and the watch.
+export function resetCaptionState(cs: CaptionState): void {
+  cs.kind = 'none';
+  cs.stepsLeft = 0;
+  cs.queueLen = 0;
+}
+
+export function resetMatchWatch(w: MatchWatch): void {
+  w.started = false;
+  w.phase = 'kickoff';
+  w.half = 1;
+  w.score0 = 0;
+  w.score1 = 0;
+  w.taken0 = 0;
+  w.taken1 = 0;
+  w.scored0 = 0;
+  w.scored1 = 0;
+  w.call = 'none';
 }

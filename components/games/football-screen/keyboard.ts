@@ -8,8 +8,8 @@ import type { Strategy } from '../football-logic/teams';
 // second keyboard: it derives its own table over the same seven pad keys.
 export type PadKey = 'up' | 'down' | 'left' | 'right' | 'a' | 'b' | 'c';
 
-// consumed by padKeyFor below, and exported for step 9: the two-player mapping is
-// built FROM this table (§8.2 of the final review), not written a second time.
+// source for pickBindings below, which derives the two-player tables and SOLO
+// (§8.2 of the final review): the two-player mode SPLITS this table, not extends it.
 export const KEY_BINDINGS: Readonly<Record<string, PadKey>> = {
   arrowup: 'up',
   w: 'up',
@@ -26,11 +26,57 @@ export const KEY_BINDINGS: Readonly<Record<string, PadKey>> = {
 
 // S-SC5: formation and strategy are changed mid-match (spec, criterion 11) on the
 // number row, out of the way of both the d-pad and the three buttons.
-// The three are consumed by padChoice below, and exported for step 9, which gives the
-// second player its own number row derived from these (§8.2 of the final review).
+// consumed by padChoice below and by the two-player tables (formation rows 1-2-3 for J1,
+// 7-8-9 for J2): each player can independently choose (§8.2 of the final review).
 export const FORMATION_KEYS: readonly string[] = ['1', '2', '3'];
 export const STRATEGY_KEYS: readonly string[] = ['4', '5', '6'];
 export const STRATEGY_BY_KEY: readonly Strategy[] = ['attack', 'neutral', 'defend'];
+
+// G9-2 (Paco, 09-sep): two people on one keyboard, each with their own half.
+//   J1 (left)  — W/A/S/D, A/B/C on C/V/B, formation 1-2-3, strategy 4-5-6.
+//   J2 (right) — the arrows, A/B/C on J/K/L (the solo map, nothing to relearn),
+//                formation 7-8-9, strategy 0 ' ¡ (the rest of the Spanish ISO row).
+// N and M are left free as the physical gap. In the two-player mode WASD no longer
+// moves J2 and the arrows no longer move J1 -- KEY_BINDINGS is SPLIT, not extended.
+// Solo and World Cup keep KEY_BINDINGS untouched. Every table is DERIVED from the
+// step-8 constants (final review §8.2): pickBindings throws at module load if a key
+// listed here is not in KEY_BINDINGS, so the two can never drift apart.
+export type KeyTable = {
+  readonly pad: Readonly<Record<string, PadKey>>;
+  readonly formation: readonly string[];
+  readonly strategy: readonly string[];
+};
+
+function pickBindings(source: Readonly<Record<string, PadKey>>, keys: readonly string[]): Record<string, PadKey> {
+  const out: Record<string, PadKey> = {};
+  for (const key of keys) {
+    const value = source[key];
+    if (value === undefined) throw new Error(`key not in KEY_BINDINGS: ${key}`);
+    out[key] = value;
+  }
+  return out;
+}
+
+const P1_MOVE_KEYS: readonly string[] = ['w', 'a', 's', 'd'];
+const P2_KEYS: readonly string[] = ['arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'j', 'k', 'l'];
+
+export const SOLO: KeyTable = { pad: KEY_BINDINGS, formation: FORMATION_KEYS, strategy: STRATEGY_KEYS };
+
+export const TWO_PLAYER_P1: KeyTable = {
+  pad: { ...pickBindings(KEY_BINDINGS, P1_MOVE_KEYS), c: 'a', v: 'b', b: 'c' },
+  formation: FORMATION_KEYS,
+  strategy: STRATEGY_KEYS,
+};
+
+export const TWO_PLAYER_P2: KeyTable = {
+  pad: pickBindings(KEY_BINDINGS, P2_KEYS),
+  formation: ['7', '8', '9'],
+  strategy: ['0', "'", '¡'],
+};
+
+// Indexed by team: the two-player friendly puts J1 on team 0 and J2 on team 1.
+// exported for Task 9-7: the component picks these two tables for the two-player friendly.
+export const TWO_PLAYER_TABLES: readonly [KeyTable, KeyTable] = [TWO_PLAYER_P1, TWO_PLAYER_P2];
 
 export type PadState = {
   up: boolean;
@@ -48,8 +94,8 @@ export function createPadState(strategy: Strategy, formation: number): PadState 
   return { up: false, down: false, left: false, right: false, a: 'up', b: 'up', c: 'up', formation, strategy };
 }
 
-export function padKeyFor(key: string): PadKey | null {
-  const k = KEY_BINDINGS[key];
+export function padKeyFor(table: KeyTable, key: string): PadKey | null {
+  const k = table.pad[key];
   return k === undefined ? null : k;
 }
 
@@ -109,21 +155,34 @@ export function padClear(pad: PadState, k: PadKey): void {
   }
 }
 
-// Returns true when the key was a formation/strategy choice, so the caller knows to
-// preventDefault. The engine applies both every step (applyTeamChoices), so nothing
-// else is needed: writing them into the TeamInput IS the change.
-export function padChoice(pad: PadState, key: string): boolean {
-  const f = FORMATION_KEYS.indexOf(key);
+// Returns true when the key was a formation/strategy choice of THIS table, so the
+// caller knows to preventDefault. The engine applies both every step
+// (applyTeamChoices): writing them into the TeamInput IS the change.
+export function padChoice(pad: PadState, table: KeyTable, key: string): boolean {
+  const f = table.formation.indexOf(key);
   if (f >= 0) {
     pad.formation = f;
     return true;
   }
-  const s = STRATEGY_KEYS.indexOf(key);
+  const s = table.strategy.indexOf(key);
   if (s >= 0) {
     pad.strategy = STRATEGY_BY_KEY[s];
     return true;
   }
   return false;
+}
+
+// The invariant of the two-player mode (spec risk 6: "ninguno puede pisarse"): the
+// first key of `a` that `b` also reads, in any of its three rows, or null. Consumed
+// by keyboard.test.ts and by the closing probe of the step; never by the loop
+// (Object.keys allocates).
+export function tablesShareKey(a: KeyTable, b: KeyTable): string | null {
+  const readsKey = (key: string): boolean =>
+    b.pad[key] !== undefined || b.formation.includes(key) || b.strategy.includes(key);
+  for (const key of Object.keys(a.pad)) if (readsKey(key)) return key;
+  for (const key of a.formation) if (readsKey(key)) return key;
+  for (const key of a.strategy) if (readsKey(key)) return key;
+  return null;
 }
 
 // Repo-wide bug #1 (VaultFighterGame's own comment): alt-tabbing with a direction

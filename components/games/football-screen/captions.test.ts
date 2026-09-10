@@ -6,7 +6,7 @@ import { humanProfile, profileFor } from '../football-logic/ai';
 import { createShootoutState } from '../football-logic/set-pieces';
 import {
   CAPTION_QUEUE_MAX, CAPTION_STEPS, CAPTION_TEXT, collectCaptions, createCaptionState,
-  createMatchWatch, pushCaption, stepCaption, updateWatch, type CaptionKind,
+  createMatchWatch, pushCaption, resetCaptionState, resetMatchWatch, stepCaption, updateWatch, type CaptionKind,
 } from './captions';
 
 function newMatch(): MatchState {
@@ -93,6 +93,24 @@ describe('the caption queue', () => {
     for (let i = 0; i < CAPTION_STEPS['full-time']; i++) stepCaption(cs);
     expect(cs.kind).toBe('winner');
     expect(cs.queueLen).toBe(0);
+  });
+
+  it('resetCaptionState and resetMatchWatch bring both back to the freshly created state, in place', () => {
+    const cs = createCaptionState();
+    pushCaption(cs, 'goal');
+    pushCaption(cs, 'full-time');
+    const queue = cs.queue;
+    resetCaptionState(cs);
+    expect(cs.kind).toBe('none');
+    expect(cs.stepsLeft).toBe(0);
+    expect(cs.queueLen).toBe(0);
+    expect(cs.queue).toBe(queue);
+    const w = createMatchWatch();
+    const m = newMatch();
+    m.score[0] = 2;
+    updateWatch(m, w);
+    resetMatchWatch(w);
+    expect(w).toEqual(createMatchWatch());
   });
 });
 
@@ -387,5 +405,86 @@ describe('collectCaptions', () => {
     expect(cs2.kind).toBe('full-time');
     expect(cs2.queueLen).toBe(1);
     expect(cs2.queue[0]).toBe('draw');
+  });
+});
+
+// ── Task 9-5: the ending as seen from each HumanSide, with and without a victory screen ──
+describe('collectCaptions at the end of the match, by HumanSide', () => {
+  function over(homeGoals: number, awayGoals: number): { m: MatchState; w: ReturnType<typeof createMatchWatch> } {
+    const m = newMatch();
+    const w = createMatchWatch();
+    collectCaptions(m, w, 0, createCaptionState());
+    m.score[0] = homeGoals;
+    m.score[1] = awayGoals;
+    // The goals are already "seen" by the watch: only the end is an edge here, so the
+    // queue starts at FINAL and not at GOL.
+    updateWatch(m, w);
+    m.phase = 'over';
+    return { m, w };
+  }
+
+  function queued(cs: ReturnType<typeof createCaptionState>): string[] {
+    const out: string[] = [cs.kind];
+    for (let i = 0; i < cs.queueLen; i++) out.push(cs.queue[i]);
+    return out;
+  }
+
+  it('team 0 human, no screen: FINAL then GANADOR on a win, ELIMINADO on a loss (the step-8 behaviour, untouched)', () => {
+    const win = over(2, 1);
+    const csWin = createCaptionState();
+    collectCaptions(win.m, win.w, 0, csWin);
+    expect(queued(csWin)).toEqual(['full-time', 'winner']);
+    const loss = over(0, 1);
+    const csLoss = createCaptionState();
+    collectCaptions(loss.m, loss.w, 0, csLoss);
+    expect(queued(csLoss)).toEqual(['full-time', 'eliminated']);
+  });
+
+  // S-FL3 (final review §8.5): the victory screen REPLACES the GANADOR caption; it
+  // does not follow it. FINAL still plays its three seconds. ELIMINADO is unaffected.
+  it('with a victory screen, a human win queues FINAL only; a loss still queues ELIMINADO', () => {
+    const win = over(2, 1);
+    const cs = createCaptionState();
+    collectCaptions(win.m, win.w, 0, cs, true);
+    expect(queued(cs)).toEqual(['full-time']);
+    const loss = over(0, 1);
+    const cs2 = createCaptionState();
+    collectCaptions(loss.m, loss.w, 0, cs2, true);
+    expect(queued(cs2)).toEqual(['full-time', 'eliminated']);
+  });
+
+  it('team 1 human reads the same match the other way round', () => {
+    const { m, w } = over(2, 1);
+    const cs = createCaptionState();
+    collectCaptions(m, w, 1, cs);
+    expect(queued(cs)).toEqual(['full-time', 'eliminated']);
+  });
+
+  it("'both' (two-player friendly): whoever wins is a winner, never eliminated; with the screen, FINAL only", () => {
+    const { m, w } = over(0, 3);
+    const cs = createCaptionState();
+    collectCaptions(m, w, 'both', cs);
+    expect(queued(cs)).toEqual(['full-time', 'winner']);
+    const cs2 = createCaptionState();
+    collectCaptions(m, w, 'both', cs2, true);
+    expect(queued(cs2)).toEqual(['full-time']);
+  });
+
+  it("'none' (a CPU pair watched on screen): FINAL only, the bracket says who won", () => {
+    const { m, w } = over(1, 0);
+    const cs = createCaptionState();
+    collectCaptions(m, w, 'none', cs);
+    expect(queued(cs)).toEqual(['full-time']);
+  });
+
+  it('an abandon at level is EMPATE for every side, screen or not', () => {
+    for (const side of [0, 1, 'both', 'none'] as const) {
+      for (const screen of [false, true]) {
+        const { m, w } = over(1, 1);   // level, no shootout: winnerOf === -1
+        const cs = createCaptionState();
+        collectCaptions(m, w, side, cs, screen);
+        expect(queued(cs)).toEqual(['full-time', 'draw']);
+      }
+    }
   });
 });

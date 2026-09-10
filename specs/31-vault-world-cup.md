@@ -666,6 +666,56 @@ amistoso a dos sea justo, y que el Mundial dé ganas de otro.
   y a los SFX por síntesis. (Paco, 2026-09-06)
 - **Sí: los criterios se revisan tras el QA.** Están bien de partida, pero hasta que no se juega no
   se sabe qué hay que refinar. (Paco, 2026-09-03)
+- **Primer QA jugado del paso 8 (Paco, 2026-09-09): la CPU juega bien, sonido y gol "de puta madre",
+  9/10.** Cuatro ajustes que solo se podían ver jugando:
+  1. **Modo entrenamiento** (uno o dos jugadores humanos contra un portero, sin reloj ni marcador que
+     cuente) para aprender pase corto, pase largo y chut antes de un partido. Es un modo, así que se
+     decide en el grill del paso 9: entra en la v1 si el motor admite plantillas reducidas con un
+     cambio pequeño; si no, v1.5 y en la v1 vale un amistoso contra CPU nivel 1.
+  2. **Dibujo del jugador**: no un círculo liso sino una figura vista desde arriba (cabeza y hombros,
+     un gesto). Solo `drawPlayer` en la pantalla; cero asignaciones por frame (criterio 20).
+  3. **Portero que se tira** al parar un chut: gesto visual disparado por el evento de atajada, sin
+     tocar el motor.
+  4. **Teclado J/K/L** cuesta de aprender; NO se cambia (mapeo compartido de los trece juegos). La
+     respuesta es el modo entrenamiento y las instrucciones del catálogo del paso 10.
+  Los puntos 2 y 3 van a la ola de ajustes antes de cerrar la v1 (paso 11). Calendario flexible: la
+  v1 se mueve los días que haga falta, un paso por día.
+
+---
+
+- **Grill corto del paso 9 (Paco, 2026-09-09).** Decisiones G9-1..G9-9:
+  - **G9-1 · ENTRENAMIENTO entra en la v1** como tercer modo del selector, por la vía barata: reglas de
+    partido en el motor (`sin reloj` + `equipo rival congelado`: sus ocho de campo quietos en el ancla,
+    solo el portero vive y ataja), flag apagado por defecto. Un solo humano con su equipo completo; sin
+    prórroga ni tanda; se sale con R. **Sin variante a dos** (el motor tiene un controlado por equipo).
+    Paco lo prueba y lo que haya que cambiar va a la v1.5. Si el día se complica, es lo primero que se
+    difiere al paso 11.
+  - **G9-2 · Amistoso a dos = mismo teclado, no online.** Reparto físico, cada persona con su mitad:
+    J1 (izquierda) mueve con W/A/S/D y A/B/C en C/V/B, formación 1-2-3 y estrategia 4-5-6;
+    J2 (derecha) mueve con las flechas y A/B/C en J/K/L (el mapa del solitario, sin reaprender),
+    formación 7-8-9 y estrategia 0 ' ¡. N y M quedan libres como separación. En el modo a dos WASD
+    deja de mover a J2 y las flechas dejan de mover a J1. Solitario y Mundial no cambian. Paco lo
+    prueba con dos personas antes de cerrar el paso (ghosting).
+  - **G9-3 · Los cruces de la CPU se simulan de verdad** con el motor (determinista, 30-60 ms). Antes de
+    cada uno el cuadro pregunta **VER o SALTAR**: saltar resuelve al instante; ver reproduce el partido
+    en la misma pantalla sin cursor ni teclado, a velocidad x4 (ajustable en QA), con una tecla para
+    saltar al resultado. Misma semilla → mismo resultado se vea o no.
+  - **G9-4 · Selector de selección:** amistoso vs CPU eliges la tuya y el rival se sortea; a dos elige J1 y
+    luego J2 sin repetir; Mundial eliges la tuya y se sortean 7 de las 15 restantes; entrenamiento eliges
+    la tuya y el rival se sortea. No se elige rival en la v1.
+  - **G9-5 · Selector de formación** en la pantalla de selección (las tres, 3-3-2 por defecto), uno por
+    humano en el modo a dos. La estrategia arranca neutral y se cambia en el campo. En la v1.5, esquemas
+    visuales de cada formación (dibujo del ataque); en la v1 basta el selector de texto.
+  - **G9-6 · Dificultad fija:** 5 en el amistoso, 4/6/8 en cuartos/semifinal/final. Sin selector.
+  - **G9-7 · Semillas:** una semilla de Mundial por partida (`Date.now()` en el componente, único sitio) →
+    rng del sorteo + semilla de cada partido derivada por aritmética entera. Todo reproducible.
+  - **G9-8 · Abandono por viewport en un cruce del Mundial** (`winnerOf === -1`): ELIMINADO; los puntos
+    acumulados hasta ahí se ofrecen a la tabla.
+  - **G9-9 · El flujo vive dentro del componente** con un solo canvas y bucle, patrón Vault Fighter
+    (fases: selector de modo, selección, sorteo, cuadro, partido, victoria). La máquina de fases va a un
+    módulo puro con tests (`football-screen/flow.ts`) para que `VaultWorldCupGame.tsx` no engorde.
+  Con el entrenamiento y el segundo teclado dentro, el paso 9 puede necesitar dos días: calendario
+  flexible (Paco, 09-sep).
 
 ---
 
@@ -692,6 +742,14 @@ La v1 es el MVP; la v1.5 es el producto fino. Lo apuntado en el grill del 04-sep
 
 ---
 
+- **Teclado alternativo seleccionable (Paco, 2026-09-09, v1.5):** al empezar se elige UN teclado y los
+  demás quedan inactivos: (1) el actual WASD + J/K/L; (2) el clásico Q/A arriba-abajo + O/P
+  izquierda-derecha (teclas exactas a confirmar con Paco) + Z/X/C (o espacio) para A/B/C; (3) solo
+  cursores + J/K/L. El reparto del segundo jugador del paso 9 se elige de forma que la v1.5 solo tenga
+  que añadir el selector, no un tercer mapa. (G9-2: el reparto a dos ya no usa Q/A/O/P; el clásico queda
+  solo para el selector de la v1.5 en solitario.)
+- **Esquemas visuales de formación (Paco, 2026-09-09, v1.5):** dibujo del esquema de ataque de cada
+  formación en el selector; en la v1 basta un selector de texto (G9-5).
 - **Selecciones de la v1.5 (Paco, 2026-09-07):** máximo 20. Lista cerrada de Paco: las 16 de la v1 más
   **COLOMBIA, COREA DEL SUR, NORUEGA y EGIPTO**. En la v1.5 entran las cuatro con la red de invariantes
   (`BANK_SIZE` 16 → 20) y el sorteo del Mundial elige 16 de 20.

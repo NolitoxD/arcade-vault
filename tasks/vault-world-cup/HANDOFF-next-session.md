@@ -1,11 +1,77 @@
-# HANDOFF — VAULT WORLD CUP · paso 8 (pantalla) cerrado · escrito 2026-09-07 (noche)
+# HANDOFF — VAULT WORLD CUP · paso 9 EN EJECUCIÓN (7/7 tareas implementadas, cierre pendiente) · actualizado 2026-09-10
+
+## -3. 10-sep: ejecución SDD del paso 9 (cortada por límite de uso de Paco)
+
+**Working tree = las 7 tareas implementadas, SIN commitear** (Paco commitea; mensajes propuestos en cada
+`task-9-N-report.md`). Verificado al cortar: **1163 tests / 68 ficheros verdes**, `npx tsc --noEmit` limpio, eslint
+limpio, `npm run build` exit 0. Motor tocado SOLO en `match.ts` (+test) por G9-1. Ficheros nuevos: `football-logic/
+{world-cup,mode}.ts`, `football-screen/{match-run,flow,flow-layout,particles}.ts` (+tests); modificados: `match.ts`,
+`hud.ts`, `keyboard.ts`, `loop.ts`, `match-loop.ts`, `captions.ts`, `sfx-map.ts`, `lib/sfx-vault-world-cup.ts`,
+`VaultWorldCupGame.tsx` (990→1593, flujo entero en el canvas), `app/games/vault-world-cup/play/page.tsx` (4 modos).
+
+**Ledger de verdad:** `.superpowers/sdd/2026-09-09-vault-world-cup-step-9/progress.md` (rulings, reviews, minors
+diferidos, estado exacto). Helpers: `package.sh` (paquete de revisión sin commits: working tree vs 0e553af o vs
+snapshot) y `snapshot.sh` (copias `.txt`, nunca `.ts`). Briefs/reports/reviews por tarea en la misma carpeta.
+
+**Estado por tarea:** 9-1..9-5 COMPLETE (review + fix round + re-review limpias). 9-6: fix round 1 hecho
+(constantes des-exportadas + test con stub de `Audio` para `play(gain)`/`stop`), **re-review pendiente**
+(`review-9-6-r1.md` ya generado). 9-7: review (opus) Approved con **1 Important pendiente de fix round**: abandono
+por viewport en el Mundial ganando/empatando rotula GANADOR/EMPATE aunque el modo/página digan ELIMINADO
+(`collectCaptions` lee `winnerOf` sobre el marcador en pie; hueco del brief). Fix = cambio pequeño de contrato en
+`captions.ts` (flag de abandono, o rótulo forzado cuando `modeScores(mode)`), conservando GANADOR/ELIMINADO/EMPATE
+en el amistoso (S-SC12). En el mismo fix round: `break` del bucle de pasos cuando `match.phase === 'over'` (kick
+repetido a x4) y `if (!run.human[t]) continue` en `handleKeyUp`. Minors diferidos al Cierre/QA en el ledger.
+
+**Siguiente sesión, en orden:** `/retomar` → (1) re-review 9-6 (haiku, paquete listo) → (2) fix round 9-7 + re-review
+→ (3) revisión final de rama (opus, `requesting-code-review/code-reviewer.md`, paquete con `package.sh` de TODO el
+working tree vs 0e553af) → (4) UNA ola de fixes + re-review → (5) Cierre del paso 9 según el plan (C1-C9: sondas
+P1-P5 efímeras `*.probe.test.ts` con salida a `.txt`, greps de determinismo, exports huérfanos —`FriendlyKind`/
+`FriendlyState` de mode.ts siguen sin consumidor→ borrar o marcar—, lista QA de 20 puntos para Paco + añadidos del
+revisor de 9-7, «Rulings I made» en el mensaje final) → (6) QA de Paco en su :3000 con los 4 modos. Paso 10 después.
+
+
 
 **Repo:** `/Users/paco.monleon/Dev-Web/curso-claude-code/arcade-vault` · rama `main`.
-**HEAD al escribir:** `d91277f` (Paco, 07-sep: paso 8 entero). **SIN commitear (12 ficheros, dos commits
-propuestos en `.superpowers/sdd/2026-09-07-vault-world-cup-stage-c-screen/final-fix-report.md` §3):** A) pantalla
-+ docs (viewport 768×560 R35, silbato FINAL al bloquear, casillas de carga apagadas con el botón suelto,
-exports, plan/spec) y B) motor M9 aparte (`actions.ts` + test: resetCharge cuando el botón pasa a 'up' sin
-'released'). **Suite real:** 1050 tests en 62 ficheros · `tsc`/eslint limpios · `npm run build` exit 0.
+**HEAD al escribir:** `0e553af` (paso 8). **Sin commitear (solo docs, Paco commitea):** `specs/31-vault-world-cup.md`
+(+QA 09-sep, +G9-1..G9-9, +v1.5 teclado alternativo y esquemas de formación), `docs/superpowers/plans/2026-09-09-vault-world-cup-step-9.md`
+(NUEVO, 5 513 líneas), este handoff, y `git rm` de los tres `CHECKPOINT-*.md`. Ningún fichero de código tocado.
+**Suite real:** 1050 tests en 62 ficheros (verificada 09-sep) · `tsc`/eslint limpios · `npm run build` exit 0.
+
+## -2. Paso 9 · 09-sep: QA del paso 8 + grill + plan + pre-vuelo (NO se ha ejecutado nada)
+
+1. **QA del paso 8 jugado por Paco: 9/10.** Cuatro ajustes en el spec (bullet «Primer QA jugado del paso 8»): modo
+   ENTRENAMIENTO (→ G9-1, entra en la v1), dibujo del jugador cenital (cabeza+hombros) y portero que se estira al parar
+   (→ ola de ajustes del paso 11), teclado J/K/L NO se cambia. Para la v1.5: selector de teclado (clásico Q/A/O/P +
+   Z/X/C) y esquemas visuales de cada formación.
+2. **Grill corto cerrado: G9-1..G9-9 en el spec** (§Decisiones, último bullet). Resumen: entrenamiento por vía barata
+   (`rules {timed:false, frozenTeam}` en el motor, un solo humano, sin variante a dos) · amistoso a dos en el MISMO
+   teclado: J1 = WASD + C/V/B + 1-3/4-6, J2 = flechas + J/K/L + 7-9/0'¡ · cruces de la CPU simulados de verdad con
+   VER (x4, A salta) / SALTAR · rival sorteado, Mundial 7 de 15 · selector de formación en la pantalla de selección
+   (3-3-2 por defecto) · dificultad fija 5 / 4-6-8 · semilla de run única → derivadas · abandono por viewport en el
+   Mundial = ELIMINADO con puntos hasta ahí · flujo dentro del componente, máquina de fases pura `flow.ts`.
+3. **Plan escrito:** `docs/superpowers/plans/2026-09-09-vault-world-cup-step-9.md` (Tasks 9-1 motor `rules` · 9-2 dos
+   teclados + `SPECTATE_SPEED` · 9-3 `football-logic/world-cup.ts` + `football-screen/match-run.ts` · 9-4
+   `football-logic/mode.ts` · 9-5 `flow.ts` + `flow-layout.ts` · 9-6 `particles.ts` + SFX `chants_victory`/`stop` ·
+   9-7 integración `VaultWorldCupGame.tsx` + play-page · Cierre con sondas P1-P5 y 20 puntos de QA). Previsión 1157
+   tests. Brief de diseño y **pre-vuelo** (12 hallazgos H1-H12 YA APLICADOS al plan; veredicto LISTO CON RESERVAS) en
+   `.superpowers/sdd/2026-09-09-vault-world-cup-step-9/` (`design-brief.md`, `preflight.md`).
+4. **Reservas del pre-vuelo = supuestos de producto S-FL1/2/3/5/8/9 + «0-0 en tanda = portería a cero para ambos»:**
+   **Paco dio OK a todos el 09-sep** (lista abajo). El plan se ejecuta tal cual.
+5. **Siguiente sesión:** `/retomar` con este documento → `superpowers:subagent-driven-development`
+   tarea a tarea (9-1 → 9-7) con revisión por tarea + revisión final con sondas; ledger en la carpeta SDD de arriba
+   (`progress.md`, briefs, reviews, snapshots `.txt`). Commits SOLO Paco (el plan propone el mensaje por tarea). Si el
+   día se complica, lo diferible es el MODO entrenamiento (lista cerrada de 5 puntos al inicio de la Task 9-5), NO la
+   Task 9-1. Calendario flexible (Paco, 09-sep): el paso 9 puede llevar dos días.
+
+### Decisiones S-FL — TODAS CONFIRMADAS por Paco el 09-sep (OK a las recomendaciones; no relitigar)
+- S-FL1 saque tras gol en entrenamiento: automático de la estatua a los 5 s (cero código) vs «saca el humano» (M13).
+- S-FL2 las estatuas no retienen balones sueltos; el portero sí.
+- S-FL3 con pantalla de victoria propia no hay rótulo GANADOR (FINAL 3 s → pantalla → cánticos).
+- S-FL5 cruce VER interrumpido por el viewport se termina headless; tras el guard hay vuelta a los menús.
+- S-FL8 el lado del humano en su cruce se sortea → a veces saca segundo en la tanda (S-PK3).
+- S-FL9 menús con la tabla SOLO; cuadro por ronda con línea «ELIMINADOS: …» en vez de 8 filas fijas.
+- 0-0 resuelto en penaltis = portería a cero para los dos (2 000 puntos).
+
 
 ## -1. Paso 8 (07-sep, misma sesión que la B2, autorizado por Paco)
 
@@ -80,7 +146,7 @@ revisiones por tarea, `final-review-report.md` (veredicto, sondas, criterios, n�
 
 ## 2. Próximos pasos, en orden
 
-1. **Paco hace los dos commits del paso 8** (final-fix-report.md §3) y **juega el QA** de §7.
+1. **Paco juega el QA** del paso 8 (`final-review-report.md` §7, 25 puntos) en su :3000 y apunta los números.
 2. **`retomar` con este documento.** Comprobar árbol limpio y 1050 verdes.
 3. **Paso 9 (modos y flujo).** Plan con `writing-plans` leyendo OBLIGATORIAMENTE el `final-review-report.md` §8 del paso 8 y además
    los DOS `final-review-report.md` (etapa B §8 "Recomendaciones para la etapa C" y etapa B2 §8 "mapa de

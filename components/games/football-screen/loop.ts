@@ -11,6 +11,12 @@ import type { MatchPhase } from '../football-logic/match';
 // all -- a 5 000 ms frame and a 250 ms one both spend five steps and carry zero.
 export const MAX_STEPS_PER_FRAME = 5;
 
+// G9-3: a CPU bout of the World Cup watched on screen runs at x4 -- four simulation
+// steps per real step of time. The cap scales with it (20), so a backgrounded tab
+// still cannot spiral, and the real-time remainder is untouched: the accumulator
+// keeps counting wall time, only the exchange rate changes. Adjustable in QA.
+export const SPECTATE_SPEED = 4;
+
 export type StepBudget = { steps: number; carryMs: number };
 
 export function createStepBudget(): StepBudget {
@@ -19,22 +25,23 @@ export function createStepBudget(): StepBudget {
 
 // Writes into out; allocates nothing. When the cap bites, the surplus is DROPPED
 // rather than carried, which is what keeps the loop from spiralling: carrying it
-// would guarantee another capped frame, and another.
-export function planSteps(accumulatorMs: number, out: StepBudget): void {
+// would guarantee another capped frame, and another. `speed` multiplies both the
+// steps and the cap; 1 is the human match.
+export function planSteps(accumulatorMs: number, out: StepBudget, speed = 1): void {
   if (accumulatorMs <= 0) {
     out.steps = 0;
     out.carryMs = 0;
     return;
   }
-  let steps = Math.floor(accumulatorMs / STEP_MS);
-  if (steps >= MAX_STEPS_PER_FRAME) {
-    out.steps = MAX_STEPS_PER_FRAME;
+  let whole = Math.floor(accumulatorMs / STEP_MS);
+  if (whole >= MAX_STEPS_PER_FRAME) {
+    out.steps = MAX_STEPS_PER_FRAME * speed;
     out.carryMs = 0;
     return;
   }
-  if (steps < 0) steps = 0;
-  out.steps = steps;
-  out.carryMs = accumulatorMs - steps * STEP_MS;
+  if (whole < 0) whole = 0;
+  out.steps = whole * speed;
+  out.carryMs = accumulatorMs - whole * STEP_MS;
 }
 
 // What a frame is allowed to do. Three modes, because the component has three

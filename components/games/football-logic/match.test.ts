@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { PITCH, centerX, centerY } from './pitch';
-import { FORMATIONS, TEAMS, TEAM_SIZE, type Formation, type TeamDef } from './teams';
+import { FORMATIONS, TEAMS, TEAM_SIZE, OUTFIELD as OUTFIELD_COUNT, type Formation, type TeamDef } from './teams';
 import { dist } from './geometry';
 import { createTeamInput, copyTeamInput, toAxis, type TeamInput } from './input';
 import { STEP_MS, stepsFor } from './step';
@@ -10,6 +10,7 @@ import { createRng, type Rng } from './rng';
 import { checkGoalkeepersInBox } from './invariants';
 import {
   EXTRA_TIME_SECONDS, EXTRA_TIME_STEPS, GOAL_PAUSE_STEPS, HALF_SECONDS, HALF_SECONDS_MAX, HALF_STEPS, HALF_TIME_PAUSE_STEPS,
+  NORMAL_RULES, TRAINING_RULES,
   abandon, callSetPiece, createMatch, endExtraTime, endGoalPause, endHalf, endHalfTime, endShootout, isOpenPlay,
   kickoffTeamFor, resumePlay, scoreGoal, stepMatch, winnerOf, type MatchPhase, type MatchState,
 } from './match';
@@ -1631,5 +1632,172 @@ describe('the shootout freezes the clock and keeps its scoreboard once it is ove
     expect(forced.shootout?.scored).toEqual([4, 3]);
     expect(forced.score).toEqual([0, 0]);
     expect(winnerOf(forced)).toBe(0);
+  });
+});
+
+// ── G9-1: training rules. Flag off = the normal match, byte for byte. ────────
+describe('G9-1: match rules (clock off, frozen team)', () => {
+  function training(): MatchState {
+    return createMatch(TEAM_PAIR, FORMATIONS, PITCH, PROFILES, TRAINING_RULES);
+  }
+
+  it('createMatch without rules is the normal match: NORMAL_RULES, and an identical run to an explicit one', () => {
+    const implicit = fresh();
+    const explicit = createMatch(TEAM_PAIR, FORMATIONS, PITCH, PROFILES, NORMAL_RULES);
+    expect(implicit.rules).toEqual({ timed: true, frozenTeam: -1 });
+    expect(TRAINING_RULES).toEqual({ timed: false, frozenTeam: 1 });
+    idle(implicit, 2000, createRng(7));
+    idle(explicit, 2000, createRng(7));
+    expect(snapshot(implicit)).toBe(snapshot(explicit));
+  });
+
+  it('with the clock off, 10 000 steps leave halfStep, clockMs and the half untouched; the normal match has moved on', () => {
+    const t = training();
+    const n = fresh();
+    idle(t, 10_000, createRng(3));
+    idle(n, 10_000, createRng(3));
+    expect(t.halfStep).toBe(0);
+    expect(t.clockMs).toBe(0);
+    expect(t.half).toBe(1);
+    expect(t.phase).not.toBe('over');
+    expect(t.phase).not.toBe('half-time');
+    expect(t.shootout).toBeNull();
+    // The control case (risk 7): the same 10 000 idle steps DO move the normal clock --
+    // past the first half (5 400 steps of play + a 300-step kickoff + a 180-step break).
+    expect(n.half === 2 || n.halfStep > 0).toBe(true);
+  });
+
+  it('the frozen team\'s eight outfield players stay exactly where the kickoff placed them, while the other team moves', () => {
+    const t = training();
+    // Through the kickoff countdown (team 0 takes it: kickoffTeamFor(1)) into open play.
+    idle(t, SET_PIECE_COUNTDOWN_STEPS + 1, createRng(5));
+    expect(isOpenPlay(t.phase)).toBe(true);
+    const frozenX: number[] = [];
+    const frozenY: number[] = [];
+    const freeX: number[] = [];
+    for (let i = 0; i < t.players.length; i++) {
+      const p = t.players[i];
+      if (p.role === 'gk') continue;
+      if (p.team === 1) { frozenX.push(p.x); frozenY.push(p.y); } else freeX.push(p.x);
+    }
+    idle(t, 2000, createRng(5));
+    let k = 0;
+    let f = 0;
+    let moved = 0;
+    for (let i = 0; i < t.players.length; i++) {
+      const p = t.players[i];
+      if (p.role === 'gk') continue;
+      if (p.team === 1) {
+        expect(p.x).toBe(frozenX[k]);
+        expect(p.y).toBe(frozenY[k]);
+        k++;
+      } else {
+        // `f` indexes freeX in the same order it was filled; `moved` only counts.
+        if (p.x !== freeX[f]) moved++;
+        f++;
+      }
+    }
+    expect(k).toBe(OUTFIELD_COUNT);
+    // The control case: the un-frozen team's AI still drifts its players towards the ball.
+    expect(moved).toBeGreaterThan(0);
+  });
+
+  it('the frozen team\'s keeper is still alive: he comes out for a loose ball in his small area', () => {
+    const t = training();
+    idle(t, SET_PIECE_COUNTDOWN_STEPS + 1, createRng(5));
+    const gk = t.players[1 * TEAM_SIZE];
+    // Team 1 attacks -x, so its own goal is at x = width. A resting ball inside its
+    // small area, off the centre line, with no frozen mate anywhere near it.
+    t.ball.owner = null;
+    t.ball.x = PITCH.width - PITCH.smallAreaDepth / 2;
+    t.ball.y = CY + PITCH.smallAreaWidth / 4;
+    t.ball.vx = 0; t.ball.vy = 0; t.ball.vz = 0; t.ball.z = 0;
+    t.ball.kickerId = null;
+    const startX = gk.x;
+    const startY = gk.y;
+    idle(t, 10, createRng(5));
+    expect(gk.x !== startX || gk.y !== startY).toBe(true);
+  });
+
+  it('a frozen outfield player never ends a step holding the ball; with normal rules the same player picks it up', () => {
+    for (const rules of [TRAINING_RULES, NORMAL_RULES]) {
+      const m = createMatch(TEAM_PAIR, FORMATIONS, PITCH, PROFILES, rules);
+      idle(m, SET_PIECE_COUNTDOWN_STEPS + 1, createRng(9));
+      const statue = m.players[1 * TEAM_SIZE + 4];   // a team-1 midfielder (slot 3)
+      m.ball.owner = null;
+      m.ball.x = statue.x + 10;
+      m.ball.y = statue.y;
+      m.ball.vx = 0; m.ball.vy = 0; m.ball.vz = 0; m.ball.z = 0;
+      m.ball.kickerId = null;
+      stepMatch(m, IDLE, createRng(9));
+      if (rules === TRAINING_RULES) expect(m.ball.owner).toBeNull();
+      else expect(m.ball.owner).toBe(statue.id);
+    }
+  });
+
+  it('after a goal in training the frozen team kicks off automatically at the end of the countdown, and the clock still reads zero (S-FL1)', () => {
+    const t = training();
+    idle(t, SET_PIECE_COUNTDOWN_STEPS + 1, createRng(11));
+    expect(scoreGoal(t, 0)).toBe(true);
+    expect(t.score[0]).toBe(1);
+    idle(t, GOAL_PAUSE_STEPS, createRng(11));
+    expect(t.phase).toBe('kickoff');
+    expect(t.setPiece?.team).toBe(1);
+    idle(t, SET_PIECE_COUNTDOWN_STEPS, createRng(11));
+    expect(isOpenPlay(t.phase)).toBe(true);
+    // The automatic short pass is away: nobody of the frozen outfield holds it.
+    const owner = t.ball.owner;
+    expect(owner === null || t.players[owner].team === 0 || t.players[owner].role === 'gk').toBe(true);
+    expect(t.halfStep).toBe(0);
+  });
+
+  // Fix round 1 (review, Important): dropFrozenPickup alone only closed the loose-ball
+  // half of S-FL2. A tackle is started by applyButtons on match.controlled[team]
+  // regardless of frozenTeam, and stepTackle's own givePossession call (the loop in
+  // stepOpenPlay, AFTER dropFrozenPickup) can still hand the ball to a frozen player
+  // who was mid-slide. This is the anti-fixture test the review asked for: a REAL
+  // tackle TeamInput sent to the frozen team's controlled player, with the ball right
+  // at his feet -- the closest thing to "make him steal it" the input surface allows.
+  it('a frozen outfield player never starts or continues a tackle from a real tackle input, and its tackleStepsLeft stays 0; with normal rules the same input DOES start one', () => {
+    for (const rules of [TRAINING_RULES, NORMAL_RULES]) {
+      const m = createMatch(TEAM_PAIR, FORMATIONS, PITCH, PROFILES, rules);
+      idle(m, SET_PIECE_COUNTDOWN_STEPS + 1, createRng(13));
+      const target = m.players[m.controlled[1]]; // team 1's controlled outfield player
+      // The ball rests right at his feet, owned by team 0's controlled player: the
+      // tackle button (input.a === 'pressed' while not owning the ball, applyButtons)
+      // has a rival to slide into and take it from, in reach from the very first step.
+      m.ball.owner = m.controlled[0];
+      m.ball.x = target.x;
+      m.ball.y = target.y;
+      m.ball.vx = 0;
+      m.ball.vy = 0;
+      m.ball.vz = 0;
+      m.ball.z = 0;
+      m.ball.kickerId = null;
+      const tackleInput: TeamInput = createTeamInput();
+      tackleInput.a = 'pressed';
+      const tackleStep: readonly [TeamInput, TeamInput] = [createTeamInput(), tackleInput];
+      let tackleStarted = false;
+      let possessionChanged = false;
+      for (let step = 0; step < 300; step++) {
+        const ownerBefore: number | null = m.ball.owner;
+        stepMatch(m, step === 0 ? tackleStep : IDLE, createRng(13 + step));
+        if (rules === TRAINING_RULES) {
+          for (let i = 0; i < m.players.length; i++) {
+            const p = m.players[i];
+            if (p.team !== 1 || p.role === 'gk') continue;
+            expect(p.tackleStepsLeft).toBe(0);
+          }
+          const owner = m.ball.owner;
+          expect(owner === null || m.players[owner].team !== 1 || m.players[owner].role === 'gk').toBe(true);
+        } else {
+          if (target.tackleStepsLeft > 0) tackleStarted = true;
+          if (m.ball.owner !== ownerBefore) possessionChanged = true;
+        }
+      }
+      // The control case (risk 7): the same input under NORMAL_RULES DOES start a
+      // tackle -- proof this scenario is a real threat the training rule had to stop.
+      if (rules === NORMAL_RULES) expect(tackleStarted || possessionChanged).toBe(true);
+    }
   });
 });

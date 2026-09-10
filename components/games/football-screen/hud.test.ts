@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { EXTRA_TIME_STEPS, HALF_STEPS, STEPS_PER_SECOND } from '../football-logic/clock';
-import { createMatch, type MatchState } from '../football-logic/match';
+import { createMatch, TRAINING_RULES, type MatchState } from '../football-logic/match';
 import { PITCH } from '../football-logic/pitch';
 import { FORMATIONS, TEAMS, TEAM_SIZE } from '../football-logic/teams';
 import { humanProfile, profileFor } from '../football-logic/ai';
@@ -87,6 +87,17 @@ describe('halfLabel', () => {
     m.phase = 'half-time';
     m.half = 2;
     expect(halfLabel(m)).toBe('DESCANSO');
+  });
+
+  // G9-1: a training match has no clock, so the half is not what the strip should say.
+  it('reads ENTRENAMIENTO for a match without a clock, whatever the half or phase', () => {
+    const m = createMatch(
+      [TEAMS[0], TEAMS[1]], FORMATIONS, PITCH,
+      [humanProfile(TEAMS[0], 5), profileFor(TEAMS[1], 5)], TRAINING_RULES,
+    );
+    expect(halfLabel(m)).toBe('ENTRENAMIENTO');
+    m.phase = 'goal';
+    expect(halfLabel(m)).toBe('ENTRENAMIENTO');
   });
 });
 

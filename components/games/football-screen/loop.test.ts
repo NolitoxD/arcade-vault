@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { STEP_MS } from '../football-logic/clock';
-import { MAX_STEPS_PER_FRAME, createStepBudget, frameMode, planSteps } from './loop';
+import { MAX_STEPS_PER_FRAME, SPECTATE_SPEED, createStepBudget, frameMode, planSteps } from './loop';
 
 describe('planSteps', () => {
   it('runs no step and keeps everything below one step', () => {
@@ -66,5 +66,41 @@ describe('frameMode', () => {
   it('a blocked viewport stops the simulation but KEEPS the caption clock', () => {
     expect(frameMode('play', false, true)).toBe('captions-only');
     expect(frameMode('over', false, true)).toBe('captions-only');
+  });
+});
+
+// ── G9-3: a CPU bout watched on screen runs at x4 (adjustable in QA). ─────────
+describe('planSteps at SPECTATE_SPEED', () => {
+  it('SPECTATE_SPEED is 4', () => {
+    expect(SPECTATE_SPEED).toBe(4);
+  });
+
+  it('multiplies the steps of a frame by the speed and keeps the same real-time remainder', () => {
+    const out = createStepBudget();
+    planSteps(STEP_MS * 2 + 3, out, SPECTATE_SPEED);
+    expect(out.steps).toBe(8);
+    expect(out.carryMs).toBeCloseTo(3, 6);
+  });
+
+  it('multiplies the cap too, and still DROPS the surplus', () => {
+    const out = createStepBudget();
+    planSteps(STEP_MS * 40, out, SPECTATE_SPEED);
+    expect(out.steps).toBe(MAX_STEPS_PER_FRAME * SPECTATE_SPEED);
+    expect(out.carryMs).toBe(0);
+  });
+
+  it('a frame below one step plans nothing at any speed', () => {
+    const out = createStepBudget();
+    planSteps(STEP_MS - 0.01, out, SPECTATE_SPEED);
+    expect(out.steps).toBe(0);
+    expect(out.carryMs).toBeCloseTo(STEP_MS - 0.01, 6);
+  });
+
+  it('speed 1 is exactly the step-8 behaviour', () => {
+    const a = createStepBudget();
+    const b = createStepBudget();
+    planSteps(STEP_MS * 4 + 3, a);
+    planSteps(STEP_MS * 4 + 3, b, 1);
+    expect(a).toEqual(b);
   });
 });

@@ -1,5 +1,6 @@
 import { stepsFor } from '../football-logic/clock';
 import { GOAL_PAUSE_STEPS, type MatchState } from '../football-logic/match';
+import type { FxKind } from '../football-logic/mode';
 import type { Rng } from '../football-logic/rng';
 import type { VaultWorldCupSfx } from '@/lib/sfx-vault-world-cup';
 import type { CaptionKind, MatchWatch, ShowingCaption } from './captions';
@@ -133,4 +134,13 @@ export function planAmbience(rng: Rng, halfSteps: number, out: number[]): number
 export function ambienceDue(marks: readonly number[], count: number, index: number, halfStep: number): boolean {
   if (index >= count) return false;
   return halfStep >= marks[index];
+}
+
+// Spec audio table, row chants-victory: full volume with the fireworks (CAMPEONES DEL
+// MUNDO), "a volumen bajo" with the confetti (GANADOR). The component hands this to
+// sfxVaultWorldCup.play('chants_victory', gain).
+export const CHANTS_LOW_GAIN = 0.4;
+
+export function victoryChantGain(kind: FxKind): number {
+  return kind === 'fireworks' ? 1 : CHANTS_LOW_GAIN;
 }

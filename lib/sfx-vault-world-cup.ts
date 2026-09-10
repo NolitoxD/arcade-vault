@@ -8,7 +8,6 @@
 // NOT here, on purpose:
 //   · the two music tracks (theme-game-play / theme-pre-game-lobby) -- step 10, they
 //     go through app/context/MusicContext's setTrackOverride, not through this class;
-//   · the victory chants (vault-futbol-chants-victory.mp3) -- step 9's victory screens;
 //   · the crossbar (vault-futbol-crossbar.mp3) -- reserved with NO consumer until v1.5:
 //     the engine has no posts as a collision, only the line between them;
 //   · the sliding tackle -- S-SC10: it has no file at all, and the v1 leaves it
@@ -21,7 +20,8 @@ export type VaultWorldCupSfx =
   | 'goal_shout'
   | 'goal_crowd'
   | 'kick'
-  | 'crowd';
+  | 'crowd'
+  | 'chants_victory';
 
 // Every name is a plain ASCII kebab-case slug (renamed 2026-09-07, no accents or
 // commas left to encode), but they still go through encodeURI below: a cheap, always
@@ -35,6 +35,7 @@ const RAW_FILES: Readonly<Record<VaultWorldCupSfx, string>> = {
   goal_crowd: '/vault-futbol-goal-crowd.mp3',
   kick: '/vault-futbol-kick.mp3',
   crowd: '/vault-futbol-crowd-ambience.mp3',
+  chants_victory: '/vault-futbol-chants-victory.mp3',
 };
 
 function encodeAll(files: Readonly<Record<VaultWorldCupSfx, string>>): Record<VaultWorldCupSfx, string> {
@@ -56,10 +57,17 @@ export const SFX_VOLUME: Readonly<Record<VaultWorldCupSfx, number>> = {
   goal_crowd: 0.5,
   kick: 0.45,
   crowd: 0.3,
+  // The chants play under the victory screen for 20-30 s: below the whistles, above
+  // the crowd bed. The confetti halves this again through play()'s gain (sfx-map.ts).
+  chants_victory: 0.6,
 };
 
 export class VaultWorldCupSFX {
   private sources: Partial<Record<VaultWorldCupSfx, HTMLAudioElement>> = {};
+  // The last clone started per name. Step 8 threw the clone away (a whistle is over
+  // before anyone could want it stopped); the chants are not -- CONTINUAR must cut
+  // them (Task 9-6), so the clone is kept. One per name: two chants never overlap.
+  private live: Partial<Record<VaultWorldCupSfx, HTMLAudioElement>> = {};
   private ready = false;
   private muted = false;
 
@@ -81,15 +89,30 @@ export class VaultWorldCupSFX {
   // A clone per shot, the repo's own pattern (PongGame, ArkanoidGame, PacmanGame):
   // two goals in three seconds must not cut each other off. play() is only ever
   // called on an EVENT, never per frame, so the clone is not a per-frame allocation.
-  play(name: VaultWorldCupSfx): void {
+  //
+  // `gain` multiplies the table volume (spec: the chants "a volumen bajo" under the
+  // confetti); the product is clamped so a bad gain can never throw on the volume
+  // setter.
+  play(name: VaultWorldCupSfx, gain = 1): void {
     if (!this.ready || this.muted) return;
     const source = this.sources[name];
     if (source === undefined) return;
     const shot = source.cloneNode(true) as HTMLAudioElement;
-    shot.volume = SFX_VOLUME[name];
+    const volume = SFX_VOLUME[name] * gain;
+    shot.volume = volume < 0 ? 0 : volume > 1 ? 1 : volume;
+    this.live[name] = shot;
     // A browser that refuses to play (autoplay policy, tab in the background) rejects
     // the promise; swallowing it is the whole error handling this needs.
     void shot.play().catch(() => undefined);
+  }
+
+  // Cuts the last clone of `name`. Safe on a name that never played.
+  stop(name: VaultWorldCupSfx): void {
+    const el = this.live[name];
+    if (el === undefined) return;
+    el.pause();
+    el.currentTime = 0;
+    this.live[name] = undefined;
   }
 
   setMuted(muted: boolean): void {
@@ -97,6 +120,7 @@ export class VaultWorldCupSFX {
   }
 
   dispose(): void {
+    for (const key of Object.keys(this.live) as VaultWorldCupSfx[]) this.stop(key);
     for (const key of Object.keys(this.sources) as VaultWorldCupSfx[]) {
       const el = this.sources[key];
       if (el === undefined) continue;
@@ -104,6 +128,7 @@ export class VaultWorldCupSFX {
       el.src = '';
     }
     this.sources = {};
+    this.live = {};
     this.ready = false;
   }
 }

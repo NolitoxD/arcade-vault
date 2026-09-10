@@ -11,7 +11,7 @@ import { CAPTION_TEXT, createMatchWatch, updateWatch } from './captions';
 import {
   AMBIENCE_MAX, AMBIENCE_MIN, ambienceDue, ambienceSeedFor, createAmbienceMarks,
   captionSfxOnEdge, goalCrowdDue, goalNetDue, halfEndWhistleDue, planAmbience, sfxForCaption,
-  shotFiredThisStep,
+  shotFiredThisStep, CHANTS_LOW_GAIN, victoryChantGain,
 } from './sfx-map';
 
 function newMatch(): MatchState {
@@ -316,5 +316,15 @@ describe('the crowd ambience', () => {
     // fall beyond the step count halfStep ever reaches in half 3, so
     // ambienceDue(marks, n, index, match.halfStep) never fires for them.
     expect(marks[n - 1]).toBeGreaterThan(EXTRA_TIME_STEPS);
+  });
+});
+
+// ── Task 9-6: spec audio table -- chants at full volume with the fireworks, low with the confetti ──
+describe('victoryChantGain', () => {
+  it('is 1 for the fireworks and CHANTS_LOW_GAIN, strictly between 0 and 1, for the confetti', () => {
+    expect(victoryChantGain('fireworks')).toBe(1);
+    expect(victoryChantGain('confetti')).toBe(CHANTS_LOW_GAIN);
+    expect(CHANTS_LOW_GAIN).toBeGreaterThan(0);
+    expect(CHANTS_LOW_GAIN).toBeLessThan(1);
   });
 });

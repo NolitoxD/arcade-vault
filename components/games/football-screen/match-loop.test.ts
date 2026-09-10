@@ -3,7 +3,7 @@ import { EXTRA_TIME_STEPS, HALF_STEPS, STEP_MS } from '../football-logic/clock';
 import { createTeamInput, type ButtonState } from '../football-logic/input';
 import { createRng } from '../football-logic/rng';
 import { createPadState, padAdvance, padDown, padToTeamInput } from './keyboard';
-import { createStepBudget } from './loop';
+import { SPECTATE_SPEED, createStepBudget } from './loop';
 import { AMBIENCE_MAX, createAmbienceMarks } from './sfx-map';
 import { createFramePlan, planFrame, planHalfAmbience } from './match-loop';
 
@@ -95,6 +95,15 @@ describe('planFrame', () => {
     // not, so the tap is simply lost.
     expect(seenByStep).toBe('pressed');
     expect(seenByStepWithBug).toBe('held');
+  });
+
+  it('at SPECTATE_SPEED a frame plans four times the steps of the same real time', () => {
+    const budget = createStepBudget();
+    const plan = createFramePlan();
+    const carry = planFrame('play', false, false, 0, STEP_MS * 3 + 1, budget, plan, SPECTATE_SPEED);
+    expect(plan.mode).toBe('full');
+    expect(plan.steps).toBe(12);
+    expect(carry).toBeCloseTo(1, 6);
   });
 });
 

@@ -57,10 +57,13 @@ export function clockText(match: MatchState): string {
   return CLOCK_TEXT[clockSeconds(match)];
 }
 
+const TRAINING_LABEL = 'ENTRENAMIENTO';
+
 // Stage B2 §8: during the shootout halfStep and clockMs stay FROZEN at the value
 // they were entered with, so nothing special is needed to stop the clock -- but the
 // label has to say what is happening.
 export function halfLabel(match: MatchState): string {
+  if (!match.rules.timed) return TRAINING_LABEL;   // G9-1: no clock, no half to name
   if (match.phase === 'shootout') return 'PENALTIS';
   if (match.phase === 'half-time') return 'DESCANSO';
   if (match.half === 3) return 'PRÓRROGA';

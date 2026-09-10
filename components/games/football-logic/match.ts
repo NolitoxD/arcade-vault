@@ -23,6 +23,21 @@ import {
 
 export type MatchPhase = 'kickoff' | 'play' | 'set-piece' | 'goal' | 'half-time' | 'golden-goal' | 'shootout' | 'over';
 
+// ── G9-1 (Paco, 09-sep): the training mode is a RULESET of the match, not a mode.
+// The engine still does not know what it is playing; it knows two switches:
+//   · timed      — advanceClock is a no-op when false: no half ends, no extra time,
+//                  no shootout. The match only ends by abandon().
+//   · frozenTeam — that team's outfield players skip positionTeam (their want
+//                  channel stays at zero: they stand at their anchors), and never end a
+//                  step holding a loose ball (dropFrozenPickup, S-FL2). Its KEEPER is
+//                  untouched: keeperStep, keeperCatch and the automatic release all
+//                  still run, which is what makes it a shooting drill and not a void.
+// NORMAL_RULES is the default of createMatch, so every existing call and test is the
+// match it always was, byte for byte (see the first G9-1 test).
+export type MatchRules = { timed: boolean; frozenTeam: -1 | 0 | 1 };
+export const NORMAL_RULES: Readonly<MatchRules> = { timed: true, frozenTeam: -1 };
+export const TRAINING_RULES: Readonly<MatchRules> = { timed: false, frozenTeam: 1 };
+
 export type MatchState = {
   teams: [TeamDef, TeamDef];
   players: PlayerState[];
@@ -45,6 +60,7 @@ export type MatchState = {
   formationTable: readonly Formation[];
   pitch: PitchDef;
   profiles: readonly [AiProfile, AiProfile];
+  rules: Readonly<MatchRules>;
   // One catch roll per approach of the ball, per keeper (stage B, D4): keeperCatch
   // sets it when it rolls and clears it as soon as the ball leaves the radius.
   catchRolled: [boolean, boolean];
@@ -107,7 +123,10 @@ function createPlayerEvents(count: number): ActionEvent[] {
   return events;
 }
 
-export function createMatch(teams: [TeamDef, TeamDef], formationTable: readonly Formation[], pitch: PitchDef, profiles: readonly [AiProfile, AiProfile]): MatchState {
+export function createMatch(
+  teams: [TeamDef, TeamDef], formationTable: readonly Formation[], pitch: PitchDef,
+  profiles: readonly [AiProfile, AiProfile], rules: Readonly<MatchRules> = NORMAL_RULES,
+): MatchState {
   const match: MatchState = {
     teams,
     players: createPlayers([formationTable[0], formationTable[0]], pitch),
@@ -128,6 +147,7 @@ export function createMatch(teams: [TeamDef, TeamDef], formationTable: readonly 
     formationTable,
     pitch,
     profiles,
+    rules,
     catchRolled: [false, false],
     lastGoalTeam: -1,
     scratch: {
@@ -265,6 +285,7 @@ function applyTeamChoices(match: MatchState, inputs: readonly [TeamInput, TeamIn
 // two regulation halves. The one phase with a frozen clock is now the shootout, and
 // it freezes by not calling this at all (S-PK6).
 function advanceClock(match: MatchState): void {
+  if (!match.rules.timed) return;   // G9-1: a training match has no clock at all
   match.halfStep++;
 }
 
@@ -295,8 +316,33 @@ function keeperCatchFor(match: MatchState, team: 0 | 1, rng: Rng): void {
 
 function runTeamAi(match: MatchState, team: 0 | 1): void {
   const { players, ball, scratch } = match;
-  positionTeam(players, ball, team, match.formationTable[match.formationIndex[team]], match.strategies[team], match.attackDir[team], scratch.liveControlled[team], match.pitch, match.stepCount, scratch.aim);
+  // G9-1: the frozen team's outfield stands still (its want channel is left at the
+  // zero placeByFormation wrote); its keeper is positioned like any other.
+  if (team !== match.rules.frozenTeam) {
+    positionTeam(players, ball, team, match.formationTable[match.formationIndex[team]], match.strategies[team], match.attackDir[team], scratch.liveControlled[team], match.pitch, match.stepCount, scratch.aim);
+  }
   keeperStep(keeperOf(match, team), players, ball, match.attackDir[team], match.pitch, match.stepCount);
+}
+
+// S-FL2 (G9-1) -- fix round 1 restates the invariant precisely: a frozen OUTFIELD
+// player never ENDS A STEP owning the ball, by whatever route it got there. The
+// loose-ball route: pickUp runs inside stepBall (ball.ts, not part of this change)
+// and has just glued the ball to his foot at CONTROL_DIST, at rest; letting go here
+// leaves it exactly there, loose, for the human to collect by getting closer than the
+// statue (under 18 u; pickUp takes the nearest). Repeats every step while it lies
+// there: 18 comparisons, no allocation. The tackle route (a frozen player sliding a
+// rival's ball loose into his own possession) cannot reach this function at all any
+// more -- applyTeamInput now refuses to hand the frozen team's controlled player any
+// TeamInput, so it can never start (or continue) a tackle in the first place; see the
+// guard there. The keeper is deliberately excluded here: a training drill needs
+// someone to beat, and this whole invariant is about outfield statues, not him.
+function dropFrozenPickup(match: MatchState): void {
+  const frozen = match.rules.frozenTeam;
+  const owner = match.ball.owner;
+  if (frozen < 0 || owner === null) return;
+  const p = match.players[owner];
+  if (p.team !== frozen || p.role === 'gk') return;
+  match.ball.owner = null;
 }
 
 // D4 routing. Keeper holding the ball: the TeamInput is the keeper's (throw by button,
@@ -313,6 +359,16 @@ function applyTeamInput(match: MatchState, team: 0 | 1, input: TeamInput, rng: R
     releaseFromGoalkeeper(gk, ball, players, match.attackDir[team], match.pitch, match.stepCount, scratch.aim, scratch.events[gk.id]);
     return;
   }
+  // Fix round 1 (G9-1 review, Important): a frozen outfield player must never
+  // start or continue a tackle, whatever TeamInput it is handed -- startTackle
+  // (actions.ts) does not know about training, and a tackle already under way
+  // reaches givePossession from the stepTackle loop in stepOpenPlay, AFTER
+  // dropFrozenPickup has already run for this step. The robust fix is to never
+  // feed the frozen team's controlled player a TeamInput at all: not calling
+  // applyButtons means tackleStepsLeft can never leave zero for it, so there is
+  // nothing left for that loop to advance. The keeper is untouched -- this
+  // branch only replaces the field-player path above, never the gk-holds-ball one.
+  if (team === match.rules.frozenTeam) return;
   const controlledPlayer = players[match.controlled[team]];
   const ev = scratch.events[controlledPlayer.id];
   applyButtons(controlledPlayer, input, ball, players, rng, match.stepCount, scratch.aim, ev);
@@ -347,6 +403,7 @@ function stepOpenPlay(match: MatchState, inputs: readonly [TeamInput, TeamInput]
   applyTeamInput(match, 0, inputs[0], rng);
   applyTeamInput(match, 1, inputs[1], rng);
   stepPhysics(players, ball, inputs, scratch.liveControlled, match.attackDir, match.pitch, match.stepCount);
+  dropFrozenPickup(match);
   for (let i = 0; i < players.length; i++) {
     // Fix round 1: each player writes its own outcome into its own slot
     // (events[i], since players[i].id === i) -- a second same-team tackler

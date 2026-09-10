@@ -41,6 +41,7 @@ export function planFrame(
   frameMs: number,
   budget: StepBudget,
   out: FramePlan,
+  speed = 1,
 ): number {
   out.mode = frameMode(phase, paused, blocked);
   if (out.mode === 'frozen') {
@@ -48,7 +49,7 @@ export function planFrame(
     out.advancePad = false;
     return accumulatorMs;
   }
-  planSteps(accumulatorMs + frameMs, budget);
+  planSteps(accumulatorMs + frameMs, budget, speed);
   out.steps = budget.steps;
   // The guard H3 is about: STEP_MS is 16.667 ms, so on a 120 or 144 Hz panel a good
   // half of the frames plan zero steps. Advancing the pad on one of those would eat

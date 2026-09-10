@@ -3,28 +3,29 @@ import { createTeamInput } from '../football-logic/input';
 import { FORMATION_COUNT } from '../football-logic/teams';
 import { checkTeamInput } from '../football-logic/input';
 import {
-  createPadState, padAdvance, padBlur, padChoice, padClear, padDown, padKeyFor, padToTeamInput, padUp,
+  KEY_BINDINGS, SOLO, TWO_PLAYER_P1, TWO_PLAYER_P2,
+  createPadState, padAdvance, padBlur, padChoice, padClear, padDown, padKeyFor, padToTeamInput, padUp, tablesShareKey,
 } from './keyboard';
 
 describe('padKeyFor', () => {
   it('maps both the arrows and WASD to the d-pad, and jkl to A/B/C', () => {
-    expect(padKeyFor('arrowup')).toBe('up');
-    expect(padKeyFor('w')).toBe('up');
-    expect(padKeyFor('arrowdown')).toBe('down');
-    expect(padKeyFor('s')).toBe('down');
-    expect(padKeyFor('arrowleft')).toBe('left');
-    expect(padKeyFor('a')).toBe('left');
-    expect(padKeyFor('arrowright')).toBe('right');
-    expect(padKeyFor('d')).toBe('right');
-    expect(padKeyFor('j')).toBe('a');
-    expect(padKeyFor('k')).toBe('b');
-    expect(padKeyFor('l')).toBe('c');
+    expect(padKeyFor(SOLO, 'arrowup')).toBe('up');
+    expect(padKeyFor(SOLO, 'w')).toBe('up');
+    expect(padKeyFor(SOLO, 'arrowdown')).toBe('down');
+    expect(padKeyFor(SOLO, 's')).toBe('down');
+    expect(padKeyFor(SOLO, 'arrowleft')).toBe('left');
+    expect(padKeyFor(SOLO, 'a')).toBe('left');
+    expect(padKeyFor(SOLO, 'arrowright')).toBe('right');
+    expect(padKeyFor(SOLO, 'd')).toBe('right');
+    expect(padKeyFor(SOLO, 'j')).toBe('a');
+    expect(padKeyFor(SOLO, 'k')).toBe('b');
+    expect(padKeyFor(SOLO, 'l')).toBe('c');
   });
 
   it('ignores anything else', () => {
-    expect(padKeyFor('q')).toBeNull();
-    expect(padKeyFor('enter')).toBeNull();
-    expect(padKeyFor(' ')).toBeNull();
+    expect(padKeyFor(SOLO, 'q')).toBeNull();
+    expect(padKeyFor(SOLO, 'enter')).toBeNull();
+    expect(padKeyFor(SOLO, ' ')).toBeNull();
   });
 });
 
@@ -169,22 +170,122 @@ describe('padToTeamInput', () => {
 describe('padChoice', () => {
   it('1/2/3 pick the formation and 4/5/6 the strategy', () => {
     const pad = createPadState('neutral', 0);
-    expect(padChoice(pad, '3')).toBe(true);
+    expect(padChoice(pad, SOLO, '3')).toBe(true);
     expect(pad.formation).toBe(2);
-    expect(padChoice(pad, '1')).toBe(true);
+    expect(padChoice(pad, SOLO, '1')).toBe(true);
     expect(pad.formation).toBe(0);
-    expect(padChoice(pad, '4')).toBe(true);
+    expect(padChoice(pad, SOLO, '4')).toBe(true);
     expect(pad.strategy).toBe('attack');
-    expect(padChoice(pad, '5')).toBe(true);
+    expect(padChoice(pad, SOLO, '5')).toBe(true);
     expect(pad.strategy).toBe('neutral');
-    expect(padChoice(pad, '6')).toBe(true);
+    expect(padChoice(pad, SOLO, '6')).toBe(true);
     expect(pad.strategy).toBe('defend');
   });
 
   it('leaves the pad alone for any other key', () => {
     const pad = createPadState('neutral', 1);
-    expect(padChoice(pad, '7')).toBe(false);
+    expect(padChoice(pad, SOLO, '7')).toBe(false);
     expect(pad.formation).toBe(1);
     expect(pad.strategy).toBe('neutral');
+  });
+});
+
+// ── G9-2 (Paco, 09-sep): two people, one keyboard, each with their own half. ──
+describe('the two-player key tables', () => {
+  it('J1 moves with WASD and fires A/B/C on C/V/B; J2 moves with the arrows and fires on J/K/L', () => {
+    expect(padKeyFor(TWO_PLAYER_P1, 'w')).toBe('up');
+    expect(padKeyFor(TWO_PLAYER_P1, 's')).toBe('down');
+    expect(padKeyFor(TWO_PLAYER_P1, 'a')).toBe('left');
+    expect(padKeyFor(TWO_PLAYER_P1, 'd')).toBe('right');
+    expect(padKeyFor(TWO_PLAYER_P1, 'c')).toBe('a');
+    expect(padKeyFor(TWO_PLAYER_P1, 'v')).toBe('b');
+    expect(padKeyFor(TWO_PLAYER_P1, 'b')).toBe('c');
+    expect(padKeyFor(TWO_PLAYER_P2, 'arrowup')).toBe('up');
+    expect(padKeyFor(TWO_PLAYER_P2, 'arrowdown')).toBe('down');
+    expect(padKeyFor(TWO_PLAYER_P2, 'arrowleft')).toBe('left');
+    expect(padKeyFor(TWO_PLAYER_P2, 'arrowright')).toBe('right');
+    expect(padKeyFor(TWO_PLAYER_P2, 'j')).toBe('a');
+    expect(padKeyFor(TWO_PLAYER_P2, 'k')).toBe('b');
+    expect(padKeyFor(TWO_PLAYER_P2, 'l')).toBe('c');
+  });
+
+  // The spec's own sentence: "en el modo a dos WASD deja de mover a J2 y las flechas
+  // dejan de mover a J1". KEY_BINDINGS maps both to the same d-pad; here it is SPLIT.
+  it('in the two-player mode WASD no longer moves J2 and the arrows no longer move J1', () => {
+    for (const k of ['w', 'a', 's', 'd', 'c', 'v', 'b']) expect(padKeyFor(TWO_PLAYER_P2, k)).toBeNull();
+    for (const k of ['arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'j', 'k', 'l']) expect(padKeyFor(TWO_PLAYER_P1, k)).toBeNull();
+  });
+
+  it('no key appears in both tables -- d-pad, buttons and number rows included', () => {
+    expect(tablesShareKey(TWO_PLAYER_P1, TWO_PLAYER_P2)).toBeNull();
+    expect(tablesShareKey(TWO_PLAYER_P2, TWO_PLAYER_P1)).toBeNull();
+    // The check is not vacuous: SOLO and J2 both carry the arrows.
+    expect(tablesShareKey(SOLO, TWO_PLAYER_P2)).toBe('arrowup');
+  });
+
+  it('J2 is a subset of the solo map, so whoever plays alone never relearns a key', () => {
+    for (const [key, value] of Object.entries(TWO_PLAYER_P2.pad)) expect(SOLO.pad[key]).toBe(value);
+    expect(TWO_PLAYER_P1.formation).toEqual(SOLO.formation);
+    expect(TWO_PLAYER_P1.strategy).toEqual(SOLO.strategy);
+  });
+
+  it('the solo table IS the step-8 map: same objects, not copies', () => {
+    expect(SOLO.pad).toBe(KEY_BINDINGS);
+    expect(padKeyFor(SOLO, 'w')).toBe('up');
+    expect(padKeyFor(SOLO, 'arrowup')).toBe('up');
+    expect(padKeyFor(SOLO, 'c')).toBeNull();   // C/V/B only exist for J1 in the two-player mode
+  });
+
+  it("J2 picks the formation on 7/8/9 and the strategy on 0 ' ¡, and ignores J1's number row", () => {
+    const pad = createPadState('neutral', 0);
+    expect(padChoice(pad, TWO_PLAYER_P2, '9')).toBe(true);
+    expect(pad.formation).toBe(2);
+    expect(padChoice(pad, TWO_PLAYER_P2, '0')).toBe(true);
+    expect(pad.strategy).toBe('attack');
+    expect(padChoice(pad, TWO_PLAYER_P2, "'"  )).toBe(true);
+    expect(pad.strategy).toBe('neutral');
+    expect(padChoice(pad, TWO_PLAYER_P2, '¡')).toBe(true);
+    expect(pad.strategy).toBe('defend');
+    expect(padChoice(pad, TWO_PLAYER_P2, '1')).toBe(false);
+    expect(pad.formation).toBe(2);
+    // And symmetrically: J1's pad ignores J2's row.
+    const pad1 = createPadState('neutral', 0);
+    expect(padChoice(pad1, TWO_PLAYER_P1, '7')).toBe(false);
+    expect(pad1.formation).toBe(0);
+  });
+
+  // Two pads, two tables, one keydown handler: a key of one table must leave the other
+  // pad untouched. This is what the component's handler relies on in the two-player mode.
+  it('routing a key through both tables moves exactly one of the two pads', () => {
+    const pads = [createPadState('neutral', 0), createPadState('neutral', 0)];
+    const tables = [TWO_PLAYER_P1, TWO_PLAYER_P2];
+    for (let t = 0; t < 2; t++) {
+      const k = padKeyFor(tables[t], 'arrowleft');
+      if (k !== null) padDown(pads[t], k);
+    }
+    expect(pads[0].left).toBe(false);
+    expect(pads[1].left).toBe(true);
+    for (let t = 0; t < 2; t++) {
+      const k = padKeyFor(tables[t], 'c');
+      if (k !== null) padDown(pads[t], k);
+    }
+    expect(pads[0].a).toBe('pressed');
+    expect(pads[1].a).toBe('up');
+  });
+
+  it('tablesShareKey detects shared keys in formation and strategy rows', () => {
+    const tableWithSharedFormation = {
+      pad: { ...TWO_PLAYER_P2.pad },
+      formation: ['1', '8', '9'],  // '1' is shared with TWO_PLAYER_P1
+      strategy: TWO_PLAYER_P2.strategy,
+    };
+    expect(tablesShareKey(TWO_PLAYER_P1, tableWithSharedFormation)).toBe('1');
+
+    const tableWithSharedStrategy = {
+      pad: { ...TWO_PLAYER_P2.pad },
+      formation: TWO_PLAYER_P2.formation,
+      strategy: ['4', "'", '¡'],  // '4' is shared with TWO_PLAYER_P1
+    };
+    expect(tablesShareKey(TWO_PLAYER_P1, tableWithSharedStrategy)).toBe('4');
   });
 });
