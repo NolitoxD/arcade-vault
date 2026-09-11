@@ -4,7 +4,8 @@ import { FORMATION_COUNT } from '../football-logic/teams';
 import { checkTeamInput } from '../football-logic/input';
 import {
   KEY_BINDINGS, SOLO, TWO_PLAYER_P1, TWO_PLAYER_P2,
-  createPadState, padAdvance, padBlur, padChoice, padClear, padDown, padKeyFor, padToTeamInput, padUp, tablesShareKey,
+  createPadState, padAdvance, padBlur, padChoice, padClear, padDown, padFormationChoice, padKeyFor, padToTeamInput, padUp,
+  tablesShareKey,
 } from './keyboard';
 
 describe('padKeyFor', () => {
@@ -185,6 +186,23 @@ describe('padChoice', () => {
   it('leaves the pad alone for any other key', () => {
     const pad = createPadState('neutral', 1);
     expect(padChoice(pad, SOLO, '7')).toBe(false);
+    expect(pad.formation).toBe(1);
+    expect(pad.strategy).toBe('neutral');
+  });
+});
+
+describe('padFormationChoice (final fix wave: the team selector has no strategy row)', () => {
+  it('1/2/3 pick the formation, same as padChoice', () => {
+    const pad = createPadState('neutral', 0);
+    expect(padFormationChoice(pad, SOLO, '3')).toBe(true);
+    expect(pad.formation).toBe(2);
+    expect(padFormationChoice(pad, SOLO, '1')).toBe(true);
+    expect(pad.formation).toBe(0);
+  });
+
+  it('a strategy key returns false and leaves the pad untouched, unlike padChoice', () => {
+    const pad = createPadState('neutral', 1);
+    expect(padFormationChoice(pad, SOLO, '4')).toBe(false);
     expect(pad.formation).toBe(1);
     expect(pad.strategy).toBe('neutral');
   });

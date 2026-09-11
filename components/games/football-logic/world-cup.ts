@@ -70,9 +70,9 @@ const ROUND_ENTRANTS: Readonly<Record<WorldCupRound, number>> = { quarters: 8, s
 export const SCORE_GOAL = 1_000;
 export const SCORE_WIN = 5_000;
 export const SCORE_CLEAN_SHEET = 2_000;
-export const SCORE_PASS_QUARTERS = 5_000;
-export const SCORE_PASS_SEMIS = 10_000;
-export const SCORE_CHAMPION = 25_000;
+const SCORE_PASS_QUARTERS = 5_000;
+const SCORE_PASS_SEMIS = 10_000;
+const SCORE_CHAMPION = 25_000;
 export const ROUND_BONUS: Readonly<Record<WorldCupRound, number>> = {
   quarters: SCORE_PASS_QUARTERS,
   semis: SCORE_PASS_SEMIS,
@@ -184,6 +184,25 @@ export function roundLabel(wc: WorldCupState): string {
 
 export function humanMatchSeed(wc: WorldCupState): number {
   return matchSeedFor(wc.seed, wc.round, humanPairIndex(wc));
+}
+
+// Cheap minor (final fix wave): the two composed bracket rules the screen used to
+// build inline (matchSeedFor + wc.round + wc.seed, and a hand-rolled scan of
+// wc.results), so the .tsx stops reasoning about bracket internals.
+export function cpuMatchSeed(wc: WorldCupState, pair: number): number {
+  return matchSeedFor(wc.seed, wc.round, pair);
+}
+
+// The recorded result of `pair` in the CURRENT round, or null if unresolved. Scans
+// backwards because results are appended in resolution order and the current round's
+// entries are the most recent ones.
+export function pairResult(wc: WorldCupState, pair: number): WorldCupResult | null {
+  const home = pairHomeId(wc, pair);
+  for (let r = wc.resultCount - 1; r >= 0; r--) {
+    const res = wc.results[r];
+    if (res.round === wc.round && res.homeId === home) return res;
+  }
+  return null;
 }
 
 // G9-3: the pairs the human does not play, resolved one by one before his match --

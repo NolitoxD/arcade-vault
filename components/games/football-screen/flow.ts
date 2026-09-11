@@ -180,9 +180,12 @@ export function flowBracketAction(f: FlowState, m: GameMode): BracketAction {
   return f.bracketChoice === 0 ? 'spectate' : 'skip';
 }
 
+// Directional, not a toggle (final fix wave): left picks VER (0), right picks
+// SALTAR (1), matching the brief's copy -- a repeated press in the same direction
+// leaves the choice where it is instead of flipping it back and forth.
 export function flowMoveBracketChoice(f: FlowState, delta: number): void {
   if (f.phase !== 'bracket' || delta === 0) return;
-  f.bracketChoice = f.bracketChoice === 0 ? 1 : 0;
+  f.bracketChoice = delta < 0 ? 0 : 1;
 }
 
 // A on the bracket. 'spectate' moves to the spectate phase (the component starts the

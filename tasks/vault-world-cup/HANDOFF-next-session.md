@@ -1,8 +1,40 @@
-# HANDOFF — VAULT WORLD CUP · paso 9 EN EJECUCIÓN (7/7 tareas implementadas, cierre pendiente) · actualizado 2026-09-10
+# HANDOFF — VAULT WORLD CUP · paso 9 CERRADO EN CÓDIGO (QA de Paco pendiente) · actualizado 2026-09-11
+
+## -4. 11-sep: cierre del paso 9
+
+**Estado:** las 7 tareas (WIP `fa963f2` de Paco) + fix round de 9-7 + ola de fixes de la revisión final + Cierre C1-C9,
+todo en el working tree SIN commitear (Paco). Verificado: **1171 tests / 68 ficheros verdes**, `tsc` limpio, `npm run
+build` exit 0. Motor tocado SOLO en `match.ts` (+59 líneas, G9-1). Sondas P1-P5 verdes (salidas en
+`.superpowers/sdd/2026-09-09-vault-world-cup-step-9/probes/*.txt`): 48 Mundiales × réplica idénticos; 200 sorteos con el
+humano en el lado 0 el 50 %; 10 000 pasos de entrenamiento sin que una estatua se mueva; 26 teclas sin solape entre
+las dos tablas; 60 pares VER/SALTAR idénticos. Revisión final (opus) + ola de fixes + re-review: 0 Critical, todo
+resuelto. **Informe de cierre:** `…/final-review-report.md` (C1-C9, lista QA C7, peticiones al motor M11-M13, commit C9).
+
+**Commit de cierre propuesto (Paco):** `feat(world-cup): step 9 — four modes, two-player keyboard, World Cup
+draw/bracket/scoring with simulated CPU ties, victory screens with confetti and fireworks` (o separado:
+`fix(world-cup): step 9 closing fix wave — orphaned exports, seed prop, HUD result reset, spectate speed, directional
+bracket choice, training viewport caption`).
+
+**Siguiente:** (1) **QA de Paco** en su :3000 (`/games/vault-world-cup/play`, lista C7 del informe de cierre: 4 modos,
+determinismo con `?seed=1234` VER vs SALTAR, teclado a dos con dos personas y ghosting, entrenamiento, abandono por
+viewport ganando/empatando en Mundial vs amistoso, CONTINUAR corta cánticos; decidir naming del selector de formación
+NORMAL/OFENSIVA/DEFENSIVA vs «3-3-2» y el volumen del cántico con confeti). (2) Ajustes del QA. (3) **Paso 10**
+(registro/migración, play-page definitiva espejo de vault-fighter con `GameOverModal`+`saveScore` sobre
+`onGameOver`/`onVictory`, música de menú/partido vía `setTrackOverride`, sin `MobileGamepad`, slug `vault-futbol` vs
+`vault-world-cup`). (4) Paso 11: QA final + dibujo cenital del jugador + portero que se estira.
+
+**Decisiones tomadas por el orquestador durante la ejecución (revisables):** exports sin consumidor → des-exportar o
+marca veraz (patrón recurrente del plan); `collectCaptions` gana `abandonEliminates` (6.º parámetro) para que el
+abandono por viewport en el Mundial rotule ELIMINADO (amistoso conserva GANADOR/EMPATE, S-SC12); en entrenamiento el
+abandono no rotula marcador; `speed` vuelve a 1 al acabar un cruce visto; lectores `cpuMatchSeed`/`pairResult` en
+`world-cup.ts`; `flowMoveBracketChoice` direccional; teclas de estrategia inertes en el selector; la página lee
+`?seed=` y limpia `result` al volver al selector. Minors diferidos (sin riesgo) listados en `progress.md`.
+
+
 
 ## -3. 10-sep: ejecución SDD del paso 9 (cortada por límite de uso de Paco)
 
-**Working tree = las 7 tareas implementadas, SIN commitear** (Paco commitea; mensajes propuestos en cada
+**Las 7 tareas van en un commit WIP de Paco del 10-sep (pusheado); el cierre irá en otro commit** (mensajes propuestos en cada
 `task-9-N-report.md`). Verificado al cortar: **1163 tests / 68 ficheros verdes**, `npx tsc --noEmit` limpio, eslint
 limpio, `npm run build` exit 0. Motor tocado SOLO en `match.ts` (+test) por G9-1. Ficheros nuevos: `football-logic/
 {world-cup,mode}.ts`, `football-screen/{match-run,flow,flow-layout,particles}.ts` (+tests); modificados: `match.ts`,

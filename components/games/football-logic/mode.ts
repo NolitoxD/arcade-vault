@@ -10,14 +10,12 @@ import type { WorldCupState } from './world-cup';
 // goes through a function here. The branch by mode lives here ONCE; the component
 // never asks "which mode am I in" (Global Constraints: no `kind ===` in the .tsx).
 export type GameModeKind = 'friendly-cpu' | 'friendly-2p' | 'training' | 'world-cup';
-// exported for Task 9-7: VaultWorldCupGame type guard
-export type FriendlyKind = Exclude<GameModeKind, 'world-cup'>;
+type FriendlyKind = Exclude<GameModeKind, 'world-cup'>;
 
 // 'champion' is a human win that gets a victory screen (GANADOR for a friendly,
 // CAMPEONES DEL MUNDO for the final); 'eliminated' is the ELIMINADO caption over the
 // pitch (spec 60-61); 'draw' only ever comes from abandon() at a level score.
-// exported for Task 9-7: FriendlyState status field
-export type ModeStatus = 'playing' | 'champion' | 'eliminated' | 'draw';
+type ModeStatus = 'playing' | 'champion' | 'eliminated' | 'draw';
 
 // Who the keyboard drives in the current match. 'both' is the two-player friendly;
 // 'none' is a CPU pair of the World Cup watched on screen (the component's spectate).
@@ -28,8 +26,7 @@ export type HumanSide = 0 | 1 | 'both' | 'none';
 // exported for Task 9-6: particles/sfx victory effects
 export type FxKind = 'confetti' | 'fireworks';
 
-// exported for Task 9-7: GameMode state type
-export type FriendlyState = { homeId: string; awayId: string; status: ModeStatus };
+type FriendlyState = { homeId: string; awayId: string; status: ModeStatus };
 
 export type GameMode =
   | { kind: FriendlyKind; state: FriendlyState }

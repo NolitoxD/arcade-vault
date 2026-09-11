@@ -487,4 +487,29 @@ describe('collectCaptions at the end of the match, by HumanSide', () => {
       }
     }
   });
+
+  // Fix round 1, finding 1: the World Cup viewport guard abandons the human's match
+  // (phase 'over', score untouched) and must read as FINAL + ELIMINADO regardless of
+  // the standing score, matching abandonHumanMatch's unconditional 'eliminated' in
+  // flow.ts. The sixth parameter is only ever true on that one call site.
+  it('abandonEliminates queues ELIMINADO after FINAL whether the human was leading or level', () => {
+    const leading = over(2, 1);
+    const csLeading = createCaptionState();
+    collectCaptions(leading.m, leading.w, 0, csLeading, false, true);
+    expect(queued(csLeading)).toEqual(['full-time', 'eliminated']);
+
+    const level = over(1, 1);
+    const csLevel = createCaptionState();
+    collectCaptions(level.m, level.w, 0, csLevel, false, true);
+    expect(queued(csLevel)).toEqual(['full-time', 'eliminated']);
+  });
+
+  // Control: the friendly semantics (S-SC12) are unaffected when abandonEliminates is
+  // left at its default false -- an abandon while leading still reads as GANADOR.
+  it('control: without abandonEliminates, abandoning while leading still queues GANADOR', () => {
+    const leading = over(2, 1);
+    const cs = createCaptionState();
+    collectCaptions(leading.m, leading.w, 0, cs, false, false);
+    expect(queued(cs)).toEqual(['full-time', 'winner']);
+  });
 });

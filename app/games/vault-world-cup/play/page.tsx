@@ -2,7 +2,8 @@
 
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
-import { useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { Suspense, useCallback, useEffect, useState } from 'react';
 
 // PROVISIONAL (stage C, step 9). The definitive play page is step 10: catalogue
 // entry, migration, music, the GameOverModal with saveScore and the mobile gamepad all
@@ -11,13 +12,24 @@ const VaultWorldCupGame = dynamic(() => import('@/components/games/VaultWorldCup
 
 const IDLE_SCORE = '0 - 0';
 const IDLE_CLOCK = '0:00';
+// Mirrors STATUS_SELECTOR in VaultWorldCupGame.tsx: the label the component reports
+// once a run ends and the player is back at ELIGE MODO.
+const STATUS_SELECTOR = 'SELECTOR';
 
 function isTypingTarget(e: KeyboardEvent): boolean {
   const target = e.target as HTMLElement | null;
   return target !== null && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
 }
 
-export default function VaultWorldCupPlay() {
+function parseSeed(raw: string | null): number | undefined {
+  if (raw === null) return undefined;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+function VaultWorldCupPlayInner() {
+  const searchParams = useSearchParams();
+  const seed = parseSeed(searchParams.get('seed'));
   const [paused, setPaused] = useState(false);
   const [muted, setMuted] = useState(false);
   const [status, setStatus] = useState('SELECTOR');
@@ -34,6 +46,9 @@ export default function VaultWorldCupPlay() {
   }, []);
   const handleStatusChange = useCallback((label: string) => {
     setStatus(label);
+    // Finding 3: back at the selector, the HUD must show the live status again --
+    // an armed `result` from the previous run must not linger mid-run.
+    if (label === STATUS_SELECTOR) setResult('');
   }, []);
   // Criterion 19: only the World Cup ever calls these. Step 10 turns them into the
   // GameOverModal + saveScore of the Vault Fighter page.
@@ -114,6 +129,7 @@ export default function VaultWorldCupPlay() {
             key={gameKey}
             paused={paused}
             muted={muted}
+            seed={seed}
             onScoreChange={handleScoreChange}
             onClockChange={handleClockChange}
             onStatusChange={handleStatusChange}
@@ -128,5 +144,13 @@ export default function VaultWorldCupPlay() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function VaultWorldCupPlay() {
+  return (
+    <Suspense>
+      <VaultWorldCupPlayInner />
+    </Suspense>
   );
 }

@@ -15,7 +15,7 @@ import { createRng, type Rng } from './football-logic/rng';
 import { SHOOTOUT_RESOLVE_STEPS } from './football-logic/set-pieces';
 import { FORMATIONS, TEAMS, teamById, type Strategy, type TeamDef } from './football-logic/teams';
 import {
-  currentDifficulty, humanPairIndex, isStillIn, matchSeedFor, pairAwayId, pairCount, pairHomeId, roundLabel,
+  cpuMatchSeed, currentDifficulty, humanPairIndex, isStillIn, pairAwayId, pairCount, pairHomeId, pairResult, roundLabel,
 } from './football-logic/world-cup';
 
 import {
@@ -23,8 +23,8 @@ import {
   followCamera, isOnScreen, toScreenX, toScreenY, type Camera,
 } from './football-screen/camera';
 import {
-  CAPTION_TEXT, collectCaptions, createCaptionState, createMatchWatch, resetCaptionState, resetMatchWatch, stepCaption,
-  updateWatch, type ShowingCaption,
+  CAPTION_TEXT, collectCaptions, createCaptionState, createMatchWatch, pushCaption, resetCaptionState, resetMatchWatch,
+  stepCaption, updateWatch, type ShowingCaption,
 } from './football-screen/captions';
 import {
   MODE_BLURBS, MODE_LIST, MODE_NAMES, createFlowState, flowAfterModeBuilt, flowBuildMode, flowCaptionsDrained,
@@ -43,7 +43,7 @@ import {
 } from './football-screen/hud';
 import {
   SOLO, TWO_PLAYER_P1, TWO_PLAYER_P2, TWO_PLAYER_TABLES, createPadState, padAdvance, padBlur, padChoice, padClear,
-  padDown, padKeyFor, padToTeamInput, padUp, type KeyTable, type PadState,
+  padDown, padFormationChoice, padKeyFor, padToTeamInput, padUp, type KeyTable, type PadState,
 } from './football-screen/keyboard';
 import { SPECTATE_SPEED, createStepBudget } from './football-screen/loop';
 import { createFramePlan, planFrame, planHalfAmbience } from './football-screen/match-loop';
@@ -323,6 +323,9 @@ function VaultWorldCupGame({
     let shootoutTaken = -1;
     let shootoutSudden = false;
     let cachedShootoutLabel = '';
+    let cachedShootoutScore = '';
+    let shootoutScoredHome = -1;
+    let shootoutScoredAway = -1;
     let reportedHome = -1;
     let reportedAway = -1;
     let reportedClock = '';
@@ -397,6 +400,9 @@ function VaultWorldCupGame({
       shootoutTaken = -1;
       shootoutSudden = false;
       cachedShootoutLabel = '';
+      cachedShootoutScore = '';
+      shootoutScoredHome = -1;
+      shootoutScoredAway = -1;
       reportedHome = -1;
       reportedAway = -1;
       reportedClock = '';
@@ -432,7 +438,7 @@ function VaultWorldCupGame({
       if (wc === null || pair === -1) return false;
       spectatePair = pair;
       startMatch(
-        teamOf(pairHomeId(wc, pair)), teamOf(pairAwayId(wc, pair)), matchSeedFor(wc.seed, wc.round, pair),
+        teamOf(pairHomeId(wc, pair)), teamOf(pairAwayId(wc, pair)), cpuMatchSeed(wc, pair),
         currentDifficulty(wc), NORMAL_RULES, 'none', ZERO_FORMATIONS, false,
       );
       return true;
@@ -540,14 +546,10 @@ function VaultWorldCupGame({
           continue;
         }
         // The result of this pair: the latest of this round with this home.
-        let text = homeName + BRACKET_VS + awayName;
-        for (let r = wc.resultCount - 1; r >= 0; r--) {
-          const res = wc.results[r];
-          if (res.round !== wc.round || res.homeId !== pairHomeId(wc, p)) continue;
-          text = homeName + ' ' + smallNumber(res.homeGoals) + BRACKET_SCORE_SEP + smallNumber(res.awayGoals) + ' ' + awayName;
-          break;
-        }
-        bracketRowText[p] = text;
+        const res = pairResult(wc, p);
+        bracketRowText[p] = res === null
+          ? homeName + BRACKET_VS + awayName
+          : homeName + ' ' + smallNumber(res.homeGoals) + BRACKET_SCORE_SEP + smallNumber(res.awayGoals) + ' ' + awayName;
       }
       let fallen = '';
       for (let i = 0; i < wc.bracket.length; i++) {
@@ -620,6 +622,13 @@ function VaultWorldCupGame({
           shootoutSudden = sh.suddenDeath;
           cachedShootoutLabel = shootoutRoundLabel(sh);
         }
+        // Same treatment for the score template of drawHud: rebuilt only when either
+        // number actually changes, not once per frame.
+        if (sh.scored[HOME] !== shootoutScoredHome || sh.scored[AWAY] !== shootoutScoredAway) {
+          shootoutScoredHome = sh.scored[HOME];
+          shootoutScoredAway = sh.scored[AWAY];
+          cachedShootoutScore = `${smallNumber(shootoutScoredHome)} - ${smallNumber(shootoutScoredAway)}`;
+        }
         if (kickEdge) {
           const firstKick = shootoutTaken < 0;
           shootoutTaken = takenNow;
@@ -669,6 +678,9 @@ function VaultWorldCupGame({
           endFired = true;
           flowRecordCpuResult(mode, spectatePair, match);
           flowSpectateOver(flow);
+          // Cheap minor: leaving spectate for over drops the x4 -- the FINAL caption
+          // of a watched CPU match drains at real time (3 s), not sped up.
+          speed = 1;
         } else endHumanMatch(false);
       }
     }
@@ -698,7 +710,13 @@ function VaultWorldCupGame({
           if (phase === 'over' && captions.kind === 'none') afterCaptionsDrained();
           return;
         }
-        for (let i = 0; i < plan.steps; i++) runStep(i === 0);
+        for (let i = 0; i < plan.steps; i++) {
+          // Fix round 1, finding 2: stepMatch returns early on 'over' without clearing
+          // scratch.events, so a step after the match ended would re-read the last shot
+          // event and fire 'kick' again (up to x4 at spectate speed) for nothing.
+          if (run.match.phase === 'over') break;
+          runStep(i === 0);
+        }
         if (plan.advancePad) {
           padAdvance(pads[0]);
           padAdvance(pads[1]);
@@ -1064,13 +1082,9 @@ function VaultWorldCupGame({
         ctx.fillStyle = HUD_ACCENT;
         ctx.fillText(cachedShootoutLabel, VIEW_W / 2, HUD_H + 16);
         ctx.fillStyle = HUD_TEXT;
-        // The one template of the draw path, and it only runs in a phase with no
-        // physics at all: the shootout is a still ball and a countdown.
-        ctx.fillText(
-          `${smallNumber(sh.scored[HOME])} - ${smallNumber(sh.scored[AWAY])}`,
-          VIEW_W / 2,
-          HUD_H + 34,
-        );
+        // Cached like cachedShootoutLabel above: rebuilt on an edge (runStep point 4),
+        // not on every frame of the shootout's still ball and countdown.
+        ctx.fillText(cachedShootoutScore, VIEW_W / 2, HUD_H + 34);
         // The engine's own four-second window for the ball to settle after a kick
         // (SHOOTOUT_RESOLVE_STEPS, exported for exactly this). Without it those four
         // seconds of a still ball read as a hang.
@@ -1426,7 +1440,10 @@ function VaultWorldCupGame({
           else if (k === 'left') flowMoveTeam(flow, -1, 0, TEAMS.length);
           else if (k === 'right') flowMoveTeam(flow, 1, 0, TEAMS.length);
           else if (k === 'a') confirmTeam();
-          else if (padChoice(pads[picker], table, key)) flowSetFormation(flow, picker, pads[picker].formation);
+          // Cheap minor: only the FORMATION row of the picker's table is routed here --
+          // a strategy key (4/5/6, 0 ' ¡) is a mid-match choice and must not
+          // preventDefault or touch the pad at this screen.
+          else if (padFormationChoice(pads[picker], table, key)) flowSetFormation(flow, picker, pads[picker].formation);
           else return;
           e.preventDefault();
           return;
@@ -1505,6 +1522,9 @@ function VaultWorldCupGame({
     function handleKeyUp(e: KeyboardEvent): void {
       const key = e.key.toLowerCase();
       for (let t = 0; t < 2; t++) {
+        // Fix round 1, finding 3: in solo mode tables = [SOLO, SOLO], so an unfiltered
+        // loop would also padUp the CPU's own pad, which never gets a matching padDown.
+        if (!run.human[t]) continue;
         const k = padKeyFor(tables[t], key);
         if (k === null) continue;
         // Step 8's rule, per pad: a DIRECTION is always released; a BUTTON released while
@@ -1540,10 +1560,18 @@ function VaultWorldCupGame({
       const match = run.match;
       updateWatch(match, watch);
       abandon(match);
-      // S-SC12: the standing result as a CAPTION (never a screen under the panel), with
-      // its whistle (I2 of the step-8 review), same order as step 8.
+      // S-SC12 / G9-8 (Fix round 1, finding 1): the standing result as a CAPTION (never
+      // a screen under the panel), with its whistle (I2 of the step-8 review), same
+      // order as step 8. modeScores(mode) is true only for the World Cup: there,
+      // abandoning always eliminates (G9-8), whatever the score stood at, matching
+      // endHumanMatch -> flowMatchOver -> abandonHumanMatch below. A friendly keeps
+      // S-SC12's GANADOR/EMPATE-by-score semantics (abandonEliminates defaults to false).
       const beforeBlocked = captions.kind;
-      collectCaptions(match, watch, humanSide, captions, false);
+      // Cheap minor: an untimed match (training) has no score to report -- FINAL
+      // alone, never GANADOR/ELIMINADO/EMPATE. Read off match.rules.timed, never a
+      // mode-kind branch (Global Constraints: no mode branch in the .tsx).
+      if (match.rules.timed) collectCaptions(match, watch, humanSide, captions, false, modeScores(mode));
+      else pushCaption(captions, 'full-time');
       playCaptionEdge(beforeBlocked);
       updateWatch(match, watch);
       padBlur(pads[0]);

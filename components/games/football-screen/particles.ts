@@ -51,7 +51,10 @@ const FIREWORK_GRAVITY = 0.06;
 const FIREWORK_LIFE_MIN = 40;
 const FIREWORK_LIFE_MAX = 70;
 // Confetti particles never die on their own: a life this long outlasts any screen.
+// `life` is an Int16Array (ceiling 32 767): this constant must stay under it.
 const CONFETTI_LIFE = 30_000;
+const INT16_MAX = 32_767;
+if (CONFETTI_LIFE > INT16_MAX) throw new Error(`CONFETTI_LIFE ${CONFETTI_LIFE} overflows Int16Array (max ${INT16_MAX})`);
 
 export type ParticlePool = {
   count: number;

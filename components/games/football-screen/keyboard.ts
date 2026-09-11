@@ -155,6 +155,16 @@ export function padClear(pad: PadState, k: PadKey): void {
   }
 }
 
+// Final fix wave: the team selector only has a formation row (1/2/3, 7/8/9 -- no
+// strategy to pick yet, that is a mid-match choice). Unlike padChoice, a strategy
+// key here returns false: the screen must not preventDefault it or touch the pad.
+export function padFormationChoice(pad: PadState, table: KeyTable, key: string): boolean {
+  const f = table.formation.indexOf(key);
+  if (f < 0) return false;
+  pad.formation = f;
+  return true;
+}
+
 // Returns true when the key was a formation/strategy choice of THIS table, so the
 // caller knows to preventDefault. The engine applies both every step
 // (applyTeamChoices): writing them into the TeamInput IS the change.

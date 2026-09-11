@@ -147,7 +147,21 @@ export function createMatchWatch(): MatchWatch {
 // final review §8.5): when the mode shows a victory screen for a human win, GANADOR is
 // NOT queued -- the screen replaces it; FINAL still runs its three seconds and the flow
 // moves on when the queue drains. Defaults keep every step-8 call and test unchanged.
-export function collectCaptions(match: MatchState, w: MatchWatch, human: HumanSide, cs: CaptionState, victoryScreen = false): void {
+//
+// `abandonEliminates` (Fix round 1, finding 1): true ONLY on the viewport guard's call
+// site in VaultWorldCupGame.tsx, for a match whose mode is scored (modeScores(mode),
+// i.e. the World Cup) -- that call site is the sole place the component just called
+// abandon() on the human's own match, so this is a signal the caller passes, not
+// something collectCaptions infers from the match itself (abandon() leaves phase
+// 'over' with the score untouched, exactly like a natural end, so there is no reliable
+// internal tell). When true, the standing score never reaches the queue: FINAL still
+// whistles, then ELIMINADO always follows, matching flow.ts's abandonHumanMatch, which
+// eliminates unconditionally regardless of who was leading (G9-8). A natural end never
+// passes true, so the default false keeps every other call site (including a friendly
+// abandon, S-SC12, where GANADOR/EMPATE must still reflect how the match stood).
+export function collectCaptions(
+  match: MatchState, w: MatchWatch, human: HumanSide, cs: CaptionState, victoryScreen = false, abandonEliminates = false,
+): void {
   if (!w.started) {
     pushCaption(cs, 'kickoff');
     return;
@@ -211,6 +225,10 @@ export function collectCaptions(match: MatchState, w: MatchWatch, human: HumanSi
   //    human win without a screen, ELIMINADO for a human loss.
   if (match.phase === 'over' && w.phase !== 'over') {
     pushCaption(cs, 'full-time');
+    if (abandonEliminates) {
+      pushCaption(cs, 'eliminated');
+      return;
+    }
     const winner = winnerOf(match);
     if (winner === -1) pushCaption(cs, 'draw');
     else if (human === 'none') return;

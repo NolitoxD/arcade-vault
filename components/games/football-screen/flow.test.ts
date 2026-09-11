@@ -74,7 +74,9 @@ function skipCpuPairs(f: FlowState, m: GameMode): void {
     const wc = modeBracket(m);
     if (wc === null) throw new Error('no bracket');
     flowRecordCpuResult(m, pair, finished(wc.entrants[pair * 2], wc.entrants[pair * 2 + 1], 1, 0));
-    flowMoveBracketChoice(f, 1);   // back to VER, as the component leaves it
+    // Directional (final fix wave): the choice stays on SALTAR for the next pair
+    // until the player presses left, same as a real repeated right-arrow press.
+    flowMoveBracketChoice(f, 1);
   }
 }
 
@@ -208,7 +210,7 @@ describe('flowBuildMode -- the one place a mode is built', () => {
 });
 
 describe('the bracket screen (G9-3: VER / SALTAR, then the human match)', () => {
-  it('offers VER by default, SALTAR on a toggle, and PLAY once the three CPU pairs are resolved', () => {
+  it('offers VER by default, SALTAR to the right and back to VER on the left, and PLAY once the three CPU pairs are resolved', () => {
     const { f, m } = start('world-cup', 1);
     flowConfirmDraw(f);
     expect(flowBracketAction(f, m)).toBe('spectate');
@@ -229,6 +231,17 @@ describe('the bracket screen (G9-3: VER / SALTAR, then the human match)', () => 
     expect(flowCpuPair(m)).toBe(-1);
     expect(flowConfirmBracket(f, m)).toBe('play');
     expect(f.phase).toBe('match');
+  });
+
+  it('is directional, not a toggle: repeating the same direction leaves the choice where it is', () => {
+    const { f, m } = start('world-cup', 1);
+    flowConfirmDraw(f);
+    expect(flowBracketAction(f, m)).toBe('spectate'); // VER by default
+    flowMoveBracketChoice(f, -1);
+    expect(flowBracketAction(f, m)).toBe('spectate'); // left on VER stays VER
+    flowMoveBracketChoice(f, 1);
+    flowMoveBracketChoice(f, 1);
+    expect(flowBracketAction(f, m)).toBe('skip');      // right, right stays SALTAR
   });
 
   it('VER moves to spectate; the end of the spectated match drains through over back to the bracket; A skips straight to it', () => {

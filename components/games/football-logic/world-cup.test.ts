@@ -6,9 +6,9 @@ import { createRng } from './rng';
 import { FORMATIONS, TEAMS, teamById } from './teams';
 import {
   PERFECT_BASE_SCORE, ROUND_BONUS, ROUND_DIFFICULTY, ROUND_LABELS, SCORE_CLEAN_SHEET, SCORE_GOAL, SCORE_WIN, WORLD_CUP_SIZE,
-  abandonHumanMatch, checkWorldCupBracket, createWorldCup, currentDifficulty, humanMatchSeed, humanOpponentId,
+  abandonHumanMatch, checkWorldCupBracket, cpuMatchSeed, createWorldCup, currentDifficulty, humanMatchSeed, humanOpponentId,
   humanPairIndex, humanSideInPair, isFinal, isStillIn, loseHumanMatch, matchPoints, matchSeedFor, nextCpuPair,
-  pairAwayId, pairCount, pairHomeId, resolveCpuMatch, roundLabel, winHumanMatch,
+  pairAwayId, pairCount, pairHomeId, pairResult, resolveCpuMatch, roundLabel, winHumanMatch,
   type WorldCupRound, type WorldCupState,
 } from './world-cup';
 
@@ -127,6 +127,42 @@ describe('matchSeedFor', () => {
     const a = new Set<number>();
     for (const round of ROUNDS) for (let p = 0; p < 4; p++) a.add(matchSeedFor(100, round, p));
     for (const round of ROUNDS) for (let p = 0; p < 4; p++) expect(a.has(matchSeedFor(101, round, p))).toBe(false);
+  });
+});
+
+describe('cpuMatchSeed and pairResult (final fix wave: bracket rules the screen used to compose inline)', () => {
+  it('cpuMatchSeed equals matchSeedFor(wc.seed, wc.round, pair) for several pairs, and follows the round forward', () => {
+    const wc = createWorldCup(BANK_IDS, 'brasil', 17, createRng(17));
+    for (let pair = 0; pair < pairCount(wc); pair++) {
+      expect(cpuMatchSeed(wc, pair)).toBe(matchSeedFor(wc.seed, wc.round, pair));
+    }
+    playRound(wc, 2, 0, true);
+    expect(wc.round).toBe('semis');
+    for (let pair = 0; pair < pairCount(wc); pair++) {
+      expect(cpuMatchSeed(wc, pair)).toBe(matchSeedFor(wc.seed, wc.round, pair));
+    }
+  });
+
+  it('pairResult is null before a pair resolves and returns the recorded result after, scoped to the current round', () => {
+    const wc = createWorldCup(BANK_IDS, 'brasil', 17, createRng(17));
+    const human = humanPairIndex(wc);
+    const other = human === 0 ? 1 : 0;
+    expect(pairResult(wc, other)).toBeNull();
+    resolveCpuMatch(wc, other, 1, 3, 2);
+    const res = pairResult(wc, other);
+    expect(res).not.toBeNull();
+    expect(res?.homeGoals).toBe(3);
+    expect(res?.awayGoals).toBe(2);
+    expect(res?.winner).toBe(1);
+    expect(res?.round).toBe('quarters');
+    expect(pairResult(wc, human)).toBeNull(); // the human's own pair is still unresolved
+  });
+
+  it('after advancing a round, pairResult sees no result yet for any pair of the new round', () => {
+    const wc = createWorldCup(BANK_IDS, 'argentina', 23, createRng(23));
+    playRound(wc, 2, 0, true);
+    expect(wc.round).toBe('semis');
+    for (let pair = 0; pair < pairCount(wc); pair++) expect(pairResult(wc, pair)).toBeNull();
   });
 });
 
