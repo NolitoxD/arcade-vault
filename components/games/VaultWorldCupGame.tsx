@@ -1414,8 +1414,18 @@ function VaultWorldCupGame({
       if (isTypingTarget(e)) return;
       if (!sfxReady) {
         sfxReady = true;
-        sfxVaultWorldCup.init();
-        sfxVaultWorldCup.setMuted(mutedRef.current);
+        // QA fix (2026-09-11): this lazy audio setup ran unguarded before the menu
+        // dispatch below. A throw here (autoplay policy, a bad SFX_VOLUME entry after
+        // a future edit) would abort handleKeyDown for the CURRENT key -- including a
+        // first-ever confirm on ELIGE MODO -- while sfxReady is already latched true,
+        // so every later key silently skips this block and looks fine. sfx is
+        // best-effort; it must never be able to eat the keystroke that triggered it.
+        try {
+          sfxVaultWorldCup.init();
+          sfxVaultWorldCup.setMuted(mutedRef.current);
+        } catch {
+          // no-op: the menu/match dispatch below still has to run this frame.
+        }
       }
       if (pausedRef.current || blocked) return;
       const key = e.key.toLowerCase();

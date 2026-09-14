@@ -683,6 +683,18 @@ amistoso a dos sea justo, y que el Mundial dé ganas de otro.
 
 ---
 
+- **QA jugado del paso 9 (Paco, 2026-09-11): "mucho más jugable, perfecto".** Detalles apuntados para la ola de
+  ajustes (paso 11) y el audio del paso 10:
+  1. **Pase corto sin sonido** → un toque breve (bit/pip). Opción A: reutilizar el fichero del golpeo a ganancia
+     baja; opción B: Paco busca un mp3 propio. Decidir en el paso 10.
+  2. **Jugador visto desde arriba** (figura, no círculo) y **portero que hace la parada** (se estira) → paso 11
+     (ya anotado el 09-sep).
+  3. **Chuts más realistas**: con carga a tope el balón sale alto y se ve que sube (altura visible: sombra + escala
+     del balón; el motor ya tiene componente vertical `SHOT_VZ_MAX`) → paso 11 o v1.5 según coste.
+  4. **Gol visible**: un gesto de que el balón entra en la red (red que se mueve / balón dentro) → paso 11.
+  5. **Audio por modo**: en ENTRENAMIENTO se queda como está (sin público); el público solo en partidos → regla del
+     paso 10 al cablear el ambiente.
+  6. Minimapa dentro del campo: a Paco no le parece mal; opinión de Claude en el chat (dentro, semitransparente).
 - **Grill corto del paso 9 (Paco, 2026-09-09).** Decisiones G9-1..G9-9:
   - **G9-1 · ENTRENAMIENTO entra en la v1** como tercer modo del selector, por la vía barata: reglas de
     partido en el motor (`sin reloj` + `equipo rival congelado`: sus ocho de campo quietos en el ancla,
