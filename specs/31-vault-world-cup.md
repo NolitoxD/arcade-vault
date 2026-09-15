@@ -824,3 +824,18 @@ La v1 es el MVP; la v1.5 es el producto fino. Lo apuntado en el grill del 04-sep
    tiene como mucho un lanzamiento perdedor y la tanda no puede empatarse; dentro de los cinco
    primeros el marcador decide siempre. `SHOOTOUT_RESOLVE_SECONDS` cierra el otro extremo: ningún
    lanzamiento se queda colgado esperando un desenlace que no llega. Es lo que fija el criterio 23.
+
+- **Grill corto del paso 11 (Paco, 2026-09-15).** Decisiones G11-1..G11-6 (brief en
+  `.superpowers/sdd/2026-09-15-vault-world-cup-step-11/design-brief.md`):
+  - **G11-1 · Jugador cenital**: cabeza + hombros orientados con `facingX/facingY` (dirección de movimiento/disparo,
+    ya en `PlayerState`); solo `drawPlayer`, cero asignaciones por frame. Mismo dibujo para las estatuas del
+    ENTRENAMIENTO y los aparcados de la tanda (sin rama nueva).
+  - **G11-2 · Portero que se estira**: gesto visual disparado por el evento de atajada, ~35 pasos (~0,6 s), vuelve a la
+    pose normal antes de sacar. Motor intacto.
+  - **G11-3 · Chut con altura**: sombra + escala del balón a partir de `ball.z` tal cual; NO se tocan `SHOT_VZ_MAX` ni
+    la gravedad en este paso. Si tras jugarlo sigue plano → tarea aparte con regrabado de partidos deterministas.
+  - **G11-4 · Gol visible**: el balón se queda dentro de la portería durante la celebración, con red dibujada como
+    rejilla estática. **Red que ondula → v1.5.**
+  - **G11-5 · Minimapa**: ya está dentro del campo y semitransparente; se valida en el QA jugado, sin tarea de código
+    salvo feedback explícito.
+  - **G11-6 · Calendario**: plan + pre-vuelo el 15-sep; ejecución SDD el 16-sep; QA jugado de Paco después.

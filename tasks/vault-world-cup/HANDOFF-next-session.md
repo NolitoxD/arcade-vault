@@ -1,7 +1,38 @@
-# HANDOFF — VAULT WORLD CUP · paso 10 CERRADO EN CÓDIGO (v1 completa; QA de Paco el 15-sep) · actualizado 2026-09-14
+# HANDOFF — VAULT WORLD CUP · v1 QA JUGADO + ola de ajustes commiteada · PASO 11 PLANIFICADO, sin ejecutar · actualizado 2026-09-15
 
-**15-sep:** paso 10 commiteado por Paco en `1eeb0e8`, árbol limpio. Handoff compacto de sesión en
-`$TMPDIR/handoff-vault-world-cup-v1-2026-09-15.md`. Prompt para retomar: `/retomar tasks/vault-world-cup/HANDOFF-next-session.md`.
+Prompt para retomar: `/retomar tasks/vault-world-cup/HANDOFF-next-session.md` → ejecutar el paso 11 con `superpowers:subagent-driven-development`.
+
+## -6. 15-sep: QA de la v1 + ola de ajustes (commit `ab3372c`) + diseño del paso 11 (plan + pre-vuelo, NO ejecutado)
+
+**Estado:** HEAD `ab3372c`, árbol limpio salvo docs de hoy (spec + plan + este handoff; Paco commitea). Suite **1213 tests / 70
+ficheros**, `tsc`/eslint limpios. Migración del juego 14 YA aplicada (verificado por MCP). QA de Paco: v1 «muy entretenido»; dos
+hallazgos resueltos en la ola: (1) choque de equipaciones (no rival repetido: `drawRival` ya lo garantiza) → `football-logic/kits.ts`
+(`KIT_CLASH_DISTANCE = 100`, RGB euclídea; visitante con kit invertido, resuelto una vez por partido en `startMatch`; invariante
+`kit colors too close`); (2) teclas a dos documentadas en `lib/games-registry.ts` (filas «A dos · J1/J2», Pong como precedente).
+Ledger de la ola: `.superpowers/sdd/2026-09-15-vault-world-cup-qa-fixes/`. Rulings de la ola: portero conserva el swap sobre el kit
+resuelto; pantalla de victoria y selector con kit propio.
+
+**Paso 11 — decisiones G11-1..G11-6 en el spec (grill 15-sep, no relitigar):** jugador cenital con `facingX/facingY`; portero que se
+estira 35 pasos desde `gk-catch`; chut con altura solo en pantalla (sombra + escala por `ball.z`, motor intacto); gol = balón dentro con
+red rejilla estática (red ondulante → v1.5); minimapa sin tarea; ejecución el 16-sep.
+
+**Plan:** `docs/superpowers/plans/2026-09-15-vault-world-cup-step-11.md` (6 tareas: 11-1 `ball-view.ts` · 11-2 `gestures.ts` ·
+11-3 `player-pose.ts` + `drawPlayer` · 11-4 `goal-net.ts` + `drawPitch` · 11-5 `drawBall` + sonda `view-pipeline.test.ts` · 11-6
+cierre con `qa-paco.md`); objetivo 1261 tests / 75 ficheros; solo `VaultWorldCupGame.tsx` modificado, `football-logic/` intacto (gate
+`git diff --stat ab3372c -- components/games/football-logic` vacío). **Pre-vuelo LISTO CON RESERVAS** (`.superpowers/sdd/2026-09-15-
+vault-world-cup-step-11/preflight.md`): H1 blocker APLICADO (dirección del estirón del portero = `prevBallX/prevBallY` capturados un
+paso antes del `gk-catch`, porque `stickToOwner` pega el balón al portero); H3/H4/H5 no aplicados con razón. Brief:
+`design-brief.md` en la misma carpeta; ledger `progress.md`.
+
+**Siguiente sesión, en orden:** `/retomar` → comprobar commit de docs y 1213 verdes → SDD tarea a tarea leyendo SOLO el plan
+(briefs por tarea, `package.sh` de la ola de QA para paquetes de revisión sin commits, snapshots `.txt`) → revisión final opus + ola de
+fixes → QA jugado de Paco con `qa-paco.md` → commit de Paco. Paralelizable: 11-1 ∥ 11-2 ∥ 11-4; 11-3 tras 11-2; 11-5 tras 11-1 y 11-3.
+Reglas: commits solo Paco · nunca `next dev` · duda de diseño nueva → grill corto · G9/G10/G11 no se relitigan. Después del paso 11:
+spike v1.5 (red ondulante, teclado alternativo, esquemas de formación, 4 selecciones más). Pendiente aparte: `.mcp.json` del repo
+apunta a `project_ref=hqazqbqjobccvrftweef` (ajeno); el proyecto real es `hppzpkurlwqwzmigiuzq`.
+
+**Commit de docs propuesto (Paco):** `docs(world-cup): step 11 decisions G11-1..6, implementation plan and preflight`
+
 
 ## -5. 14-sep: paso 10 (registro, migración, play-page definitiva, música, viewport) — CERRADO en código
 
