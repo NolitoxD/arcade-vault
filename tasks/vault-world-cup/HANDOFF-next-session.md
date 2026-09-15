@@ -1,5 +1,8 @@
 # HANDOFF — VAULT WORLD CUP · paso 10 CERRADO EN CÓDIGO (v1 completa; QA de Paco el 15-sep) · actualizado 2026-09-14
 
+**15-sep:** paso 10 commiteado por Paco en `1eeb0e8`, árbol limpio. Handoff compacto de sesión en
+`$TMPDIR/handoff-vault-world-cup-v1-2026-09-15.md`. Prompt para retomar: `/retomar tasks/vault-world-cup/HANDOFF-next-session.md`.
+
 ## -5. 14-sep: paso 10 (registro, migración, play-page definitiva, música, viewport) — CERRADO en código
 
 **Estado:** Tasks 10-1..10-5 + ola de fixes de la revisión final (opus) + fix del timer de victoria + Cierre C1-C9, todo en
