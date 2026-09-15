@@ -685,8 +685,8 @@ amistoso a dos sea justo, y que el Mundial dé ganas de otro.
 
 - **QA jugado del paso 9 (Paco, 2026-09-11): "mucho más jugable, perfecto".** Detalles apuntados para la ola de
   ajustes (paso 11) y el audio del paso 10:
-  1. **Pase corto sin sonido** → un toque breve (bit/pip). Opción A: reutilizar el fichero del golpeo a ganancia
-     baja; opción B: Paco busca un mp3 propio. Decidir en el paso 10.
+  1. **Pase corto sin sonido** → RESUELTO 14-sep: Paco aporta `public/vault-futbol-pass.mp3` (freesound, 16 KB,
+     renombrado con el criterio de los demás). Disparador: `ActionEvent.kind === 'pass'` corto. Se cablea en el paso 10.
   2. **Jugador visto desde arriba** (figura, no círculo) y **portero que hace la parada** (se estira) → paso 11
      (ya anotado el 09-sep).
   3. **Chuts más realistas**: con carga a tope el balón sale alto y se ve que sube (altura visible: sombra + escala
@@ -731,6 +731,29 @@ amistoso a dos sea justo, y que el Mundial dé ganas de otro.
 
 ---
 
+- **Grill corto del paso 10 (2026-09-14).** Decisiones G10-1..G10-10:
+  - **G10-1 (Paco)** slug/id/ruta `vault-world-cup`; carátula `covers/vault-futbol.png`; título VAULT WORLD CUP; categoría SPORTS.
+  - **G10-2 (Paco)** pase corto suena con `public/vault-futbol-pass.mp3` (fichero propio); disparador `ActionEvent 'pass'` corto.
+  - **G10-3** público (ambiente) SOLO en partidos con reloj: pregunta pura `modeHasCrowd(mode)` en `mode.ts` (= reglas `timed`),
+    consumida por el componente al planificar el ambiente; en ENTRENAMIENTO nunca suena. Nunca `mode.kind` en el `.tsx`.
+  - **G10-4** música por fase: prop nueva `onPhaseChange(phase: 'menu' | 'match')` derivada de `FlowPhase` (menu = selector,
+    selección, sorteo, cuadro, victoria, over; match = partido y espectar). La play-page pone la pista de lobby en `menu` o en
+    pausa, y la de partido en `match` sin pausa, vía `setTrackOverride`; limpieza al desmontar.
+  - **G10-5** viewport: el componente ya para y abandona; añade `onViewportBlocked()` y la play-page redirige al detalle
+    `/games/vault-world-cup` 2 s después. Catálogo: `GamesGrid` deshabilita JUGAR solo para `vault-world-cup` cuando el
+    viewport está por debajo del umbral de `viewport-guard` (constantes exportadas, `matchMedia`/resize), con etiqueta
+    SOLO ESCRITORIO. Sin columna nueva en BD (un solo juego lo necesita).
+  - **G10-6** `GameOverModal` + `saveScore` SOLO desde `onGameOver`/`onVictory` (= Mundial). Amistoso y entrenamiento
+    terminan en el canvas sin overlay ni guardado. `saveScore({ gameId: 'vault-world-cup', … })`.
+  - **G10-7** silencio como Vault Fighter: SONIDO ON/OFF del HUD = SFX del juego (prop `muted`); música = control global
+    del `MusicContext`. Sin `MobileGamepad` ni selector de skin (solo desktop, sin skins).
+  - **G10-8** ganancias de cánticos se quedan 0,4 (confeti) / 1 (fuegos) hasta que el QA diga otra cosa.
+  - **G10-9** créditos: sin cambios (un Mundial completado cuenta como juego jugado por construcción).
+  - **G10-10** registro: `GameId` + `GAMES` + migración `INSERT INTO games` + test «has exactly 14 implemented games»;
+    instrucciones: objetivo + 4 modos + A chut (mantener = más fuerte) / B pase (mantener = largo) / C sprint / 1-6
+    alineación y estrategia / P pausa / R reinicio; carátula ya existe (no hace falta `design`).
+  Entrada al suelo sin fichero: sigue en silencio (S-SC10) hasta que Paco decida; larguero reservado v1.5.
+
 ## Pendientes para el spike de la v1.5 (discutir con Paco punto a punto tras el QA)
 
 La v1 es el MVP; la v1.5 es el producto fino. Lo apuntado en el grill del 04-sep:
@@ -754,6 +777,9 @@ La v1 es el MVP; la v1.5 es el producto fino. Lo apuntado en el grill del 04-sep
 
 ---
 
+- **Slug definitivo (Paco, 2026-09-14): id y ruta `vault-world-cup`**; los assets conservan el prefijo `vault-futbol`
+  y la entrada del catálogo apunta a `covers/vault-futbol.png` tal cual (como Kong: el nombre del asset no coincide
+  con el id). Título visible: VAULT WORLD CUP.
 - **Teclado alternativo seleccionable (Paco, 2026-09-09, v1.5):** al empezar se elige UN teclado y los
   demás quedan inactivos: (1) el actual WASD + J/K/L; (2) el clásico Q/A arriba-abajo + O/P
   izquierda-derecha (teclas exactas a confirmar con Paco) + Z/X/C (o espacio) para A/B/C; (3) solo

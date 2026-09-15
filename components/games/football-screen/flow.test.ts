@@ -11,7 +11,7 @@ import {
   createFlowState, flowAfterModeBuilt, flowBracketAction, flowBuildMode, flowCaptionsDrained, flowConfirmBracket,
   flowConfirmDraw, flowConfirmMode, flowConfirmTeam, flowContinue, flowCpuPair, flowExitMatch, flowHumanCount,
   flowMatchOver, flowModeKind, flowMoveBracketChoice, flowMoveMode, flowMoveTeam, flowPickingHuman, flowRecordCpuResult,
-  flowReset, flowSetFormation, flowSkipSpectate, flowSpectateOver, type FlowState,
+  flowReset, flowSetFormation, flowSkipSpectate, flowSpectateOver, phaseGroup, type FlowPhase, type FlowState,
 } from './flow';
 
 const BANK_IDS: readonly string[] = TEAMS.map((t) => t.id);
@@ -358,5 +358,18 @@ describe('the end of a match', () => {
     expect(f.phase).toBe('mode-select');
     flowReset(f);
     expect(f).toEqual(createFlowState());
+  });
+});
+
+// ── Task 10-2 (G10-4): which music track a phase belongs to. All EIGHT phases of
+// FlowPhase, not a sample -- risk 7 inherited from step 9. ───────────────────────
+describe('phaseGroup', () => {
+  it('match and spectate are "match"; the other six phases are "menu"', () => {
+    const phases: FlowPhase[] = [
+      'mode-select', 'team-select', 'draw', 'bracket', 'match', 'spectate', 'victory', 'over',
+    ];
+    expect(phases.map(phaseGroup)).toEqual([
+      'menu', 'menu', 'menu', 'menu', 'match', 'match', 'menu', 'menu',
+    ]);
   });
 });

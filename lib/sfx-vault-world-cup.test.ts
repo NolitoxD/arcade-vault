@@ -10,7 +10,7 @@ const PUBLIC_FILES = new Set(readdirSync(join(process.cwd(), 'public')));
 const ALL: VaultWorldCupSfx[] = [
   'whistle_start', 'whistle_end', 'whistle_foul',
   'goal_net', 'goal_shout', 'goal_crowd',
-  'kick', 'crowd', 'chants_victory',
+  'kick', 'pass', 'crowd', 'chants_victory',
 ];
 
 describe('SFX_FILES', () => {
@@ -202,4 +202,24 @@ describe('VaultWorldCupSFX against a stubbed Audio clone', () => {
 
 it('the stub above leaves no Audio global behind for the rest of the suite', () => {
   expect(typeof Audio).toBe('undefined');
+});
+
+// ── Task 10-2 (G10-2, QA 09-11: "short pass has no sound"). Paco added the file
+// on 09-14; this is the first of the nine file-backed sounds that was NOT
+// wired up since step 8. ──────────────────────────────────────────────────────
+describe('the short pass', () => {
+  it('names the real file Paco added, at a volume in (0, 1]', () => {
+    expect(SFX_FILES.pass).toBe('/vault-futbol-pass.mp3');
+    expect(PUBLIC_FILES.has('vault-futbol-pass.mp3')).toBe(true);
+    expect(SFX_VOLUME.pass).toBeGreaterThan(0);
+    expect(SFX_VOLUME.pass).toBeLessThanOrEqual(1);
+  });
+
+  // S-D2 (assumption, this plan): no volume is specified in the spec's audio table
+  // for the pass -- only that it must exist. A pass is a lighter touch of the ball
+  // than a shot, so it sits below SFX_VOLUME.kick; adjustable in QA like every other
+  // number in this table.
+  it('is quieter than the shot -- a pass is not a kick', () => {
+    expect(SFX_VOLUME.pass).toBeLessThan(SFX_VOLUME.kick);
+  });
 });

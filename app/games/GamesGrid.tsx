@@ -1,11 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { GameRow } from '@/lib/supabase/types';
 import { useUser } from '@/app/context/UserContext';
+import { isDesktopOnlyBlocked } from './desktop-only';
 
-function GameCard({ game }: { game: GameRow }) {
+function GameCard({ game, desktopOnlyBlocked }: { game: GameRow; desktopOnlyBlocked: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   const { hasPlayed } = useUser();
 
@@ -33,35 +34,60 @@ function GameCard({ game }: { game: GameRow }) {
         ? 'yellow'
         : '';
 
+  const coverContent = (
+    <>
+      {game.cover.startsWith('/') ? (
+        <div
+          className="cover-bg cover-image"
+          style={{ backgroundImage: `url(${game.cover})` }}
+        />
+      ) : (
+        <div className={`cover-bg ${game.cover}`} />
+      )}
+      <div className="label">{game.cat}</div>
+      {hasPlayed(game.id) && (
+        <span className="played-badge" title="Ya jugado" aria-label="Ya jugado">
+          ✓
+        </span>
+      )}
+    </>
+  );
+
   return (
     <div ref={ref} className="card" onMouseMove={onMove} onMouseLeave={onLeave}>
-      <Link href={`/games/${game.id}`} className="cover">
-        {game.cover.startsWith('/') ? (
-          <div
-            className="cover-bg cover-image"
-            style={{ backgroundImage: `url(${game.cover})` }}
-          />
-        ) : (
-          <div className={`cover-bg ${game.cover}`} />
-        )}
-        <div className="label">{game.cat}</div>
-        {hasPlayed(game.id) && (
-          <span className="played-badge" title="Ya jugado" aria-label="Ya jugado">
-            ✓
-          </span>
-        )}
-      </Link>
+      {desktopOnlyBlocked ? (
+        // G10 fix wave (#3): same look, no navigation target — the cover offers
+        // no path into the play page below the viewport threshold either.
+        <div className="cover">{coverContent}</div>
+      ) : (
+        <Link href={`/games/${game.id}`} className="cover">
+          {coverContent}
+        </Link>
+      )}
       <div className="meta">
         <div className="title">{game.title}</div>
         <div className="desc">{game.short}</div>
         <div className="row">
-          <Link
-            href={`/games/${game.id}`}
-            className={`btn ${btnColor}`}
-            onClick={(e) => e.stopPropagation()}
-          >
-            JUGAR
-          </Link>
+          {desktopOnlyBlocked ? (
+            // G10-5: no Link — nothing to navigate to. aria-disabled, not the
+            // `disabled` attribute (this is a <span>, not a <button>).
+            <span
+              className="btn ghost"
+              aria-disabled="true"
+              title="Este juego solo se puede jugar en pantalla de escritorio"
+              style={{ cursor: 'not-allowed', opacity: 0.6 }}
+            >
+              SOLO ESCRITORIO
+            </span>
+          ) : (
+            <Link
+              href={`/games/${game.id}`}
+              className={`btn ${btnColor}`}
+              onClick={(e) => e.stopPropagation()}
+            >
+              JUGAR
+            </Link>
+          )}
         </div>
       </div>
     </div>
@@ -71,6 +97,20 @@ function GameCard({ game }: { game: GameRow }) {
 export default function GamesGrid({ games }: { games: GameRow[] }) {
   const [q, setQ] = useState('');
   const [cat, setCat] = useState('');
+  // null until mount: server render (and client's first paint) don't know
+  // window size, so JUGAR always starts enabled and only a real resize
+  // measurement can disable it — no hydration mismatch, at most a frame flicker
+  // for those truly below the threshold.
+  const [viewport, setViewport] = useState<{ w: number; h: number } | null>(null);
+
+  useEffect(() => {
+    function update() {
+      setViewport({ w: window.innerWidth, h: window.innerHeight });
+    }
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, []);
 
   const cats = useMemo(
     () => Array.from(new Set(games.map((g) => g.cat))).sort(),
@@ -123,7 +163,11 @@ export default function GamesGrid({ games }: { games: GameRow[] }) {
 
       <div className="av-grid">
         {filtered.map((g) => (
-          <GameCard key={g.id} game={g} />
+          <GameCard
+            key={g.id}
+            game={g}
+            desktopOnlyBlocked={viewport !== null && isDesktopOnlyBlocked(g.id, viewport.w, viewport.h)}
+          />
         ))}
         {filtered.length === 0 && (
           <div

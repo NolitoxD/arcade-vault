@@ -14,7 +14,8 @@ export type GameId =
   | 'karate-champ'
   | 'kong'
   | 'bubble'
-  | 'vault-fighter';
+  | 'vault-fighter'
+  | 'vault-world-cup';
 
 export type SkinDef = { key: string; label: string; tier: SkinTier };
 
@@ -406,6 +407,38 @@ export const GAMES: Record<GameId, GameMeta> = {
         'Agáchate con ↓ para esquivar los golpes altos',
         'El tercer botón (C, tecla L) lanza tu magia en cuanto la barra se llena',
         'En TORNEO no hay CONTINUE: perder cualquier combate te saca del cuadro',
+      ],
+    },
+    realtime: true,
+  },
+  'vault-world-cup': {
+    id: 'vault-world-cup',
+    skins: CLASSIC_SKINS,
+    controls: {
+      keyboard: [
+        { keys: ['↑', '↓', '←', '→', 'W', 'A', 'S', 'D'], action: 'Mover / apuntar los saques automáticos' },
+        { keys: ['J'], action: 'A: chut o entrada al suelo (mantener = más fuerte)', special: true },
+        { keys: ['K'], action: 'B: pase corto o robo de pie (mantener = pase largo)', special: true },
+        { keys: ['L'], action: 'C: sprint en ráfaga', special: true },
+        { keys: ['1', '2', '3'], action: 'Alineación: 3-3-2 / 3-2-3 / 4-3-1' },
+        { keys: ['4', '5', '6'], action: 'Estrategia: ataque / neutral / defensa' },
+        { keys: ['P'], action: 'Pausa' },
+        { keys: ['R'], action: 'Salir del entrenamiento / reiniciar tras el Mundial' },
+      ],
+      // Desktop-only (spec): this game never renders MobileGamepad, so there is
+      // no touch key to declare. An empty object is a valid KeyMap (all of its
+      // fields are optional) and getKeyMap('vault-world-cup') is never called from
+      // any page -- pinned by the Task 10-1 test.
+      touch: { keyMap: {} },
+    },
+    instructions: {
+      goal: 'Elige uno de los cuatro modos y llévate el balón: en AMISTOSO ganas un partido a la CPU o a otro jugador en tu mismo teclado, en ENTRENAMIENTO practicas sin reloj ni marcador contra un rival congelado, y en MUNDIAL disputas cuartos, semifinal y final en un cuadro de ocho selecciones sorteadas de dieciséis, la tuya entre ellas, sin CONTINUE. Solo el Mundial apunta en la tabla.',
+      tips: [
+        'A chuta o entra al suelo; mantén pulsado para un chut más fuerte',
+        'B pasa corto al pulsar o roba de pie; mantenlo pulsado para un pase largo',
+        'C sprinta en ráfaga con recuperación, con o sin balón',
+        '1, 2 y 3 cambian tu alineación (3-3-2 / 3-2-3 / 4-3-1); 4, 5 y 6 tu estrategia (ataque / neutral / defensa), en pleno partido',
+        'P pausa el partido · R sale del ENTRENAMIENTO y reinicia tras el Mundial; el juego solo se juega en escritorio, con ventana suficiente',
       ],
     },
     realtime: true,

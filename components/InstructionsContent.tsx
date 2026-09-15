@@ -88,6 +88,9 @@ export default function InstructionsContent({
   const directions = (
     Object.keys(DIRECTION_LABELS) as (keyof typeof DIRECTION_LABELS)[]
   ).filter((direction) => touch.keyMap[direction]);
+  // Games with no touch controls (e.g. vault-world-cup) declare an empty keyMap
+  // and no A/B labels: skip the whole section instead of rendering an empty heading.
+  const hasTouch = directions.length > 0 || touch.a !== undefined || touch.b !== undefined;
 
   return (
     <div>
@@ -124,50 +127,54 @@ export default function InstructionsContent({
         ))}
       </div>
 
-      <h3 className="pixel neon-yellow" style={headingStyle}>
-        TÁCTIL
-      </h3>
-      <div>
-        {directions.map((direction) => (
-          <div key={direction} style={rowStyle}>
-            <div
-              className="mono"
-              style={{ ...textStyle, fontSize: 12, color: 'var(--cyan)' }}
-            >
-              {DIRECTION_LABELS[direction]}
-            </div>
-            <div className="mono" style={{ ...textStyle, fontSize: 12 }}>
-              D-pad
-            </div>
+      {hasTouch && (
+        <>
+          <h3 className="pixel neon-yellow" style={headingStyle}>
+            TÁCTIL
+          </h3>
+          <div>
+            {directions.map((direction) => (
+              <div key={direction} style={rowStyle}>
+                <div
+                  className="mono"
+                  style={{ ...textStyle, fontSize: 12, color: 'var(--cyan)' }}
+                >
+                  {DIRECTION_LABELS[direction]}
+                </div>
+                <div className="mono" style={{ ...textStyle, fontSize: 12 }}>
+                  D-pad
+                </div>
+              </div>
+            ))}
+            {touch.a && (
+              <div style={rowStyle}>
+                <div
+                  className="pixel"
+                  style={{ fontSize: 11, color: 'var(--magenta)' }}
+                >
+                  A
+                </div>
+                <div className="mono" style={{ ...textStyle, fontSize: 12 }}>
+                  {touch.a}
+                </div>
+              </div>
+            )}
+            {touch.b && (
+              <div style={rowStyle}>
+                <div
+                  className="pixel"
+                  style={{ fontSize: 11, color: 'var(--cyan)' }}
+                >
+                  B
+                </div>
+                <div className="mono" style={{ ...textStyle, fontSize: 12 }}>
+                  {touch.b}
+                </div>
+              </div>
+            )}
           </div>
-        ))}
-        {touch.a && (
-          <div style={rowStyle}>
-            <div
-              className="pixel"
-              style={{ fontSize: 11, color: 'var(--magenta)' }}
-            >
-              A
-            </div>
-            <div className="mono" style={{ ...textStyle, fontSize: 12 }}>
-              {touch.a}
-            </div>
-          </div>
-        )}
-        {touch.b && (
-          <div style={rowStyle}>
-            <div
-              className="pixel"
-              style={{ fontSize: 11, color: 'var(--cyan)' }}
-            >
-              B
-            </div>
-            <div className="mono" style={{ ...textStyle, fontSize: 12 }}>
-              {touch.b}
-            </div>
-          </div>
-        )}
-      </div>
+        </>
+      )}
     </div>
   );
 }

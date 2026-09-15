@@ -1,4 +1,46 @@
-# HANDOFF — VAULT WORLD CUP · paso 9 CERRADO EN CÓDIGO (QA de Paco pendiente) · actualizado 2026-09-11
+# HANDOFF — VAULT WORLD CUP · paso 10 CERRADO EN CÓDIGO (v1 completa; QA de Paco el 15-sep) · actualizado 2026-09-14
+
+## -5. 14-sep: paso 10 (registro, migración, play-page definitiva, música, viewport) — CERRADO en código
+
+**Estado:** Tasks 10-1..10-5 + ola de fixes de la revisión final (opus) + fix del timer de victoria + Cierre C1-C9, todo en
+el working tree; Paco commitea hoy. Verificado: **1186 tests / 69 ficheros**, `tsc` limpio, `npm run build` exit 0 con
+`/games/vault-world-cup/play` estática. Motor tocado solo en `mode.ts` (`modeHasCrowd`, 10 líneas). Ledger e informes en
+`.superpowers/sdd/2026-09-14-vault-world-cup-step-10/` (`progress.md`, `final-review-report.md` con la lista QA de 15
+puntos + añadidos, `final-fix-report.md`). Plan: `docs/superpowers/plans/2026-09-14-vault-world-cup-step-10.md`.
+
+**Lo que hay:** entrada `vault-world-cup` en `lib/games-registry.ts` (juego 14, cat SPORTS, cover `vault-futbol.png`,
+instrucciones con los 4 modos y A/B/C) + migración `supabase/migrations/20260914103000_add_vault_world_cup_game.sql`;
+pase corto suena (`vault-futbol-pass.mp3`, 0.35); público solo en partidos con reloj (`modeHasCrowd`); `onPhaseChange`
+('menu'|'match') y `onViewportBlocked` en el componente; catálogo deshabilita JUGAR y la carátula bajo 768×560 (SOLO
+ESCRITORIO, `app/games/desktop-only.ts`); play-page definitiva (música lobby/partido por fase y pausa vía
+`setTrackOverride` en dos efectos, `GameOverModal`+`saveScore` solo tras un Mundial, modal de victoria con retardo de
+4 s sin pausar la celebración —y en el acto si pulsas CONTINUAR antes—, redirect 2 s tras bloqueo por viewport,
+`?seed=`, HUD a 0-0/0:00 al volver al selector); InstructionsContent oculta TÁCTIL cuando no hay teclas táctiles.
+
+**⚠️ ANTES DE DESPLEGAR O DE PROBAR EL GUARDADO: aplicar la migración** (`supabase db push` o el flujo de Paco). Sin
+ella, `/games` no lista el juego y `saveScore` falla en silencio contra la FK mientras el modal dice «guardada».
+
+**Rulings del orquestador (validar en QA):** carátula gateada, JUGAR del detalle NO (el guard in-game + redirect cubre);
+`paused={paused}` (el modal no pausa el juego) + retardo 4 s; `goal_crowd` sigue sonando al marcar en entrenamiento;
+ganancias de cánticos 0,4/1 sin tocar (G10-8).
+
+**QA de Paco (15-sep), en orden:** (1) aplicar migración; (2) catálogo: tarjeta 14, detalle, instrucciones (R veraz, sin
+TÁCTIL vacía), encoger ventana → SOLO ESCRITORIO en JUGAR y carátula; (3) música: entrar→lobby, partido→gameplay,
+P→lobby, reanudar→gameplay, VER cruce→gameplay, selector→lobby, salir→tema global; (4) pase corto suena, largo no; público
+en amistoso/Mundial y ninguno en entrenamiento (pero `goal_crowd` al marcar: decidir); (5) Mundial completo → celebración
+4 s → modal → guardar → tabla real; ELIMINADO → modal inmediato; amistoso/entrenamiento sin modal; (6) viewport en
+partido → panel + redirect; (7) aviso: catalogSize 13→14 baja a VETERANO a quien era MAESTRO hasta jugar el Mundial;
+(8) pasada rápida por los otros 13 juegos. Lista completa: `final-review-report.md` §«Lista de QA manual».
+
+**Siguiente = paso 11 (QA final + ajustes visuales de Paco):** dibujo cenital del jugador (cabeza+hombros), portero
+que se estira, chut con altura visible (sombra+escala), gesto de gol en la red, minimapa semitransparente; + lo que
+salga del QA. Backlog transversal: alias `@/` en vitest (config), limpieza react-hooks de ambas play-pages (3 errores
+idénticos cada una), gate del JUGAR del detalle, `saveScore` ignora errores, ganancia de cánticos. Después: spike v1.5.
+
+**Commit de cierre propuesto (Paco):** `feat(world-cup): step 10 close-out — catalogue entry (game 14), missing audio,
+viewport gating, definitive play page`
+
+
 
 ## -4. 11-sep: cierre del paso 9
 

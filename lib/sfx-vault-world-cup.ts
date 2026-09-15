@@ -20,6 +20,7 @@ export type VaultWorldCupSfx =
   | 'goal_shout'
   | 'goal_crowd'
   | 'kick'
+  | 'pass'
   | 'crowd'
   | 'chants_victory';
 
@@ -34,6 +35,7 @@ const RAW_FILES: Readonly<Record<VaultWorldCupSfx, string>> = {
   goal_shout: '/vault-futbol-goal-shout.mp3',
   goal_crowd: '/vault-futbol-goal-crowd.mp3',
   kick: '/vault-futbol-kick.mp3',
+  pass: '/vault-futbol-pass.mp3',
   crowd: '/vault-futbol-crowd-ambience.mp3',
   chants_victory: '/vault-futbol-chants-victory.mp3',
 };
@@ -56,6 +58,8 @@ export const SFX_VOLUME: Readonly<Record<VaultWorldCupSfx, number>> = {
   goal_shout: 0.8,
   goal_crowd: 0.5,
   kick: 0.45,
+  // S-D2: below the shot, above nothing -- a pass is heard but never competes with it.
+  pass: 0.35,
   crowd: 0.3,
   // The chants play under the victory screen for 20-30 s: below the whistles, above
   // the crowd bed. The confetti halves this again through play()'s gain (sfx-map.ts).

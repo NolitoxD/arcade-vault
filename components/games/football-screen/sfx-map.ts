@@ -101,6 +101,18 @@ export function shotFiredThisStep(match: MatchState): boolean {
   return false;
 }
 
+// The short pass getting away (G10-2, QA 11-sep: it had no sound at all). Same scan
+// as shotFiredThisStep, for the same reason (the shootout wipes the pointer) -- but
+// 'short-pass' only: the spec's audio table has no row for the long pass, so it
+// must stay silent even though the engine tags it with its own ActionKind.
+export function shortPassFiredThisStep(match: MatchState): boolean {
+  const events = match.scratch.events;
+  for (let i = 0; i < events.length; i++) {
+    if (events[i].kind === 'short-pass' && events[i].ok) return true;
+  }
+  return false;
+}
+
 // Spec: "dos o tres ráfagas por parte, en instantes sorteados y deterministas, también
 // en la prórroga, y nunca los mismos instantes en dos partes".
 export const AMBIENCE_MIN = 2;

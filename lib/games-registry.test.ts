@@ -4,10 +4,10 @@ import { GAMES, GAME_IDS, getGame, getKeyMap, getSkinOptions, isGameId } from '.
 const KEYMAP_SLOTS = ['up', 'down', 'left', 'right', 'a', 'b', 'c'];
 
 describe('games registry', () => {
-  it('has exactly the 13 implemented games', () => {
+  it('has exactly the 14 implemented games', () => {
     expect(GAME_IDS.sort()).toEqual([
       'arkanoid', 'asteroids', 'bubble', 'frogger', 'karate-champ', 'kong', 'pacman',
-      'pong', 'road-fighter', 'snake', 'space-invaders', 'tetris', 'vault-fighter',
+      'pong', 'road-fighter', 'snake', 'space-invaders', 'tetris', 'vault-fighter', 'vault-world-cup',
     ]);
     expect(isGameId('pacman')).toBe(true);
     expect(isGameId('galaga')).toBe(false);
@@ -63,7 +63,7 @@ describe('games registry', () => {
   it('flags the realtime games', () => {
     expect(GAME_IDS.filter((id) => GAMES[id].realtime).sort()).toEqual([
       'bubble', 'karate-champ', 'kong', 'pacman', 'pong', 'road-fighter',
-      'space-invaders', 'vault-fighter',
+      'space-invaders', 'vault-fighter', 'vault-world-cup',
     ]);
   });
   it('karate-champ has the full keyMap and touch labels for both buttons', () => {
@@ -111,5 +111,9 @@ describe('games registry', () => {
     expect(a).toBe('PATADA');
     expect(b).toBe('PUÑO');
     expect(c).toBe('MAGIA');
+  });
+  it('vault-world-cup declares no touch keys at all -- it is desktop-only and never renders MobileGamepad', () => {
+    expect(GAMES['vault-world-cup'].controls.touch.keyMap).toEqual({});
+    expect(getKeyMap('vault-world-cup')).toEqual({});
   });
 });

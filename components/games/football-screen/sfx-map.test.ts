@@ -11,7 +11,7 @@ import { CAPTION_TEXT, createMatchWatch, updateWatch } from './captions';
 import {
   AMBIENCE_MAX, AMBIENCE_MIN, ambienceDue, ambienceSeedFor, createAmbienceMarks,
   captionSfxOnEdge, goalCrowdDue, goalNetDue, halfEndWhistleDue, planAmbience, sfxForCaption,
-  shotFiredThisStep, CHANTS_LOW_GAIN, victoryChantGain,
+  shortPassFiredThisStep, shotFiredThisStep, CHANTS_LOW_GAIN, victoryChantGain,
 } from './sfx-map';
 
 function newMatch(): MatchState {
@@ -115,6 +115,37 @@ describe('shotFiredThisStep', () => {
     m.scratch.events[7].kind = 'long-pass';
     m.scratch.events[7].ok = true;
     expect(shotFiredThisStep(m)).toBe(false);
+  });
+});
+
+// ── Task 10-2 (G10-2): the short pass, mirroring shotFiredThisStep exactly. The
+// spec's file is for the SHORT pass only -- the long pass stays silent in the v1
+// (no row for it in the audio table), so 'long-pass' must NOT trip this. ──────────
+describe('shortPassFiredThisStep', () => {
+  it('is false on a clean step', () => {
+    const m = newMatch();
+    expect(shortPassFiredThisStep(m)).toBe(false);
+  });
+
+  it('is true when any of the eighteen slots holds a short pass that got away', () => {
+    const m = newMatch();
+    m.scratch.events[3].kind = 'short-pass';
+    m.scratch.events[3].ok = true;
+    expect(shortPassFiredThisStep(m)).toBe(true);
+  });
+
+  it('ignores a long pass -- the spec has no audio row for it', () => {
+    const m = newMatch();
+    m.scratch.events[3].kind = 'long-pass';
+    m.scratch.events[3].ok = true;
+    expect(shortPassFiredThisStep(m)).toBe(false);
+  });
+
+  it('ignores a short pass that did not get away', () => {
+    const m = newMatch();
+    m.scratch.events[3].kind = 'short-pass';
+    m.scratch.events[3].ok = false;
+    expect(shortPassFiredThisStep(m)).toBe(false);
   });
 });
 

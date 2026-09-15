@@ -5,9 +5,9 @@ import React, { useEffect, useRef } from 'react';
 import { stepsFor } from './football-logic/clock';
 import { NORMAL_RULES, abandon, isOpenPlay, type MatchRules } from './football-logic/match';
 import {
-  modeAwayId, modeBracket, modeDifficulty, modeFxKind, modeHomeId, modeHumanSide, modeMatchLabel, modeMatchSeed, modeRules,
-  modeScore, modeScores, modeStatus, modeVictoryScreen, modeVictoryTeamId, modeVictoryTitle, createFriendlyMode, sideIsHuman,
-  type FxKind, type GameMode, type HumanSide,
+  modeAwayId, modeBracket, modeDifficulty, modeFxKind, modeHasCrowd, modeHomeId, modeHumanSide, modeMatchLabel,
+  modeMatchSeed, modeRules, modeScore, modeScores, modeStatus, modeVictoryScreen, modeVictoryTeamId, modeVictoryTitle,
+  createFriendlyMode, sideIsHuman, type FxKind, type GameMode, type HumanSide,
 } from './football-logic/mode';
 import { PITCH } from './football-logic/pitch';
 import { PLAYER_RADIUS, isPlayerDown, isSprinting, type PlayerState } from './football-logic/players';
@@ -30,7 +30,7 @@ import {
   MODE_BLURBS, MODE_LIST, MODE_NAMES, createFlowState, flowAfterModeBuilt, flowBuildMode, flowCaptionsDrained,
   flowConfirmBracket, flowConfirmDraw, flowConfirmMode, flowConfirmTeam, flowContinue, flowCpuPair, flowExitMatch,
   flowHumanCount, flowMatchOver, flowMoveBracketChoice, flowMoveMode, flowMoveTeam, flowPickingHuman, flowRecordCpuResult,
-  flowSetFormation, flowSkipSpectate, flowSpectateOver,
+  flowSetFormation, flowSkipSpectate, flowSpectateOver, phaseGroup, type PhaseGroup,
 } from './football-screen/flow';
 import {
   BRACKET_ELIMINATED_Y, BRACKET_HINT_Y, BRACKET_PROMPT_Y, BRACKET_ROW_H, DRAW_ROW_H, FORMATION_ROW_Y, MODE_CARD_H,
@@ -54,7 +54,7 @@ import {
 import { FX_COLORS, createParticlePool, fxSeedFor, startFx, stepFx } from './football-screen/particles';
 import {
   ambienceDue, captionSfxOnEdge, createAmbienceMarks, goalCrowdDue, goalNetDue, halfEndWhistleDue,
-  shotFiredThisStep, victoryChantGain,
+  shortPassFiredThisStep, shotFiredThisStep, victoryChantGain,
 } from './football-screen/sfx-map';
 import { MIN_VIEWPORT_H, MIN_VIEWPORT_W, viewportAllowed } from './football-screen/viewport-guard';
 import { sfxVaultWorldCup } from '@/lib/sfx-vault-world-cup';
@@ -66,8 +66,17 @@ interface VaultWorldCupGameProps {
   onScoreChange?: (home: number, away: number) => void;
   onClockChange?: (label: string) => void;
   onStatusChange?: (label: string) => void;
+  // G10-4: 'menu' while viewing any selector/draw/bracket/victory screen;
+  // 'match' during a played match or a watched CPU crossing. Derived from FlowPhase
+  // via phaseGroup, never read from the mode's kind field. The play page uses it to
+  // switch tracks in MusicContext.
+  onPhaseChange?: (phase: PhaseGroup) => void;
   onGameOver?: (score: number) => void;
   onVictory?: (score: number) => void;
+  // G10-5: called exactly once, at the edge of entering `blocked` (never per frame,
+  // nor upon exit): the play page redirects to detail after showing the panel for
+  // a couple of seconds.
+  onViewportBlocked?: () => void;
 }
 
 // ── The two display slots of the scoreboard. NOT "human" and "CPU" any more: who is
@@ -224,8 +233,10 @@ function VaultWorldCupGame({
   onScoreChange,
   onClockChange,
   onStatusChange,
+  onPhaseChange,
   onGameOver,
   onVictory,
+  onViewportBlocked,
 }: VaultWorldCupGameProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const pausedRef = useRef(paused);
@@ -233,8 +244,10 @@ function VaultWorldCupGame({
   const onScoreChangeRef = useRef(onScoreChange);
   const onClockChangeRef = useRef(onClockChange);
   const onStatusChangeRef = useRef(onStatusChange);
+  const onPhaseChangeRef = useRef(onPhaseChange);
   const onGameOverRef = useRef(onGameOver);
   const onVictoryRef = useRef(onVictory);
+  const onViewportBlockedRef = useRef(onViewportBlocked);
 
   useEffect(() => {
     pausedRef.current = paused;
@@ -251,9 +264,11 @@ function VaultWorldCupGame({
     onScoreChangeRef.current = onScoreChange;
     onClockChangeRef.current = onClockChange;
     onStatusChangeRef.current = onStatusChange;
+    onPhaseChangeRef.current = onPhaseChange;
     onGameOverRef.current = onGameOver;
     onVictoryRef.current = onVictory;
-  }, [onScoreChange, onClockChange, onStatusChange, onGameOver, onVictory]);
+    onViewportBlockedRef.current = onViewportBlocked;
+  }, [onScoreChange, onClockChange, onStatusChange, onPhaseChange, onGameOver, onVictory, onViewportBlocked]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -329,6 +344,10 @@ function VaultWorldCupGame({
     let reportedHome = -1;
     let reportedAway = -1;
     let reportedClock = '';
+    // '' before the first report (the component just mounted): neither 'menu' nor
+    // 'match', so the first call always fires once — the same trick as reportedClock
+    // starting at ''.
+    let reportedPhaseGroup: PhaseGroup | '' = '';
     let keeperHoldSteps = 0;
     let keeperHoldTeam: 0 | 1 | -1 = -1;
 
@@ -359,6 +378,18 @@ function VaultWorldCupGame({
         const cb = onClockChangeRef.current;
         if (cb !== undefined) cb(clock);
       }
+    }
+
+    // G10-4: the play page's music track. Cheap by construction — a string comparison
+    // against a variable already mutated in place, exactly the pattern of reportHud
+    // above — so calling it every frame from loop() is not an assignment per frame:
+    // it is a READ per frame that only calls the callback at the edge.
+    function reportPhase(): void {
+      const group = phaseGroup(flow.phase);
+      if (group === reportedPhaseGroup) return;
+      reportedPhaseGroup = group;
+      const cb = onPhaseChangeRef.current;
+      if (cb !== undefined) cb(group);
     }
 
     // The caption that is showing NOW is the trigger, so the sound and the words
@@ -584,6 +615,9 @@ function VaultWorldCupGame({
 
       // 1. The ball being struck (audio table: ActionEvent 'shot' with ok).
       if (shotFiredThisStep(match)) sfxVaultWorldCup.play('kick');
+      // 1b. The short pass getting away (G10-2, QA 11-sep). The long pass has no row
+      //     in the spec's audio table and stays silent in the v1.
+      if (shortPassFiredThisStep(match)) sfxVaultWorldCup.play('pass');
       // 2. The first link of the goal chain, the moment the ball crosses the line.
       //    goalNetDue reads the EDGE of scratch.call against `watch`, which still
       //    holds the previous step here (updateWatch runs at point 7): the call is a
@@ -635,13 +669,15 @@ function VaultWorldCupGame({
           if (!firstKick && match.phase === 'shootout') sfxVaultWorldCup.play('whistle_start');
         }
       }
-      // 5. The crowd bed: 2-3 bursts per half, from its own stream (spec).
+      // 5. The crowd bed: 2-3 bursts per half, from its own stream (spec). Planned
+      //    for every mode (cheap, no sound); gated at the ONE place it makes sound
+      //    (G10-3, QA 11-sep: training has no clock, and no crowd).
       if (match.half !== ambienceHalf) {
         ambienceCount = planHalfAmbience(matchSeed, match.half, ambienceMarks);
         ambienceIndex = 0;
         ambienceHalf = match.half;
       }
-      if (isOpenPlay(match.phase) && ambienceDue(ambienceMarks, ambienceCount, ambienceIndex, match.halfStep)) {
+      if (modeHasCrowd(mode) && isOpenPlay(match.phase) && ambienceDue(ambienceMarks, ambienceCount, ambienceIndex, match.halfStep)) {
         ambienceIndex++;
         sfxVaultWorldCup.play('crowd');
       }
@@ -1392,6 +1428,9 @@ function VaultWorldCupGame({
       // that explains the block -- is drawn after both of them happen.
       update(frameMs);
       draw();
+      // G10-4: after draw(), same reasoning -- the phase this frame just drew is the
+      // one worth reporting, and reportPhase is a no-op on every frame but the edge.
+      reportPhase();
       rafId = requestAnimationFrame(loop);
     }
 
@@ -1562,6 +1601,12 @@ function VaultWorldCupGame({
       }
       if (blocked) return;
       blocked = true;
+      // G10-5: once per blocking edge, not exactly once overall — the guard above
+      // (`if (blocked) return;`) makes this line unreachable on a second resize while
+      // still blocked, but the allowed branch resets `blocked` on a menu screen, so
+      // shrinking again later re-fires this callback.
+      const cb = onViewportBlockedRef.current;
+      if (cb !== undefined) cb();
       if (flow.phase === 'spectate') {
         skipSpectate();
         return;
@@ -1591,6 +1636,7 @@ function VaultWorldCupGame({
 
     handleResize();
     reportStatus(STATUS_SELECTOR);
+    reportPhase();
     document.addEventListener('keydown', handleKeyDown);
     document.addEventListener('keyup', handleKeyUp);
     window.addEventListener('blur', handleBlur);

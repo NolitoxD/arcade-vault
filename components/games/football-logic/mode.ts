@@ -100,6 +100,16 @@ export function modeRules(m: GameMode): Readonly<MatchRules> {
   return m.kind === 'training' ? TRAINING_RULES : NORMAL_RULES;
 }
 
+// G10-3: the crowd ambience plays only in matches with a running clock -- exactly
+// the question modeRules(m).timed already answers (G9-1 froze the clock for
+// training). A thin, named alias on purpose: the component gates the ambience
+// with THIS function, never with modeRules(m).timed directly and never with
+// `mode.kind` -- one name, so a reviewer greps "modeHasCrowd" and finds every
+// place the crowd is gated.
+export function modeHasCrowd(m: GameMode): boolean {
+  return modeRules(m).timed;
+}
+
 export function modeScore(m: GameMode): number {
   return m.kind === 'world-cup' ? m.state.score : 0;
 }

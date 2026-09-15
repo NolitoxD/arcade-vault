@@ -6,8 +6,9 @@ import { createRng } from './rng';
 import { FORMATIONS, TEAMS, teamById } from './teams';
 import {
   FRIENDLY_DIFFICULTY, createFriendlyMode, createWorldCupMode, drawRival, drawSeedFor, modeAbandonMatch, modeAwayId,
-  modeBracket, modeDifficulty, modeEndMatch, modeFxKind, modeHomeId, modeHumanSide, modeMatchLabel, modeMatchSeed, modeRules,
-  modeScore, modeScores, modeStatus, modeVictoryScreen, modeVictoryTeamId, modeVictoryTitle, sideIsHuman, type GameMode,
+  modeBracket, modeDifficulty, modeEndMatch, modeFxKind, modeHasCrowd, modeHomeId, modeHumanSide, modeMatchLabel,
+  modeMatchSeed, modeRules, modeScore, modeScores, modeStatus, modeVictoryScreen, modeVictoryTeamId, modeVictoryTitle,
+  sideIsHuman, type GameMode,
 } from './mode';
 import {
   createWorldCup, humanMatchSeed, humanPairIndex, humanSideInPair, nextCpuPair, pairAwayId, pairHomeId, resolveCpuMatch,
@@ -231,5 +232,30 @@ describe('the World Cup mode', () => {
     modeAbandonMatch(wc, leading);
     expect(modeStatus(wc)).toBe('eliminated');
     expect(modeScore(wc)).toBe(0);
+  });
+});
+
+// ── Task 10-2 (G10-3, QA 09-11: "crowd only in matches, not in training").
+// A thin alias over modeRules(m).timed, tested for the four kinds directly (risk 7:
+// one happy-path case is not enough) and by construction against modeRules. ────────
+describe('modeHasCrowd', () => {
+  it('is true for both friendlies and the World Cup -- every mode with a running clock', () => {
+    expect(modeHasCrowd(createFriendlyMode('friendly-cpu', 'brasil', 'italia'))).toBe(true);
+    expect(modeHasCrowd(createFriendlyMode('friendly-2p', 'brasil', 'italia'))).toBe(true);
+    expect(modeHasCrowd(createWorldCupMode(BANK_IDS, 'brasil', 1))).toBe(true);
+  });
+
+  it('is false for training -- no clock, no crowd', () => {
+    expect(modeHasCrowd(createFriendlyMode('training', 'brasil', 'italia'))).toBe(false);
+  });
+
+  it('agrees with modeRules(m).timed by construction, for all four kinds', () => {
+    const modes: GameMode[] = [
+      createFriendlyMode('friendly-cpu', 'brasil', 'italia'),
+      createFriendlyMode('friendly-2p', 'brasil', 'italia'),
+      createFriendlyMode('training', 'brasil', 'italia'),
+      createWorldCupMode(BANK_IDS, 'brasil', 1),
+    ];
+    for (const m of modes) expect(modeHasCrowd(m)).toBe(modeRules(m).timed);
   });
 });

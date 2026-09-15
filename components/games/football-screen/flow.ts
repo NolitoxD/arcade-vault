@@ -21,6 +21,31 @@ export type FlowPhase =
   | 'victory'       // GANADOR / CAMPEONES DEL MUNDO, CONTINUAR
   | 'over';         // the match ended: the captions drain, then `after`
 
+// G10-4: which of the two tracks the play-page's music belongs to. 'match' is the
+// only two phases with a game actually running -- a played match and a spectated
+// CPU pair; the other six (every menu, the draw, the bracket, the victory screen,
+// and the caption drain of 'over') are 'menu'. The pause is deliberately NOT a
+// phase here: the play-page reads `paused` from its own prop (spec L464: the lobby
+// track also covers the pause), not from this function.
+export type PhaseGroup = 'menu' | 'match';
+
+// Exhaustive switch (pattern of modeVictoryScreen in mode.ts): a ninth FlowPhase
+// with no case here fails tsc instead of silently falling into 'menu'.
+export function phaseGroup(phase: FlowPhase): PhaseGroup {
+  switch (phase) {
+    case 'match':
+    case 'spectate':
+      return 'match';
+    case 'mode-select':
+    case 'team-select':
+    case 'draw':
+    case 'bracket':
+    case 'victory':
+    case 'over':
+      return 'menu';
+  }
+}
+
 export type BracketAction = 'spectate' | 'skip' | 'play';
 
 export const MODE_LIST: readonly GameModeKind[] = ['friendly-cpu', 'friendly-2p', 'training', 'world-cup'];
