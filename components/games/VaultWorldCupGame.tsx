@@ -3,6 +3,7 @@
 import React, { useEffect, useRef } from 'react';
 
 import { stepsFor } from './football-logic/clock';
+import { resolveMatchKits } from './football-logic/kits';
 import { NORMAL_RULES, abandon, isOpenPlay, type MatchRules } from './football-logic/match';
 import {
   modeAwayId, modeBracket, modeDifficulty, modeFxKind, modeHasCrowd, modeHomeId, modeHumanSide, modeMatchLabel,
@@ -13,7 +14,7 @@ import { PITCH } from './football-logic/pitch';
 import { PLAYER_RADIUS, isPlayerDown, isSprinting, type PlayerState } from './football-logic/players';
 import { createRng, type Rng } from './football-logic/rng';
 import { SHOOTOUT_RESOLVE_STEPS } from './football-logic/set-pieces';
-import { FORMATIONS, TEAMS, teamById, type Strategy, type TeamDef } from './football-logic/teams';
+import { FORMATIONS, TEAMS, teamById, type Kit, type Strategy, type TeamDef } from './football-logic/teams';
 import {
   cpuMatchSeed, currentDifficulty, humanPairIndex, isStillIn, pairAwayId, pairCount, pairHomeId, pairResult, roundLabel,
 } from './football-logic/world-cup';
@@ -285,6 +286,12 @@ function VaultWorldCupGame({
     // the first time the player confirms. Neither is ever stepped or drawn as such.
     let mode: GameMode = createFriendlyMode('friendly-cpu', TEAMS[0].id, TEAMS[1].id);
     let run: MatchRun = createMatchRun(TEAMS[0], TEAMS[1], 0, 5, [true, false], NORMAL_RULES, ZERO_FORMATIONS);
+    // Resolved ONCE per match, alongside `run` (never per frame): QA 15-sep, near-
+    // identical primaries (white/white, the reds, the light blues, the dark blues)
+    // are unreadable on screen, so every in-match drawing paints from this tuple
+    // instead of the teams' own kits. The selector and victory screen are unaffected
+    // -- they show one team at a time, never a clashing pair.
+    let matchKits: readonly [Kit, Kit] = resolveMatchKits(run.match.teams[HOME].kit, run.match.teams[AWAY].kit);
     let humanSide: HumanSide = 0;
     let victoryScreen = false;
     let speed = 1;
@@ -410,6 +417,7 @@ function VaultWorldCupGame({
       side: HumanSide, formations: readonly [number, number], screen: boolean,
     ): void {
       run = createMatchRun(home, away, seedForMatch, difficulty, [sideIsHuman(side, 0), sideIsHuman(side, 1)], rules, formations);
+      matchKits = resolveMatchKits(home.kit, away.kit);
       humanSide = side;
       victoryScreen = screen;
       matchSeed = seedForMatch;
@@ -857,7 +865,7 @@ function VaultWorldCupGame({
       if (!isOnScreen(cam, p.x, p.y, PLAYER_RADIUS * 3)) return;
       const x = toScreenX(cam, p.x);
       const y = toScreenY(cam, p.y);
-      const kit = match.teams[p.team].kit;
+      const kit = matchKits[p.team];
       const shootout = match.phase === 'shootout';
       const parked = shootout && p.id !== (match.shootout?.takerId ?? -1) && p.role !== 'gk';
       const down = !shootout && isPlayerDown(p, match.stepCount);
@@ -1030,7 +1038,7 @@ function VaultWorldCupGame({
       // Criterion 13: all eighteen, always -- this is the context the camera takes away.
       for (let i = 0; i < match.players.length; i++) {
         const p = match.players[i];
-        ctx.fillStyle = match.teams[p.team].kit.primary;
+        ctx.fillStyle = matchKits[p.team].primary;
         ctx.beginPath();
         ctx.arc(
           MINIMAP_X + minimapX(PITCH, p.x),
@@ -1087,10 +1095,10 @@ function VaultWorldCupGame({
 
       ctx.font = FONT_TEAM;
       ctx.textAlign = 'left';
-      ctx.fillStyle = match.teams[HOME].kit.primary;
+      ctx.fillStyle = matchKits[HOME].primary;
       ctx.fillText(match.teams[HOME].name, 12, HUD_H / 2);
       ctx.textAlign = 'right';
-      ctx.fillStyle = match.teams[AWAY].kit.primary;
+      ctx.fillStyle = matchKits[AWAY].primary;
       ctx.fillText(match.teams[AWAY].name, VIEW_W - 12, HUD_H / 2);
       // A bar under the name of each human team: in the World Cup the human may be on
       // the right (S-PK3), and in the two-player friendly both are.

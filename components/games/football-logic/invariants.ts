@@ -1,9 +1,9 @@
+import { isKitColor, kitsClash } from './kits';
 import { isInsideBigArea, type PitchDef } from './pitch';
 import { BANK_SIZE, FORMATION_COUNT, OUTFIELD, STRATEGY_SHIFT, slotCounts, type Formation, type Role, type TeamDef } from './teams';
 import type { PlayerState } from './players';
 import type { AttackDirs } from './step';
 
-const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
 const KEBAB_ID = /^[a-z][a-z0-9-]*$/;
 
 export function checkPitch(pitch: PitchDef): string[] {
@@ -69,8 +69,11 @@ export function checkTeam(def: TeamDef): string[] {
   const problems: string[] = [];
   if (!KEBAB_ID.test(def.id)) problems.push('bad id');
   if (!def.name || def.name !== def.name.toUpperCase()) problems.push('bad name');
-  if (!HEX_COLOR.test(def.kit.primary) || !HEX_COLOR.test(def.kit.secondary)) problems.push('bad kit color');
-  if (def.kit.primary === def.kit.secondary) problems.push('kit colors equal');
+  const validColors = isKitColor(def.kit.primary) && isKitColor(def.kit.secondary);
+  if (!validColors) problems.push('bad kit color');
+  // kitsClash parses '#rrggbb' and throws otherwise, so only reachable once both
+  // colors are already known-valid hex (the 'bad kit color' case above).
+  else if (kitsClash(def.kit.primary, def.kit.secondary)) problems.push('kit colors too close');
   return problems;
 }
 

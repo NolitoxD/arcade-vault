@@ -416,14 +416,21 @@ export const GAMES: Record<GameId, GameMeta> = {
     skins: CLASSIC_SKINS,
     controls: {
       keyboard: [
-        { keys: ['↑', '↓', '←', '→', 'W', 'A', 'S', 'D'], action: 'Mover / apuntar los saques automáticos' },
-        { keys: ['J'], action: 'A: chut o entrada al suelo (mantener = más fuerte)', special: true },
-        { keys: ['K'], action: 'B: pase corto o robo de pie (mantener = pase largo)', special: true },
-        { keys: ['L'], action: 'C: sprint en ráfaga', special: true },
+        { keys: ['↑', '↓', '←', '→', 'W', 'A', 'S', 'D'], action: 'Mover / apuntar los saques automáticos (solo y Mundial)' },
         { keys: ['1', '2', '3'], action: 'Alineación: 3-3-2 / 3-2-3 / 4-3-1' },
         { keys: ['4', '5', '6'], action: 'Estrategia: ataque / neutral / defensa' },
         { keys: ['P'], action: 'Pausa' },
         { keys: ['R'], action: 'Salir del entrenamiento / reiniciar tras el Mundial' },
+        { keys: ['W', 'A', 'S', 'D'], action: 'A dos · J1: mover' },
+        { keys: ['C', 'V', 'B'], action: 'A dos · J1: A chut · B pase · C sprint' },
+        { keys: ['1', '2', '3', '4', '5', '6'], action: 'A dos · J1: alineación (1-3) y estrategia (4-6)' },
+        { keys: ['↑', '↓', '←', '→'], action: 'A dos · J2: mover' },
+        { keys: ['J', 'K', 'L'], action: 'A dos · J2: A chut · B pase · C sprint' },
+        { keys: ['7', '8', '9'], action: 'A dos · J2: alineación' },
+        { keys: ['0', '\'', '¡'], action: 'A dos · J2: estrategia' },
+        { keys: ['J'], action: 'A: chut o entrada al suelo (mantener = más fuerte) · solo y Mundial', special: true },
+        { keys: ['K'], action: 'B: pase corto o robo de pie (mantener = pase largo) · solo y Mundial', special: true },
+        { keys: ['L'], action: 'C: sprint en ráfaga · solo y Mundial', special: true },
       ],
       // Desktop-only (spec): this game never renders MobileGamepad, so there is
       // no touch key to declare. An empty object is a valid KeyMap (all of its
@@ -439,6 +446,7 @@ export const GAMES: Record<GameId, GameMeta> = {
         'C sprinta en ráfaga con recuperación, con o sin balón',
         '1, 2 y 3 cambian tu alineación (3-3-2 / 3-2-3 / 4-3-1); 4, 5 y 6 tu estrategia (ataque / neutral / defensa), en pleno partido',
         'P pausa el partido · R sale del ENTRENAMIENTO y reinicia tras el Mundial; el juego solo se juega en escritorio, con ventana suficiente',
+        'AMISTOSO a dos en el mismo teclado: J1 con WASD + C/V/B, J2 con flechas + J/K/L; alineación y estrategia en 1-6 (J1) y 7-9 / 0 \' ¡ (J2)',
       ],
     },
     realtime: true,

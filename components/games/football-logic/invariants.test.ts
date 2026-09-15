@@ -164,7 +164,10 @@ describe('checkTeam', () => {
     expect(checkTeam(team({ kit: { primary: '#d40000', secondary: '#fc0' } })).join(' ')).toContain('bad kit color');
   });
   it('rejects a kit whose two colors are equal', () => {
-    expect(checkTeam(team({ kit: { primary: '#d40000', secondary: '#d40000' } })).join(' ')).toContain('kit colors equal');
+    expect(checkTeam(team({ kit: { primary: '#d40000', secondary: '#d40000' } })).join(' ')).toContain('kit colors too close');
+  });
+  it('rejects a kit whose two colors are merely close, not just equal', () => {
+    expect(checkTeam(team({ kit: { primary: '#d40000', secondary: '#d41000' } })).join(' ')).toContain('kit colors too close');
   });
 });
 
