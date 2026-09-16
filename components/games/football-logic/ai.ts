@@ -1,5 +1,5 @@
 import { INV_SQRT2, dist, normalizeInto, type Vec2 } from './geometry';
-import { centerY, goalLineX, isInsideSmallArea, type PitchDef } from './pitch';
+import { centerY, goalLineX, isInsideBigArea, isInsideSmallArea, type PitchDef } from './pitch';
 import type { Formation, Strategy, TeamDef } from './teams';
 import { toAxis, type Axis, type TeamInput } from './input';
 import type { PenaltySide } from './set-pieces';
@@ -268,8 +268,21 @@ export function positionTeam(players: PlayerState[], ball: BallState, team: 0 | 
   }
 }
 
-// Spec "El portero" 1 and 4 (movement only; the catch is keeperCatch, the
-// release is releaseFromGoalkeeper). Writes gk.want*; never gk.x/y directly.
+// True when a non-down teammate is strictly closer to the ball than gk. gk's own
+// team has exactly one goalkeeper (gk itself, excluded via id), so this is the
+// same as "no own outfield player closer" -- one check serves both G12-3 branches.
+function mateCloserToBall(gk: PlayerState, players: readonly PlayerState[], ball: BallState, stepCount: number): boolean {
+  const mine = dist(gk.x, gk.y, ball.x, ball.y);
+  for (let i = 0; i < players.length; i++) {
+    const q = players[i];
+    if (q.team !== gk.team || q.id === gk.id || isPlayerDown(q, stepCount)) continue;
+    if (dist(q.x, q.y, ball.x, ball.y) < mine) return true;
+  }
+  return false;
+}
+
+// Spec "El portero" 1, 1b (G12-3) and 4 (movement only; the catch is keeperCatch,
+// the release is releaseFromGoalkeeper). Writes gk.want*; never gk.x/y directly.
 export function keeperStep(gk: PlayerState, players: readonly PlayerState[], ball: BallState, attackDir: 1 | -1, pitch: PitchDef, stepCount: number): void {
   gk.wantSprint = false;
   if (ball.owner === gk.id) {
@@ -281,19 +294,20 @@ export function keeperStep(gk: PlayerState, players: readonly PlayerState[], bal
   const goalX = goalLineX(pitch, side);
   const lineX = goalX + attackDir * GK_LINE_DIST;
   const cy = centerY(pitch);
-  // 1b. out ONLY inside the small area, for a loose ball nobody of ours is closer to
-  if (ball.owner === null && isInsideSmallArea(pitch, side, ball.x, ball.y)) {
-    const mine = dist(gk.x, gk.y, ball.x, ball.y);
-    let mateCloser = false;
-    for (let i = 0; i < players.length && !mateCloser; i++) {
-      const q = players[i];
-      if (q.team !== gk.team || q.id === gk.id || isPlayerDown(q, stepCount)) continue;
-      if (dist(q.x, q.y, ball.x, ball.y) < mine) mateCloser = true;
-    }
-    if (!mateCloser) {
-      steerTo(gk, ball.x, ball.y, GK_SPEED);
-      return;
-    }
+  const ownerTeam = ball.owner === null ? null : players[ball.owner].team;
+  const mateCloser = mateCloserToBall(gk, players, ball, stepCount);
+  // 1b (G12-3): out inside the small area for a ball that is loose OR owned by a
+  // rival, as long as no non-down teammate is closer to it than the keeper.
+  if (ownerTeam !== gk.team && !mateCloser && isInsideSmallArea(pitch, side, ball.x, ball.y)) {
+    steerTo(gk, ball.x, ball.y, GK_SPEED);
+    return;
+  }
+  // G12-3: one-on-one press. A rival owns the ball inside the own big (penalty)
+  // area -- never for a loose ball, never outside it -- and no own non-down
+  // outfield player is closer to it than the keeper.
+  if (ownerTeam !== null && ownerTeam !== gk.team && !mateCloser && isInsideBigArea(pitch, side, ball.x, ball.y)) {
+    steerTo(gk, ball.x, ball.y, GK_SPEED);
+    return;
   }
   // 1a. on the line, at the point where the ball->goal-centre line crosses it
   // (assumption S5: parameter clamped to [0, 1], y clamped to the small-area width)

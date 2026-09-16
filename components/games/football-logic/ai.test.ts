@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { PITCH, centerY, goalLineX, isInsideSmallArea } from './pitch';
+import { PITCH, centerY, goalLineX, isInsideBigArea, isInsideSmallArea } from './pitch';
 import { FORMATIONS, TEAMS, type Formation, type Strategy } from './teams';
 import { dist } from './geometry';
 import { checkTeamInput, copyTeamInput, createTeamInput, type Axis, type TeamInput } from './input';
 import { HALF_STEPS, perStep, stepsFor } from './step';
-import { GK_LINE_DIST, GK_SPEED, PLAYER_HEIGHT, PLAYER_SPEED, createPlayers, type PlayerState } from './players';
+import { GK_LINE_DIST, GK_SPEED, PLAYER_HEIGHT, PLAYER_SPEED, createPlayers, isPlayerDown, type PlayerState } from './players';
 import { KICK_LOCK_STEPS, createBall, givePossession, type BallState } from './ball';
 import { createRng, type Rng } from './rng';
 import { SET_PIECE_COUNTDOWN_STEPS, SHOOTOUT_RESOLVE_STEPS, SHOOTOUT_ROUNDS } from './set-pieces';
@@ -273,7 +273,7 @@ describe('positionTeam: anchor + drift + separation + bounded pursuit (spec "Los
   });
 });
 
-describe('keeperStep: on its line closing the angle, out only inside the small area, back when a mate has it', () => {
+describe('keeperStep: on its line closing the angle, out inside the small area for a loose ball, back when a mate has it (see "keeperStep G12-3" for rival-owned balls and the big-area press)', () => {
   const LINE_X = goalLineX(PITCH, 0) + GK_LINE_DIST;   // team 0 keeper (id 0), attacking +x, defends side 0
   it('a ball owned by a rival far up the pitch: the keeper stays on its line at the intersection ball->goal centre', () => {
     const w = world();
@@ -338,6 +338,95 @@ describe('keeperStep: on its line closing the angle, out only inside the small a
     const gk = at(w.players[0], LINE_X, CY - PITCH.smallAreaWidth / 2);   // already at the clamp
     keeperStep(gk, w.players, w.ball, 1, PITCH, 0);
     expect([gk.wantX, gk.wantY]).toEqual([0, 0]);
+  });
+});
+
+describe('keeperStep G12-3', () => {
+  const LINE_X = goalLineX(PITCH, 0) + GK_LINE_DIST;   // team 0 keeper (id 0), attacking +x, defends side 0
+  it('rival owner inside small area, no mate closer: the keeper comes out for it', () => {
+    const w = world();
+    givePossession(w.ball, w.players[10], 0);                // rival (team 1) outfield player
+    w.players[10].x = 60; w.players[10].y = 700;
+    w.ball.x = 60; w.ball.y = 700;
+    expect(isInsideSmallArea(PITCH, 0, 60, 700)).toBe(true);
+    for (let i = 1; i <= 8; i++) at(w.players[i], 900, 100 + i * 100);   // own mates, all far away
+    const gk = at(w.players[0], LINE_X, CY);
+    keeperStep(gk, w.players, w.ball, 1, PITCH, 0);
+    const len = Math.sqrt(gk.wantX ** 2 + gk.wantY ** 2);
+    expect(gk.wantX / len).toBeCloseTo((60 - LINE_X) / dist(LINE_X, CY, 60, 700), 6);
+    expect(gk.wantY / len).toBeCloseTo((700 - CY) / dist(LINE_X, CY, 60, 700), 6);
+  });
+  it('rival owner inside small area, a mate closer: the keeper stays on the line', () => {
+    const w = world();
+    givePossession(w.ball, w.players[10], 0);
+    w.players[10].x = 60; w.players[10].y = 700;
+    w.ball.x = 60; w.ball.y = 700;
+    at(w.players[3], 75, 720);                               // own mate, closer to the ball than the keeper
+    const gk = at(w.players[0], LINE_X, CY);
+    keeperStep(gk, w.players, w.ball, 1, PITCH, 0);
+    expect(gk.wantX).toBe(0);                                // never leaves the line for it
+  });
+  it('rival owner inside the big area (outside the small area), keeper is the closest of his team: comes out', () => {
+    const w = world();
+    givePossession(w.ball, w.players[10], 0);
+    w.players[10].x = 200; w.players[10].y = 700;
+    w.ball.x = 200; w.ball.y = 700;
+    expect(isInsideSmallArea(PITCH, 0, 200, 700)).toBe(false);
+    expect(isInsideBigArea(PITCH, 0, 200, 700)).toBe(true);
+    for (let i = 1; i <= 8; i++) at(w.players[i], 900, 100 + i * 100);
+    const gk = at(w.players[0], LINE_X, CY);
+    keeperStep(gk, w.players, w.ball, 1, PITCH, 0);
+    const len = Math.sqrt(gk.wantX ** 2 + gk.wantY ** 2);
+    expect(gk.wantX / len).toBeCloseTo((200 - LINE_X) / dist(LINE_X, CY, 200, 700), 6);
+    expect(gk.wantY / len).toBeCloseTo((700 - CY) / dist(LINE_X, CY, 200, 700), 6);
+  });
+  it('rival owner inside the big area, an own outfield player closer: the keeper stays on the line', () => {
+    const w = world();
+    givePossession(w.ball, w.players[10], 0);
+    w.players[10].x = 200; w.players[10].y = 700;
+    w.ball.x = 200; w.ball.y = 700;
+    at(w.players[3], 210, 710);                              // own mate, much closer to the ball than the keeper
+    const gk = at(w.players[0], LINE_X, CY);
+    keeperStep(gk, w.players, w.ball, 1, PITCH, 0);
+    expect(gk.wantX).toBe(0);
+  });
+  it('loose ball inside the big area but outside the small area: stays on the line (unchanged 1b behaviour)', () => {
+    const w = world();
+    freeBall(w.ball, 200, 700);
+    expect(isInsideSmallArea(PITCH, 0, 200, 700)).toBe(false);
+    expect(isInsideBigArea(PITCH, 0, 200, 700)).toBe(true);
+    for (let i = 1; i <= 8; i++) at(w.players[i], 900, 100 + i * 100);
+    const gk = at(w.players[0], LINE_X, CY);
+    keeperStep(gk, w.players, w.ball, 1, PITCH, 0);
+    expect(gk.wantX).toBe(0);
+  });
+  it('rival owner outside the big area: the keeper stays on the line', () => {
+    const w = world();
+    givePossession(w.ball, w.players[10], 0);
+    w.players[10].x = 500; w.players[10].y = 700;
+    w.ball.x = 500; w.ball.y = 700;
+    expect(isInsideBigArea(PITCH, 0, 500, 700)).toBe(false);
+    for (let i = 1; i <= 8; i++) at(w.players[i], 900, 100 + i * 100);
+    const gk = at(w.players[0], LINE_X, CY);
+    keeperStep(gk, w.players, w.ball, 1, PITCH, 0);
+    expect(gk.wantX).toBe(0);
+  });
+  it('a teammate owns the ball inside the small area, keeper closest of his team to it: never presses his own mate', () => {
+    const w = world();
+    givePossession(w.ball, w.players[3], 0);                 // own team (team 0)
+    w.players[3].x = 48; w.players[3].y = 655;               // teammate owner, farther from the ball than the keeper
+    w.ball.x = 30; w.ball.y = 655;
+    expect(isInsideSmallArea(PITCH, 0, 30, 655)).toBe(true);
+    for (let i = 1; i <= 8; i++) { if (i !== 3) at(w.players[i], 900, 100 + i * 100); }   // other mates, all far away
+    const gk = at(w.players[0], LINE_X, CY);
+    // Negative control (fix-B-findings.md #1): the keeper, not the owner, is the
+    // closest of his team to the ball, so `mateCloserToBall` alone would let him
+    // come out here -- only the `ownerTeam !== gk.team` guard stops him. A ball
+    // glued to its own-team owner (the old fixture) can never discriminate that
+    // guard, because the owner is then trivially the closest mate.
+    expect(dist(gk.x, gk.y, w.ball.x, w.ball.y)).toBeLessThan(dist(w.players[3].x, w.players[3].y, w.ball.x, w.ball.y));
+    keeperStep(gk, w.players, w.ball, 1, PITCH, 0);
+    expect(gk.wantX).toBe(0);
   });
 });
 
@@ -727,6 +816,7 @@ type CpuStats = {
   shots: number; shortPasses: number; longPasses: number; tacklesWon: number; stealsWon: number;
   catches: number; releases: number; strategies: Set<string>; invalid: number;
   keeperOutsideBox: number; keeperLeftLineOutsideSmallArea: number; keeperLeftLine: number;
+  keeperLeftLineWithoutPressReason: number;
 };
 type CpuMatch = { match: MatchState; recorded: [TeamInput, TeamInput][]; stats: CpuStats };
 
@@ -740,6 +830,30 @@ function keeperLineDist(m: MatchState, t: 0 | 1): number {
   return Math.abs(gk.x - lineX);
 }
 
+// Structural check (fix-B-findings.md #2): re-derives the G12-3 "come out" condition
+// from the pitch geometry, deliberately NOT by calling keeperStep/mateCloserToBall
+// from ai.ts -- so this can catch a regression in that production predicate instead
+// of trivially agreeing with it. Same two branches as keeperStep: small area (loose
+// or rival-owned, no closer mate) or big area (rival-owned one-on-one, no closer
+// own outfield player).
+function keeperWouldPressG12_3(m: MatchState, t: 0 | 1): boolean {
+  const gk = m.players[t * 9];
+  const side = m.attackDir[t] === 1 ? 0 : 1;
+  const { ball, players, stepCount } = m;
+  const ownerTeam = ball.owner === null ? null : players[ball.owner].team;
+  if (ownerTeam === gk.team) return false;
+  const inSmall = isInsideSmallArea(PITCH, side, ball.x, ball.y);
+  const inBig = isInsideBigArea(PITCH, side, ball.x, ball.y);
+  if (!inSmall && !(inBig && ownerTeam !== null)) return false;
+  const mine = dist(gk.x, gk.y, ball.x, ball.y);
+  for (let i = 0; i < players.length; i++) {
+    const q = players[i];
+    if (q.team !== gk.team || q.id === gk.id || isPlayerDown(q, stepCount)) continue;
+    if (dist(q.x, q.y, ball.x, ball.y) < mine) return false;
+  }
+  return true;
+}
+
 function playCpuMatch(seed: number, formationTable: readonly Formation[], fi: readonly [number, number], difficulty: readonly [number, number] = [8, 8], cap = CPU_CAP): CpuMatch {
   const profiles: [AiProfile, AiProfile] = [profileFor(TEAMS[0], difficulty[0]), profileFor(TEAMS[1], difficulty[1])];
   const match = createMatch([TEAMS[0], TEAMS[1]], formationTable, PITCH, profiles);
@@ -751,7 +865,7 @@ function playCpuMatch(seed: number, formationTable: readonly Formation[], fi: re
   const stats: CpuStats = {
     steps: 0, score: [0, 0], phases: new Set(), shots: 0, shortPasses: 0, longPasses: 0, tacklesWon: 0, stealsWon: 0,
     catches: 0, releases: 0, strategies: new Set(), invalid: 0,
-    keeperOutsideBox: 0, keeperLeftLineOutsideSmallArea: 0, keeperLeftLine: 0,
+    keeperOutsideBox: 0, keeperLeftLineOutsideSmallArea: 0, keeperLeftLine: 0, keeperLeftLineWithoutPressReason: 0,
   };
   const prevLine: [number, number] = [0, 0];
   let prevOpen = false;
@@ -767,6 +881,12 @@ function playCpuMatch(seed: number, formationTable: readonly Formation[], fi: re
     copyTeamInput(live[1], frame[1]);
     recorded.push(frame);
     const open = match.phase === 'play' || match.phase === 'golden-goal';
+    // Captured BEFORE stepMatch, on the exact state keeperStep sees this step
+    // (match.stepCount has not been incremented yet): this step's off-line move,
+    // if any, is driven by this snapshot, not by the post-step position below.
+    const pressed: [boolean, boolean] = open
+      ? [keeperWouldPressG12_3(match, 0), keeperWouldPressG12_3(match, 1)]
+      : [false, false];
     stepMatch(match, live, matchRng);
     stats.phases.add(match.phase);
     // Only a step that actually ran open play leaves fresh events: stepOpenPlay wipes
@@ -806,7 +926,12 @@ function playCpuMatch(seed: number, formationTable: readonly Formation[], fi: re
         stats.keeperLeftLine++;
         const gk = match.players[t * 9];
         const side = match.attackDir[t] === 1 ? 0 : 1;
-        if (!isInsideSmallArea(PITCH, side, gk.x, gk.y)) stats.keeperLeftLineOutsideSmallArea++;
+        if (!isInsideSmallArea(PITCH, side, gk.x, gk.y)) {
+          stats.keeperLeftLineOutsideSmallArea++;
+          // fix-B-findings.md #2: every big-area off-line move must have a G12-3
+          // press reason (recomputed independently above, pre-step); asserted 0.
+          if (!pressed[t]) stats.keeperLeftLineWithoutPressReason++;
+        }
       }
       prevLine[t] = off;
     }
@@ -866,9 +991,15 @@ describe('CPU vs CPU: a recorded, deterministic full match that exercises the wh
   it('(a) never produced an invalid TeamInput in the whole match', () => {
     expect(game.stats.invalid).toBe(0);
   });
-  it('(c) the keepers never left their box, and only moved off their line inside the small area', () => {
+  it('(c) the keepers never left their box (G12-3: off-line moves can now also be a big-area press)', () => {
     expect(game.stats.keeperOutsideBox).toBe(0);
-    expect(game.stats.keeperLeftLineOutsideSmallArea).toBe(0);
+    // G12-3 (re-recorded, old value 0): the keeper now legitimately leaves the small
+    // area to press a rival one-on-one inside the big area; the invariant that matters
+    // is keeperOutsideBox above, asserted unchanged at 0.
+    expect(game.stats.keeperLeftLineOutsideSmallArea).toBe(69);
+    // fix-B-findings.md #2: the successor structural property -- every one of those
+    // 69 big-area off-line moves has an independently-recomputed G12-3 press reason.
+    expect(game.stats.keeperLeftLineWithoutPressReason).toBe(0);
     // keeperLeftLine is reported, not asserted: whether a loose ball reaches a small
     // area in this seed is a measurement (probe P3 of the closing checks it over 20 seeds).
   });
@@ -885,6 +1016,8 @@ describe('CPU vs CPU: a recorded, deterministic full match that exercises the wh
       const g = playCpuMatch(seed, FORMATIONS, [0, 0], [8, 8], 900);
       expect(g.stats.invalid).toBe(0);
       expect(g.stats.keeperOutsideBox).toBe(0);
+      // fix-B-findings.md #2: same successor structural property, over 12 more seeds.
+      expect(g.stats.keeperLeftLineWithoutPressReason).toBe(0);
     }
   });
   it('(b, end to end) level 8 vs level 1 over twelve seeds: the harder side scores at least as many goals in total', () => {
@@ -905,13 +1038,19 @@ describe('CPU vs CPU: a recorded, deterministic full match that exercises the wh
 
 describe('CPU vs CPU with every published formation (Task 7): the AI works with all three, not only the 3-3-2', () => {
   const PAIRS: readonly (readonly [number, number])[] = [[1, 1], [2, 2], [0, 2], [1, 0]];
+  // Per-pair counts for seed 31 (measured once, G12-3 probe): only 3-2-3 vs 3-2-3 and
+  // 3-2-3 vs 3-3-2 ever put a rival one-on-one inside this match's big area; the other
+  // two pairs never do, so their count is still the pre-G12-3 value of 0.
+  const EXPECTED_OUTSIDE_SMALL_AREA: Record<string, number> = { '1-1': 19, '1-0': 36 };
   for (const pair of PAIRS) {
     it(`${FORMATIONS[pair[0]].id} vs ${FORMATIONS[pair[1]].id}: ends, plays the whole game, replays identically`, () => {
       const g = playCpuMatch(31, FORMATIONS, pair);
       expect(g.match.phase).toBe('over');
       expect(g.stats.invalid).toBe(0);
       expect(g.stats.keeperOutsideBox).toBe(0);
-      expect(g.stats.keeperLeftLineOutsideSmallArea).toBe(0);
+      // G12-3 (re-recorded, old value 0 for every pair): the keeper now legitimately
+      // presses a rival one-on-one inside the big area, outside the small area.
+      expect(g.stats.keeperLeftLineOutsideSmallArea).toBe(EXPECTED_OUTSIDE_SMALL_AREA[`${pair[0]}-${pair[1]}`] ?? 0);
       expect(g.stats.shots + g.stats.shortPasses + g.stats.longPasses).toBeGreaterThanOrEqual(5);
       // The brief names these `tackles`/`steals`; CpuStats (Task 6b) calls the
       // outcome counters `tacklesWon`/`stealsWon` -- attempts are not counted at all.

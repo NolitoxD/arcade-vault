@@ -14,7 +14,7 @@ import { PITCH } from './football-logic/pitch';
 import { PLAYER_RADIUS, isPlayerDown, isSprinting, type PlayerState } from './football-logic/players';
 import { createRng, type Rng } from './football-logic/rng';
 import { SHOOTOUT_RESOLVE_STEPS } from './football-logic/set-pieces';
-import { FORMATIONS, TEAMS, teamById, type Kit, type Strategy, type TeamDef } from './football-logic/teams';
+import { FORMATIONS, TEAM_SIZE, TEAMS, teamById, type Kit, type Strategy, type TeamDef } from './football-logic/teams';
 import {
   cpuMatchSeed, currentDifficulty, humanPairIndex, isStillIn, pairAwayId, pairCount, pairHomeId, pairResult, roundLabel,
 } from './football-logic/world-cup';
@@ -129,6 +129,11 @@ const MINIMAP_FRAME = 'rgba(255,255,255,0.6)';
 const CAPTION_BG = 'rgba(0,0,0,0.65)';
 const BLOCKED_BG = 'rgba(0,0,0,0.78)';
 const PENALTY_MARK = 'rgba(255,255,255,0.8)';
+// G12-1: the goalkeeper is reserved out of the sixteen teams' kit space entirely, so
+// it never coincides with either side's colours -- fluor green body, black
+// ring/collar/head trim, in EVERY mode (training statues and shootout included).
+const GK_KIT_PRIMARY = '#39ff14';
+const GK_KIT_SECONDARY = '#000000';
 
 // ── Layout of the canvas overlays ─────────────────────────────────────────────
 const HUD_H = 44;
@@ -934,7 +939,9 @@ function VaultWorldCupGame({
 
       // A player on the ground is drawn flat: it is a whole second of the match and
       // the player has to be able to see why nothing responds.
-      ctx.fillStyle = p.role === 'gk' ? kit.secondary : kit.primary;
+      // G12-1: the goalkeeper ALWAYS gets the reserved kit, never the resolved match
+      // kit swapped -- this is what the diving capsule above also paints with.
+      ctx.fillStyle = p.role === 'gk' ? GK_KIT_PRIMARY : kit.primary;
       if (diving) {
         divePose(x, y, gestures.dirX[p.id], gestures.dirY[p.id], PLAYER_RADIUS, diveReach(gesture), dive);
         ctx.beginPath();
@@ -961,7 +968,7 @@ function VaultWorldCupGame({
       // one player who is never controllable is unmistakable. A diving keeper has no
       // round body to trim -- its own outline is already the silhouette.
       if (!diving) {
-        ctx.strokeStyle = p.role === 'gk' ? kit.primary : kit.secondary;
+        ctx.strokeStyle = p.role === 'gk' ? GK_KIT_SECONDARY : kit.secondary;
         ctx.lineWidth = p.role === 'gk' ? 3 : 2;
         ctx.beginPath();
         ctx.arc(x, y, PLAYER_RADIUS - 1, 0, Math.PI * 2);
@@ -975,7 +982,7 @@ function VaultWorldCupGame({
       // ground and a keeper mid-dive.
       if (!down && !diving) {
         playerPose(x, y, p.facingX, p.facingY, PLAYER_RADIUS, pose);
-        ctx.strokeStyle = p.role === 'gk' ? kit.primary : kit.secondary;
+        ctx.strokeStyle = p.role === 'gk' ? GK_KIT_SECONDARY : kit.secondary;
         ctx.lineWidth = SHOULDER_WIDTH;
         ctx.lineCap = 'round';
         ctx.beginPath();
@@ -1100,6 +1107,19 @@ function VaultWorldCupGame({
       ctx.stroke();
     }
 
+    // G12-2: the direction indicator itself, shared by the set piece and the
+    // keeper's own hold (drawKeeperAim below) so the two stay pixel-identical
+    // without duplicating the block. Primitives only, (dirX, dirY) already a unit
+    // vector -- no Vec2, no allocation.
+    function drawAimIndicator(ax: number, ay: number, dirX: number, dirY: number): void {
+      ctx.strokeStyle = HUD_ACCENT;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(ax, ay);
+      ctx.lineTo(ax + dirX * 70, ay + dirY * 70);
+      ctx.stroke();
+    }
+
     // The set piece: the five-second countdown and the direction the d-pad is aiming.
     // Gate 4 of the stage B report is paid here -- the hint says the buttons do
     // nothing during the countdown, because stepSetPiece only reads the d-pad.
@@ -1109,12 +1129,7 @@ function VaultWorldCupGame({
       if (sp === null) return;
       const x = toScreenX(cam, sp.x);
       const y = toScreenY(cam, sp.y);
-      ctx.strokeStyle = HUD_ACCENT;
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.moveTo(x, y);
-      ctx.lineTo(x + sp.dirX * 70, y + sp.dirY * 70);
-      ctx.stroke();
+      drawAimIndicator(x, y, sp.dirX, sp.dirY);
       ctx.fillStyle = HUD_ACCENT;
       ctx.font = FONT_COUNTDOWN;
       ctx.textAlign = 'center';
@@ -1128,6 +1143,25 @@ function VaultWorldCupGame({
         ctx.arc(x, y + sp.side * 40, 10, 0, Math.PI * 2);
         ctx.stroke();
       }
+    }
+
+    // G12-2: the same indicator while a HUMAN team's own keeper holds the ball in
+    // live play, anchored on him and following that team's current pad direction --
+    // the very input applyKeeperButtons (actions.ts) normalizes into the aim of the
+    // short/long pass on a button press. keeperHoldTeam already carries both guards
+    // (run.human[team], ball.owner is that team's gk -- see runStep point 6); the
+    // isOpenPlay check here rules out a goal kick or a shootout penalty, which draw
+    // their own indicator through drawSetPiece. No countdown text: that lives in
+    // drawHud's own hint. A neutral stick (dx = dy = 0) draws nothing, same as a set
+    // piece never sees the zero vector.
+    function drawKeeperAim(): void {
+      const match = run.match;
+      if (keeperHoldTeam === -1 || !isOpenPlay(match.phase)) return;
+      const input = run.inputs[keeperHoldTeam];
+      if (input.dx === 0 && input.dy === 0) return;
+      const len = Math.sqrt(input.dx * input.dx + input.dy * input.dy);
+      const gk = match.players[keeperHoldTeam * TEAM_SIZE];
+      drawAimIndicator(toScreenX(cam, gk.x), toScreenY(cam, gk.y), input.dx / len, input.dy / len);
     }
 
     function drawMinimap(): void {
@@ -1511,6 +1545,7 @@ function VaultWorldCupGame({
       drawPlayers();
       drawBall();
       drawSetPiece();
+      drawKeeperAim();
       drawMinimap();
       drawHud();
       drawCaption();

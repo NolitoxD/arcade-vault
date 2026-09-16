@@ -265,8 +265,8 @@ sale recto. Sin error angular en el humano: el error es cosa del perfil de la CP
 **El portero** — siempre IA, para los dos equipos:
 
 1. Se mueve sobre una línea a 25 u de su portería siguiendo al balón en el eje corto, cerrando el
-   ángulo balón→centro. **Sale solo dentro del área pequeña** a por balón suelto sin compañero más
-   cerca, y vuelve al despejar. **Su posición se recorta al área grande por invariante**: nunca
+   ángulo balón→centro. Salidas: **G12-3 (16-sep)** — dentro del área pequeña a por balón suelto o en pies rivales sin compañero más
+   cerca; hasta el área grande solo en mano a mano (poseedor rival dentro y ningún jugador de campo propio más cerca); vuelve al despejar. **Su posición se recorta al área grande por invariante**: nunca
    fuera, ni por física.
 2. **Atajada**: balón a < 40 u lo ataja si `rng() < catchChance`; un chut cargado al máximo resta
    0,15. Si ataja, **se queda el balón y el juego sigue vivo** (no es pieza de saque: entra en la
@@ -839,3 +839,17 @@ La v1 es el MVP; la v1.5 es el producto fino. Lo apuntado en el grill del 04-sep
   - **G11-5 · Minimapa**: ya está dentro del campo y semitransparente; se valida en el QA jugado, sin tarea de código
     salvo feedback explícito.
   - **G11-6 · Calendario**: plan + pre-vuelo el 15-sep; ejecución SDD el 16-sep; QA jugado de Paco después.
+
+- **QA jugado del paso 11 (Paco, 2026-09-16): «jugabilidad perfecta».** Ola de cierre de la v1 (sin nuevo QA, decisiones G12):
+  - **G12-1 · Color reservado de portero**: los 16 porteros visten verde flúor `#39ff14` con ribete negro, igual para todos,
+    independiente de la equipación (solo pantalla; el minimapa mantiene el color del equipo).
+  - **G12-2 · Flechas del saque del portero**: mientras el portero del equipo humano retiene el balón (2 s) se dibuja el mismo
+    indicador de dirección que en los saques de estrategia, siguiendo la cruceta, para poder dirigir el saque.
+  - **G12-3 · El portero sale a cortar** (motor, `keeperStep`): dentro del **área pequeña** sale siempre a por el balón (suelto o
+    en pies rivales) si ningún compañero está más cerca; hasta el **área grande** solo en mano a mano (poseedor rival dentro del
+    área y ningún jugador de campo propio más cerca del balón que él); **nunca fuera del área grande** (invariante 9b). Sustituye
+    a «Sale solo dentro del área pequeña a por balón suelto». Se regraban los partidos deterministas afectados y se repasan sondas.
+  - **v1.5 (arranca 17-sep, 2-3 días, sin prisa):** evolución gráfica de jugadores (sprites pixel-art cenitales estilo captura de
+    referencia de Paco, 16-sep) y **césped a rayas**; orientación se mantiene de izquierda a derecha; **cambio manual de jugador
+    con L cuando se defiende** (L = sprint solo con balón / atacando); red que ondula; teclado alternativo Q/A/O/P; esquemas
+    visuales de formación; 4 selecciones más; posible `SHOT_VZ_MAX`/gravedad con regrabado; exportar `GRAVITY` (M14).

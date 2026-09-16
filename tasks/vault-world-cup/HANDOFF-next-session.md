@@ -1,6 +1,35 @@
-# HANDOFF — VAULT WORLD CUP · PASO 11 CERRADO EN CÓDIGO (sin commitear) · QA de Paco pendiente · actualizado 2026-09-16
+# HANDOFF — VAULT WORLD CUP · v1 CERRADA EN CÓDIGO (ola G12 sin commitear) · siguiente: spike/plan v1.5 · actualizado 2026-09-16
 
-Prompt para retomar: `/retomar tasks/vault-world-cup/HANDOFF-next-session.md`.
+Prompt para retomar: `/retomar tasks/vault-world-cup/HANDOFF-next-session.md` → arrancar la v1.5 (brief con subagente → grill corto → writing-plans → pre-vuelo → SDD; 2-3 días, sin prisa).
+
+## -8. 16-sep tarde: QA del paso 11 «jugabilidad perfecta» (commit `4405fbc`) + ola de cierre de v1 (G12-1..3) — CERRADA en código
+
+**Estado:** HEAD `4405fbc`; working tree (staged por un implementador, sin commit): `VaultWorldCupGame.tsx`, `football-logic/ai.ts`,
+`football-logic/ai.test.ts`, `specs/31-vault-world-cup.md` (G12 + lista v1.5 + línea 268 apuntando a G12-3). **1268 tests / 75
+ficheros**, `tsc`/eslint limpios. Ledger, briefs, reports, paquetes y `probe-gk.txt` en `.superpowers/sdd/2026-09-16-vault-world-cup-v1-close/`.
+Revisiones: A (sonnet) limpia; B (opus) 1 Important (test no discriminante) + minors → fix round → re-review limpia.
+
+**Lo que hay:** G12-1 porteros en verde flúor `#39ff14` + ribete negro (todas las poses; minimapa mantiene color de equipo);
+G12-2 indicador de dirección del saque del portero humano en juego abierto (`drawAimIndicator` compartido con los saques de estrategia;
+lee `run.inputs[team].dx/dy`, el mismo origen que `applyKeeperButtons`; sin dirección → nada); G12-3 `keeperStep`: sale en el área
+pequeña a balón suelto o en pies rivales sin compañero más cerca, hasta el área grande solo en mano a mano, nunca fuera (invariante
+9b); 7 tests nuevos + contador `keeperLeftLineWithoutPressReason` = 0 en partido grabado y fuzz de 12 semillas; regrabados 3 valores
+(`keeperLeftLineOutsideSmallArea` 0→69/19/36); sonda 40 partidos: 0 errores, 40 ganadores, 0 violaciones de área, presión ≈ 1 % de pasos.
+
+**Commit propuesto (Paco, sin nuevo QA por decisión suya):**
+`feat(world-cup): v1 close-out — reserved keeper kit, goal-kick aim indicator, keeper comes out inside the box (G12-1..3)`
+
+**Diferido a v1.5 / QA:** posible oscilación línea↔balón del portero cuando un rival regatea por el borde del área grande (sin
+histéresis; la sonda no lo mide) → si molesta, histéresis de umbral, no `GK_SPEED`; empate exacto de distancia → sale el portero;
+saque con cruceta neutra sale recto sin indicador (por diseño); `lineWidth` explícito en `drawPitch`; `GRAVITY` exportada (M14).
+
+**v1.5 (lista en el spec, último bullet):** evolución gráfica (sprites pixel-art cenitales estilo captura de referencia de Paco
+16-sep, césped a rayas; orientación izquierda→derecha se mantiene), cambio manual de jugador con L al defender, red que ondula,
+teclado alternativo Q/A/O/P, esquemas visuales de formación, 4 selecciones más, posible `SHOT_VZ_MAX`/gravedad con regrabado.
+Arranque: brief de diseño con subagente (leer spec §v1.5 + `VaultWorldCupGame.tsx` drawPlayer/drawPitch + `keyboard.ts` +
+`ai.ts` chasers para el cambio manual) → grill corto → plan → pre-vuelo → SDD. Un paso al día; commits solo Paco; nunca `next dev`.
+Aparte: `.mcp.json` del repo con `project_ref` ajeno (`hqazqbqjobccvrftweef`; real `hppzpkurlwqwzmigiuzq`).
+
 
 ## -7. 16-sep: paso 11 ejecutado (SDD 11-1..11-6) — CERRADO en código, QA jugado pendiente
 
