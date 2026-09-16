@@ -19,6 +19,7 @@ import {
   cpuMatchSeed, currentDifficulty, humanPairIndex, isStillIn, pairAwayId, pairCount, pairHomeId, pairResult, roundLabel,
 } from './football-logic/world-cup';
 
+import { ballLift, ballScale, ballShadowFade, ballShadowScale } from './football-screen/ball-view';
 import {
   CAMERA_LAG, VIEW_H, VIEW_W, cameraTargetX, cameraTargetY, centreCamera, createCamera,
   followCamera, isOnScreen, toScreenX, toScreenY, type Camera,
@@ -38,6 +39,8 @@ import {
   MODE_CARD_W, SELECT_HINT_Y, TEAM_CARD_H, TEAM_CARD_W, VICTORY_FIGURE_Y, VICTORY_HINT_Y, VICTORY_TEAM_Y, VICTORY_TITLE_Y,
   bracketRowY, drawColX, drawRowY, modeCardY, teamCardX, teamCardY,
 } from './football-screen/flow-layout';
+import { GESTURE_IDLE, beginGkCatchGestures, createGestureTimers, diveReach, gestureProgress, resetGestures } from './football-screen/gestures';
+import { GOAL_MOUTH_DEPTH, NET_CELL, netLineCount } from './football-screen/goal-net';
 import {
   SHOT_CHARGE_SEGMENTS, buttonsIdle, chargeSegments, clockText, countdownSeconds, cursorPlayerId,
   halfLabel, keeperHoldsBall, shootoutRoundLabel, smallNumber, sprintBarFraction,
@@ -53,6 +56,7 @@ import {
   MINIMAP_H, MINIMAP_PAD, MINIMAP_W, createMinimapRect, minimapViewRect, minimapX, minimapY,
 } from './football-screen/minimap';
 import { FX_COLORS, createParticlePool, fxSeedFor, startFx, stepFx } from './football-screen/particles';
+import { createDivePose, createPlayerPose, divePose, playerPose } from './football-screen/player-pose';
 import {
   ambienceDue, captionSfxOnEdge, createAmbienceMarks, goalCrowdDue, goalNetDue, halfEndWhistleDue,
   shortPassFiredThisStep, shotFiredThisStep, victoryChantGain,
@@ -98,6 +102,8 @@ const GRASS_LIGHT = '#247a39';
 const STRIPE_WIDTH = 160;
 const LINE = 'rgba(255,255,255,0.75)';
 const GOAL_MOUTH = 'rgba(255,255,255,0.25)';
+const NET_LINE = 'rgba(255,255,255,0.32)';
+const GOAL_FRAME = 'rgba(255,255,255,0.9)';
 const FACING_STICK = 'rgba(0,0,0,0.55)';
 const HEADS_DOWN = 'rgba(0,0,0,0.5)';
 const SPRINT_RING = 'rgba(255,255,255,0.5)';
@@ -114,6 +120,10 @@ const CURSOR_COLOR = '#ffcf3a';
 const BALL_COLOR = '#ffffff';
 const BALL_TRIM = 'rgba(0,0,0,0.4)';
 const SHADOW = 'rgba(0,0,0,0.35)';
+// G11-1: the head has to read on top of all sixteen teams' kits, so it is a fixed
+// tone with a light trim, not a team colour.
+const HEAD_COLOR = '#23201d';
+const HEAD_TRIM = 'rgba(255,255,255,0.55)';
 const MINIMAP_BG = 'rgba(0,0,0,0.6)';
 const MINIMAP_FRAME = 'rgba(255,255,255,0.6)';
 const CAPTION_BG = 'rgba(0,0,0,0.65)';
@@ -137,6 +147,8 @@ const NOTCH_H = 5;
 const NOTCH_GAP = 2;
 const NOTCH_TOTAL_W = SHOT_CHARGE_SEGMENTS * NOTCH_W + (SHOT_CHARGE_SEGMENTS - 1) * NOTCH_GAP;
 const NOTCH_DY = -24;
+// G11-1: the width of the shoulder stroke, drawn perpendicular to facing.
+const SHOULDER_WIDTH = 4;
 // The minimap's corner and dot sizes: Task 8-2 left both to this file on purpose (its
 // review, note under Issues), so they are named here rather than left as literals in
 // drawMinimap. Bottom-right, because the HUD owns the top strip and the formation
@@ -148,7 +160,6 @@ const MINIMAP_Y = VIEW_H - MINIMAP_H - MINIMAP_PAD;
 const MINIMAP_DOT_GK = 3;
 const MINIMAP_DOT_PLAYER = 2;
 const MINIMAP_DOT_BALL = 2;
-const GOAL_MOUTH_DEPTH = 30;
 const SPOT_RADIUS = 4;
 const BALL_RADIUS = 6;
 // How far off screen the ball is still drawn: its own radius plus the height it can
@@ -311,6 +322,10 @@ function VaultWorldCupGame({
     const captions = createCaptionState();
     const watch = createMatchWatch();
     const viewRect = createMinimapRect();
+    // Criterion 20: created ONCE, written in place by drawPlayer every frame.
+    const gestures = createGestureTimers();
+    const pose = createPlayerPose();
+    const dive = createDivePose();
 
     const ambienceMarks = createAmbienceMarks();
     let ambienceCount = 0;
@@ -431,6 +446,7 @@ function VaultWorldCupGame({
       centreCamera(cam, run.match.ball.x, run.match.ball.y, PITCH);
       resetCaptionState(captions);
       resetMatchWatch(watch);
+      resetGestures(gestures);
       ambienceCount = planHalfAmbience(seedForMatch, 1, ambienceMarks);
       ambienceIndex = 0;
       ambienceHalf = 1;
@@ -617,6 +633,12 @@ function VaultWorldCupGame({
     // the second step of a frame on (a single tap must not fire five shots).
     function runStep(first: boolean): void {
       const match = run.match;
+      // Pre-flight finding: the 'gk-catch' event's own x/y are USELESS for direction
+      // (ai.ts's keeperCatch calls givePossession, which snaps ball.x/y to the keeper's
+      // own facing, BEFORE stamping the event -- see gestures.ts's header comment). The
+      // direction has to be read HERE, before this step's stepMatchRun runs it over.
+      const prevBallX = match.ball.x;
+      const prevBallY = match.ball.y;
       if (run.human[0]) padToTeamInput(pads[0], first, run.inputs[0]);
       if (run.human[1]) padToTeamInput(pads[1], first, run.inputs[1]);
       stepMatchRun(run);
@@ -626,6 +648,12 @@ function VaultWorldCupGame({
       // 1b. The short pass getting away (G10-2, QA 11-sep). The long pass has no row
       //     in the spec's audio table and stays silent in the v1.
       if (shortPassFiredThisStep(match)) sfxVaultWorldCup.play('pass');
+      // 1c. G11-2: the keeper's dive. A SCREEN timer started by the engine's own
+      //     'gk-catch' event -- the engine knows nothing about the gesture, and the
+      //     sweep is the same 18-slot scan points 1 and 1b do for the sound. The
+      //     direction comes from prevBallX/prevBallY, captured above, not from the
+      //     event itself.
+      beginGkCatchGestures(match, gestures, prevBallX, prevBallY);
       // 2. The first link of the goal chain, the moment the ball crosses the line.
       //    goalNetDue reads the EDGE of scratch.call against `watch`, which still
       //    holds the previous step here (updateWatch runs at point 7): the call is a
@@ -833,14 +861,37 @@ function VaultWorldCupGame({
         ctx.beginPath();
         ctx.arc(toScreenX(cam, goalX + dir * p.penaltySpotDist), toScreenY(cam, midY), SPOT_RADIUS, 0, Math.PI * 2);
         ctx.fill();
-        // The goal itself: a white mouth 30 units deep behind the line.
+        // The goal itself: a white mouth 30 units deep behind the line, now with its
+        // frame and its net. G11-4: the net is a STATIC grid (the one that ripples is
+        // v1.5) and it is drawn HERE, in drawPitch, on purpose -- drawPlayers and
+        // drawBall run after it, so the ball the engine leaves frozen inside the mouth
+        // for the whole celebration is drawn ON TOP of the mesh instead of behind it.
+        const mouthX = toScreenX(cam, goalX + (dir === 1 ? -GOAL_MOUTH_DEPTH : 0));
+        const mouthY = toScreenY(cam, midY - p.goalWidth / 2);
         ctx.fillStyle = GOAL_MOUTH;
-        ctx.fillRect(
-          toScreenX(cam, goalX + (dir === 1 ? -GOAL_MOUTH_DEPTH : 0)),
-          toScreenY(cam, midY - p.goalWidth / 2),
-          GOAL_MOUTH_DEPTH,
-          p.goalWidth,
-        );
+        ctx.fillRect(mouthX, mouthY, GOAL_MOUTH_DEPTH, p.goalWidth);
+        // One path for the whole mesh: 16 line segments, one stroke, no allocation.
+        ctx.strokeStyle = NET_LINE;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        const across = netLineCount(p.goalWidth, NET_CELL);
+        for (let i = 1; i <= across; i++) {
+          const lineY = mouthY + i * NET_CELL;
+          ctx.moveTo(mouthX, lineY);
+          ctx.lineTo(mouthX + GOAL_MOUTH_DEPTH, lineY);
+        }
+        const deep = netLineCount(GOAL_MOUTH_DEPTH, NET_CELL);
+        for (let i = 1; i <= deep; i++) {
+          const lineX = mouthX + i * NET_CELL;
+          ctx.moveTo(lineX, mouthY);
+          ctx.lineTo(lineX, mouthY + p.goalWidth);
+        }
+        ctx.stroke();
+        // The posts and the back of the net: the outline that turns the mouth into a
+        // box the ball can be INSIDE.
+        ctx.strokeStyle = GOAL_FRAME;
+        ctx.lineWidth = 3;
+        ctx.strokeRect(mouthX, mouthY, GOAL_MOUTH_DEPTH, p.goalWidth);
       }
     }
 
@@ -875,21 +926,71 @@ function VaultWorldCupGame({
       ctx.ellipse(x, y + PLAYER_RADIUS * 0.6, PLAYER_RADIUS, PLAYER_RADIUS * 0.45, 0, 0, Math.PI * 2);
       ctx.fill();
 
+      // G11-2: a keeper that has just saved is drawn STRETCHED along the direction it
+      // dived (keeper -> ball at the moment of the catch, stored by the gesture). The
+      // timer is screen state; the engine's keeper never left its feet.
+      const gesture = p.role === 'gk' ? gestureProgress(gestures, p.id, match.stepCount) : GESTURE_IDLE;
+      const diving = gesture !== GESTURE_IDLE;
+
       // A player on the ground is drawn flat: it is a whole second of the match and
       // the player has to be able to see why nothing responds.
       ctx.fillStyle = p.role === 'gk' ? kit.secondary : kit.primary;
-      ctx.beginPath();
-      if (down) ctx.ellipse(x, y, PLAYER_RADIUS * 1.3, PLAYER_RADIUS * 0.55, 0, 0, Math.PI * 2);
-      else ctx.arc(x, y, PLAYER_RADIUS, 0, Math.PI * 2);
-      ctx.fill();
+      if (diving) {
+        divePose(x, y, gestures.dirX[p.id], gestures.dirY[p.id], PLAYER_RADIUS, diveReach(gesture), dive);
+        ctx.beginPath();
+        ctx.moveTo(dive.frontX + dive.sideX, dive.frontY + dive.sideY);
+        ctx.lineTo(dive.backX + dive.sideX, dive.backY + dive.sideY);
+        ctx.lineTo(dive.backX - dive.sideX, dive.backY - dive.sideY);
+        ctx.lineTo(dive.frontX - dive.sideX, dive.frontY - dive.sideY);
+        ctx.closePath();
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(dive.frontX, dive.frontY, dive.endR, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(dive.backX, dive.backY, dive.endR, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        ctx.beginPath();
+        if (down) ctx.ellipse(x, y, PLAYER_RADIUS * 1.3, PLAYER_RADIUS * 0.55, 0, 0, Math.PI * 2);
+        else ctx.arc(x, y, PLAYER_RADIUS, 0, Math.PI * 2);
+        ctx.fill();
+      }
 
       // The trim: shirt collar for the outfield, a full ring for the keeper, so the
-      // one player who is never controllable is unmistakable.
-      ctx.strokeStyle = p.role === 'gk' ? kit.primary : kit.secondary;
-      ctx.lineWidth = p.role === 'gk' ? 3 : 2;
-      ctx.beginPath();
-      ctx.arc(x, y, PLAYER_RADIUS - 1, 0, Math.PI * 2);
-      ctx.stroke();
+      // one player who is never controllable is unmistakable. A diving keeper has no
+      // round body to trim -- its own outline is already the silhouette.
+      if (!diving) {
+        ctx.strokeStyle = p.role === 'gk' ? kit.primary : kit.secondary;
+        ctx.lineWidth = p.role === 'gk' ? 3 : 2;
+        ctx.beginPath();
+        ctx.arc(x, y, PLAYER_RADIUS - 1, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      // G11-1: head and shoulders on top of the body, oriented with the engine's own
+      // facing. Drawn for EVERY player -- the training statues and the parked fifteen
+      // of the shootout included, the grill is explicit that there is no new branch --
+      // and skipped only where there is no standing figure to draw: a player on the
+      // ground and a keeper mid-dive.
+      if (!down && !diving) {
+        playerPose(x, y, p.facingX, p.facingY, PLAYER_RADIUS, pose);
+        ctx.strokeStyle = p.role === 'gk' ? kit.primary : kit.secondary;
+        ctx.lineWidth = SHOULDER_WIDTH;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(pose.leftX, pose.leftY);
+        ctx.lineTo(pose.rightX, pose.rightY);
+        ctx.stroke();
+        ctx.lineCap = 'butt';
+        ctx.fillStyle = HEAD_COLOR;
+        ctx.beginPath();
+        ctx.arc(pose.headX, pose.headY, pose.headR, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = HEAD_TRIM;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
 
       // Facing: a short stick, so the pass cone and the slide direction are readable.
       if (!down && !parked) {
@@ -979,14 +1080,20 @@ function VaultWorldCupGame({
       const x = toScreenX(cam, b.x);
       const y = toScreenY(cam, b.y);
       // The shadow stays on the ground and the ball rises with z: it is the only cue
-      // that a long pass is going over the defenders' heads.
+      // that a long pass is going over the defenders' heads. G11-3 adds the two the
+      // 11-sep QA asked for, with NO change to SHOT_VZ_MAX or the gravity: the shadow
+      // SHRINKS and FADES as the ball climbs, and the ball itself GROWS. globalAlpha
+      // is a number, so the fade costs no 'rgba(...)' string per frame (criterion 20).
+      const shadow = ballShadowScale(b.z);
+      ctx.globalAlpha = ballShadowFade(b.z);
       ctx.fillStyle = SHADOW;
       ctx.beginPath();
-      ctx.ellipse(x, y, BALL_RADIUS, 3.5, 0, 0, Math.PI * 2);
+      ctx.ellipse(x, y, BALL_RADIUS * shadow, 3.5 * shadow, 0, 0, Math.PI * 2);
       ctx.fill();
+      ctx.globalAlpha = 1;
       ctx.fillStyle = BALL_COLOR;
       ctx.beginPath();
-      ctx.arc(x, y - b.z * 0.35, BALL_RADIUS, 0, Math.PI * 2);
+      ctx.arc(x, y - ballLift(b.z), BALL_RADIUS * ballScale(b.z), 0, Math.PI * 2);
       ctx.fill();
       ctx.strokeStyle = BALL_TRIM;
       ctx.lineWidth = 1;

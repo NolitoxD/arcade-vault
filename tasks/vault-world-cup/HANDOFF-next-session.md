@@ -1,6 +1,35 @@
-# HANDOFF — VAULT WORLD CUP · v1 QA JUGADO + ola de ajustes commiteada · PASO 11 PLANIFICADO, sin ejecutar · actualizado 2026-09-15
+# HANDOFF — VAULT WORLD CUP · PASO 11 CERRADO EN CÓDIGO (sin commitear) · QA de Paco pendiente · actualizado 2026-09-16
 
-Prompt para retomar: `/retomar tasks/vault-world-cup/HANDOFF-next-session.md` → ejecutar el paso 11 con `superpowers:subagent-driven-development`.
+Prompt para retomar: `/retomar tasks/vault-world-cup/HANDOFF-next-session.md`.
+
+## -7. 16-sep: paso 11 ejecutado (SDD 11-1..11-6) — CERRADO en código, QA jugado pendiente
+
+**Estado:** HEAD `73ddce2` (docs) · working tree con `components/games/VaultWorldCupGame.tsx` modificado + 9 ficheros nuevos en
+`components/games/football-screen/` (`ball-view`, `gestures`, `goal-net`, `player-pose` con sus tests, y `view-pipeline.test.ts`).
+**1261 tests / 75 ficheros** (objetivo exacto del plan), `tsc`/eslint limpios, motor intacto (`git diff --stat ab3372c --
+components/games/football-logic` vacío). Cinco tareas con revisión por tarea limpia (11-3 y la final con opus) + cierre 11-6.
+Ledger, briefs, reports, paquetes de revisión y **`qa-paco.md` (13 puntos)** en `.superpowers/sdd/2026-09-15-vault-world-cup-step-11/`.
+
+**Lo que hay:** jugador cenital (cabeza + hombros orientados por `facingX/facingY`, `player-pose.ts`), portero que se estira 35
+pasos desde `gk-catch` (`gestures.ts`, timers preasignados; dirección = balón un paso antes de la atajada, `prevBallX/Y` en
+`runStep`), balón con altura visible (`ball-view.ts`: escala hasta 1.6, sombra que encoge y se difumina, `globalAlpha` restaurado
+en `drawBall`), red rejilla estática + marco en `drawPitch` con el balón congelado dentro durante la celebración (`goal-net.ts`;
+el motor ya no mueve el balón en la fase `goal`), sonda headless de determinismo (3 partidos vs control). Minimapa sin cambios (G11-5).
+
+**Minors diferidos (revisión final):** `ctx.lineWidth = 3` explícito en `drawPitch` antes de las áreas de la 2.ª portería
+(hoy sin defecto visible); naming `leftX/leftY` = hombro derecho; `netLineCount` recalculado por frame (sin asignar);
+`DIVE_MIN_DIST` sin test. Todos a la ola post-QA o v1.5.
+
+**Siguiente, en orden:** (1) **QA jugado de Paco** con `qa-paco.md` — ojo a: portero que encoge al final del estirón (0.72 R),
+palito de dirección sobre el portero estirado (¿quitarlo?), altura del chut a tope (¿basta o motor aparte?), tanda con los 15
+aparcados mirando a direcciones dispares, VER x4 = estirón fugaz. (2) Triaje + UNA ola de fixes con revisión (incluir el
+`lineWidth`). (3) Commit de Paco: `feat(world-cup): step 11 visual wave — top-down players, diving keeper, visible shot height
+and goal net (G11-1..G11-4)`. (4) Después: spike v1.5 (red ondulante, teclado alternativo, esquemas de formación, 4 selecciones,
+posible `SHOT_VZ_MAX`/gravedad con regrabado). Petición al motor pendiente: exportar `GRAVITY` (M14). Aparte: `.mcp.json` del
+repo con `project_ref` ajeno.
+
+Reglas: commits solo Paco · nunca `next dev` · G9/G10/G11 no se relitigan · duda nueva → grill corto.
+
 
 ## -6. 15-sep: QA de la v1 + ola de ajustes (commit `ab3372c`) + diseño del paso 11 (plan + pre-vuelo, NO ejecutado)
 
