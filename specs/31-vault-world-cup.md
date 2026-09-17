@@ -790,7 +790,7 @@ La v1 es el MVP; la v1.5 es el producto fino. Lo apuntado en el grill del 04-sep
   formación en el selector; en la v1 basta un selector de texto (G9-5).
 - **Selecciones de la v1.5 (Paco, 2026-09-07):** máximo 20. Lista cerrada de Paco: las 16 de la v1 más
   **COLOMBIA, COREA DEL SUR, NORUEGA y EGIPTO**. En la v1.5 entran las cuatro con la red de invariantes
-  (`BANK_SIZE` 16 → 20) y el sorteo del Mundial elige 16 de 20.
+  (`BANK_SIZE` 16 → 20) y el sorteo del Mundial elige 16 de 20 (→ G15-7: Mundial de 16, humano + 15 de 19).
 
 ## Riesgos identificados
 
@@ -853,3 +853,62 @@ La v1 es el MVP; la v1.5 es el producto fino. Lo apuntado en el grill del 04-sep
     referencia de Paco, 16-sep) y **césped a rayas**; orientación se mantiene de izquierda a derecha; **cambio manual de jugador
     con L cuando se defiende** (L = sprint solo con balón / atacando); red que ondula; teclado alternativo Q/A/O/P; esquemas
     visuales de formación; 4 selecciones más; posible `SHOT_VZ_MAX`/gravedad con regrabado; exportar `GRAVITY` (M14).
+
+- **Grill de la v1.5 (Paco, 2026-09-17), decisiones G15** (brief en `.superpowers/sdd/2026-09-17-vault-world-cup-v1-5/design-brief.md`, referencia gráfica `references/vault-world-cup-tehkan.png`). Sustituyen al bullet «v1.5» de G12 y a «el sorteo elige 16 de 20» (ahora Mundial de 16):
+  - **G15-1 Alcance (Paco):** ENTRAN también los pendientes del spike v1.5 del spec (atributos por selección/jugador,
+    nombres y dorsales, postes/larguero con rebote+SFX, tarjetas). Mismo ritmo de un paso al día → la v1.5 se alarga
+    2-3 días más; asumido. Histéresis del portero: solo si el QA la pide. `SHOT_VZ_MAX`/gravedad: FUERA (solo se
+    exporta `GRAVITY`). (Confirmado al grillar G15-10..13.)
+  - **G15-2 Referencia (Paco):** confirmada = Tehkan World Cup, copiada a `references/vault-world-cup-tehkan.png`. Sprites
+    horneados por dirección (3 a mano N/NE/E + rotación/espejo = 8), estilo `KongGame.tsx`, 3 fotogramas carrera + quieto +
+    tumbado, paleta por partido; ~28-32 px en pantalla (radio físico intacto); obligatorio pelo, camiseta con kit, piernas
+    animadas, sombra mínima. Césped: DOS verdes (uno más fuerte/serio) en bandas tipo «corte de césped», como la captura.
+  - **G15-3 Capas (Paco):** sprite = carrera/quieto, tumbado propio, deslizamiento = carrera inclinada, estirada GK 2 fotogramas.
+    Se quedan vectoriales: cursor, muescas de carga, aro de sprint. SE QUITA el palito de dirección. SE BORRA `player-pose.ts`
+    + tests (salvo lo que la estirada necesite).
+  - **G15-4 Celebración (Paco):** única para todos los goles (gol de oro incluido; tanda = solo el lanzador). Solo pantalla:
+    equipo goleador corre hacia el goleador y abrazo en corro (sprite «abrazo» recoloreado por kit); rivales cabeza gacha.
+    `GOAL_PAUSE_SECONDS` 2 → **4** (constante del motor → REGRABADO de valores dependientes de pasos; verificar en plan).
+    Si en QA queda pobre → animación específica cargada al marcar (props: equipo goleador + colores del kit).
+  - **G15-5 Cambio manual (Paco):** L con el rival en posesión o balón suelto (no con tu portero ni en saques) → pasa al
+    siguiente compañero más cercano al balón (excluye el actual); pulsaciones repetidas van rotando entre los más cercanos.
+    Pulsar = solo cambio, sin sprint (mantener L después sí esprinta; CPU intacta). Bloqueo ~0,6 s (ajuste en QA). Aplica
+    en entrenamiento y a dos (J1 = B); no en la tanda. Motivo de Paco: el juego es rápido y hoy apetece cambiar y no se puede.
+    Anotar en spec que «controlled derivado, nunca input» deja de valer para el humano.
+  - **G15-6 Teclado (Paco):** en solitario/entrenamiento/Mundial se elige entre DOS esquemas: «Flechas» = flechas + J/K/L
+    (esquema 3 del spec) y «Clásico» = Q/A/O/P + Z/X/C (esquema 2). El esquema 1 (WASD+flechas) deja de ser opción elegible.
+    Son disjuntos «por si juegan dos juntos». Pausa: con Clásico la P se ignora y pausa Esc; Esc pausa en ambos.
+    Selector = fila en ELIGE MODO. Persistencia en localStorage (try/catch). Partido a dos: NO elegible, mantiene G9-2
+    (J1 WASD+C/V/B, J2 flechas+J/K/L). Default = Flechas.
+  - **G15-7 Mundial (Paco):** banco de 20 seleccionables; el Mundial pasa a **16 equipos** (una ronda más: OCTAVOS → cuartos →
+    semis → final), todo eliminatorias. Humano + 15 sorteadas de 19. Corregir spec:815 y catálogo. Impacto: `WORLD_CUP_SIZE`,
+    rondas y puntuación de `world-cup.ts`, pantalla de cuadro (`bracketRowY`, 8 pares), VER/SALTAR de 7 pares CPU en octavos.
+  - **G15-8 Puntuación/cuadro Mundial 16 (Paco):** bonus nuevo pasar octavos = 2 500, resto igual → PERFECT_BASE_SCORE
+    70 500 (4×5 000 + 4×2 000 + 2 500 + 5 000 + 10 000 + 25 000). Botón «SALTAR TODOS» además de VER/SALTAR por cruce.
+    Pantalla de cuadro: solo la ronda actual, 8 cruces en dos columnas de 4 (800×500).
+  - **G15-9 Selector (Paco):** rejilla 5×4 (tarjetas más estrechas); minicampo a la derecha de la fila ALINEACIÓN con la
+    formación elegida (8 puntos por rol, color del kit de la selección marcada), sin flechas de ataque. Kits nuevos:
+    COLOMBIA #fcd116/#003893, COREA DEL SUR #c60c30/#ffffff, NORUEGA #ba0c2f/#00205b, EGIPTO #ce1126/#ffffff; nuevas al
+    FINAL del array TEAMS.
+  - **G15-10 Atributos (Paco, recorte):** por selección 5 valores 1-5 (defensa, ataque, contraataque, chut, pase) → perfil de
+    CPU vía `profileFor(teamDef, difficulty)` + ajuste físico pequeño (±5 % velocidad de pase/chut). Por jugador SOLO
+    velocidad y chut, derivados del rol con pequeña variación por selección. Resistencia + banquillo → v1.6. Regrabado
+    único + sonda 40 partidos (0 sin ganador). Paco: «pequeños cambios, no afecta tanto a la jugabilidad».
+  - **G15-11 Nombres y dorsales (Paco):** 160 nombres inventados que suenen al país (sin jugadores reales) + dorsales fijos
+    (GK = 1) en fichero de datos aparte. Nombre solo en eventos (GOL goleador, penalti lanzador, falta/tarjeta infractor);
+    dorsal sobre el controlado junto al cursor. Motor intacto (verificar que expone goleador/infractor).
+  - **G15-12 Postes y larguero (Paco):** postes = 2 círculos de colisión en el motor, rebote con pérdida + SFX (fichero ya en
+    public/). Larguero: por encima = fuera; cruza a la altura del larguero → rebote al campo + mismo SFX. Toca motor → MISMO
+    regrabado que G15-10. Sonda 40 partidos contando postes/largueros (ni rarísimo ni constante).
+  - **G15-13 Tarjetas (Paco):** determinista por faltas del jugador: amarilla a la 2.ª, roja a la 4.ª (2.ª amarilla).
+    Roja = expulsión real (equipo con 7; revisar invariantes de 8; si es el controlado, control al siguiente más cercano).
+    Tope 2 expulsados por equipo (3.ª roja solo rótulo). Rótulo tarjeta + nombre, sin pausa extra. Se reinician por partido,
+    no afectan a la tanda. Motor → mismo regrabado que G15-10/12.
+  - **G15-14 Red que ondula (Paco):** solo con gol (incluye gol de oro y tanda); poste/larguero no la mueven. Onda amortiguada
+    desde el punto de impacto, ~1 s dentro de la pausa de 4 s. Solo pantalla (`net-ripple.ts` + test). Ajuste en QA.
+  - **G15-15 Calendario (Paco):** 5 pasos, QA jugado al final de cada uno: V15-1 Aspecto (sprites, césped, fuera palito,
+    borrar player-pose, lineWidth; sin motor) → V15-2 Mandos (cambio L, teclados Flechas/Clásico, Esc, localStorage; motor
+    sin regrabado) → V15-3 Contenido (20 selecciones, 5×4, minicampo, Mundial 16 + octavos + puntuación + SALTAR TODOS;
+    motor solo datos) → V15-4 Motor (atributos recortados, postes/larguero, tarjetas con expulsión, pausa gol 4 s; UN
+    regrabado + sonda 40; puede partirse en 2 días con regrabado al final del segundo) → V15-5 Espectáculo (celebración
+    abrazo, red ondula, nombres/dorsales, rótulos gol/penalti/tarjeta; sin motor).

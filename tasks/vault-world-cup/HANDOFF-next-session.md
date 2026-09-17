@@ -1,6 +1,45 @@
-# HANDOFF — VAULT WORLD CUP · v1 CERRADA EN CÓDIGO (ola G12 sin commitear) · siguiente: spike/plan v1.5 · actualizado 2026-09-16
+# HANDOFF — VAULT WORLD CUP · v1 COMMITEADA (`c71be98`) · v1.5: brief + GRILL G15 CERRADOS, siguiente plan V15-1 · actualizado 2026-09-17
 
-Prompt para retomar: `/retomar tasks/vault-world-cup/HANDOFF-next-session.md` → arrancar la v1.5 (brief con subagente → grill corto → writing-plans → pre-vuelo → SDD; 2-3 días, sin prisa).
+Prompt para retomar: `/retomar tasks/vault-world-cup/HANDOFF-next-session.md` → writing-plans del V15-1 «Aspecto» (G15-2/3 + césped) → pre-vuelo → SDD → QA jugado (un paso al día).
+
+## -10. 17-sep tarde: GRILL G15 CERRADO (15 decisiones) — sin plan ni código
+
+**Decisiones:** volcadas al spec 31 (último bullet de §Decisiones, G15-1..G15-15) y en `.superpowers/sdd/2026-09-17-vault-world-cup-v1-5/grill-log.md`.
+Referencia gráfica copiada a `references/vault-world-cup-tehkan.png` (sin trackear).
+**Alcance ampliado (G15-1):** además del brief, entran atributos recortados (G15-10), nombres y dorsales (G15-11), postes/larguero
+(G15-12), tarjetas con expulsión (G15-13); Mundial de 16 con octavos (G15-7/8); pausa de gol 4 s + celebración abrazo (G15-4).
+Fuera: `SHOT_VZ_MAX`, resistencia/banquillo (v1.6); histéresis GK solo si el QA la pide.
+**Calendario (G15-15):** V15-1 Aspecto → V15-2 Mandos → V15-3 Contenido → V15-4 Motor (único regrabado, puede ser 2 días) → V15-5 Espectáculo; QA jugado por paso.
+**Siguiente:** plan del V15-1 (sprites 8 dir por rotación/espejo estilo KongGame, césped 2 verdes, palito fuera, borrar player-pose.ts salvo estirada, lineWidth).
+**Pendiente de commit (Paco):** brief, grill-log, spec 31, handoff, PNG de referencia → `docs(world-cup): v1.5 design brief, grill decisions G15-1..15 and reference capture`.
+
+## -9. 17-sep: G12 commiteada + brief de diseño de la v1.5 (NO hay grill, plan ni código)
+
+**Estado:** HEAD `c71be98` (G12 commiteada por Paco), working tree limpio salvo el brief nuevo (sin trackear, commit de Paco).
+**Brief:** `.superpowers/sdd/2026-09-17-vault-world-cup-v1-5/design-brief.md` (subagente opus; estado actual por bloque con ficheros:líneas,
+opciones, coste, impacto motor/pantalla, riesgos de grabaciones, preguntas G15-x priorizadas).
+
+**Corte propuesto (3 días; variante de 2 en el brief):**
+- V15-1 Aspecto: sprites pixel-art cenitales en 8 direcciones (3 dibujadas + rotación de rejilla) + césped nuevo + `lineWidth` en drawPitch. Solo pantalla.
+- V15-2 Mandos: cambio manual con L al defender (TOCA MOTOR, imprescindible) + teclado alternativo Q/A/O/P.
+- V15-3 Contenido: 4 selecciones (COLOMBIA, COREA DEL SUR, NORUEGA, EGIPTO) + esquemas de formación + red que ondula + export `GRAVITY`.
+  `SHOT_VZ_MAX`/gravedad aparte (requiere regrabado).
+
+**Top-5 preguntas del grill:**
+1. ¿Referencia = Tehkan World Cup? Rasgos obligatorios del sprite y qué sigue vectorial (indicador de dirección, estirada GK, celebración).
+2. Cambio con L: ¿a quién (más cercano al balón / cruceta / ciclo) y cuánto dura antes de volver al automático?
+3. ¿«Defender» incluye balón suelto? ¿L defendiendo también sprinta?
+4. Q/A/O/P: la P ya es pausa (la escucha la play-page) → ¿qué tecla pausa o qué va a la derecha?
+5. Spec «el sorteo elige 16 de 20» vs Mundial de 8 → ¿humano + 7 de 19?
+
+**Hallazgos:**
+- Captura de referencia FUERA del repo: probablemente `~/Desktop/Captura de pantalla 2026-09-16 a las 18.13.24.png` (Tehkan WC);
+  `~/Downloads/futbol.jpeg` = pantalla de alineaciones. Decidir si se copia a `references/`.
+- El césped YA tiene rayas (bandas verticales 160 u); la captura pide verde lima, bandas más estrechas y textura.
+- La CPU nunca emite L como pulsación nueva (solo mantenida) → si el cambio manual se dispara en `pressed`, las grabaciones CPU-vs-CPU no deberían moverse (confirmar con suite).
+- 20 selecciones no caben en rejilla 4×5 en 500 px y chocan con los esquemas → propuesta 5×4.
+- 3 de las 4 nuevas visten de rojo: simulados 380 cruces, la inversión de equipación resuelve todos, pero la 2ª equipación será habitual.
+- Spec dice «L = sprint solo atacando» pero la CPU sprinta defendiendo; corregirlo cambiaría todas las grabaciones → decidir en grill.
 
 ## -8. 16-sep tarde: QA del paso 11 «jugabilidad perfecta» (commit `4405fbc`) + ola de cierre de v1 (G12-1..3) — CERRADA en código
 
