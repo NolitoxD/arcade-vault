@@ -1,6 +1,18 @@
-# HANDOFF — VAULT WORLD CUP · v1 COMMITEADA (`c71be98`) · v1.5: brief + GRILL G15 CERRADOS, siguiente plan V15-1 · actualizado 2026-09-17
+# HANDOFF — VAULT WORLD CUP · v1.5: grill G15 cerrado + PLAN V15-1 «Aspecto» ESCRITO (sin pre-vuelo ni código) · actualizado 2026-09-17
 
-Prompt para retomar: `/retomar tasks/vault-world-cup/HANDOFF-next-session.md` → writing-plans del V15-1 «Aspecto» (G15-2/3 + césped) → pre-vuelo → SDD → QA jugado (un paso al día).
+Prompt para retomar: `/retomar tasks/vault-world-cup/HANDOFF-next-session.md` → resolver 6 dudas del plan V15-1 (§-11) → pre-vuelo → SDD V15-1-1 ∥ V15-1-2 → V15-1-3 → V15-1-4 → V15-1-5 → QA jugado.
+
+## -11. 17-sep noche: PLAN V15-1 «Aspecto» escrito (NO pre-vuelo, NO código)
+
+**HEAD `9a1d3d6`** (docs de Paco sobre `c71be98`). Plan: `docs/superpowers/plans/2026-09-17-vault-world-cup-v15-1-aspect.md` (sin trackear).
+Tareas: V15-1-1 `sprite-maps.ts` (21 mapas N/NE/E + rotación/espejo + atlas por callback, +13) ∥ V15-1-2 `grass.ts` + drawPitch
+(baldosa 96 px, bandas lima 48, moteado hash entero, patrón; `lineWidth`, +8) → V15-1-3 `sprite-frame.ts` (octante sin trig, carrera,
+estirada 2 fotogramas, deslizamiento inclinado, +15) → V15-1-4 cableado (atlas en startMatch, drawPlayer por sprite, fuera palito,
+`player-pose.ts` BORRADO entero −13, view-pipeline.test reescrito) → V15-1-5 cierre + `qa-paco.md` 14 puntos. Objetivo 1291/77 (base 1268/75 medida).
+Planificador probó módulos nuevos en scratchpad: 38 verdes, tsc limpio, 8 controles negativos OK; cableado .tsx sin probar.
+**Dudas abiertas para Paco (antes del pre-vuelo):** (1) base de compuertas = `9a1d3d6`; (2) `image-rendering: pixelated` en retina
+afecta también al HUD; (3) pelo/piel igual para los 18; (4) estirada del portero no avanza hacia el balón; (5) ángulo del deslizamiento
+0,45 rad y sentido; (6) E/NE derivados de N por giro/cizalla — legibilidad a 30 px.
 
 ## -10. 17-sep tarde: GRILL G15 CERRADO (15 decisiones) — sin plan ni código
 
