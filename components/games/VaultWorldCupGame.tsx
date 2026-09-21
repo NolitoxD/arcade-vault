@@ -11,7 +11,7 @@ import {
   createFriendlyMode, sideIsHuman, type FxKind, type GameMode, type HumanSide,
 } from './football-logic/mode';
 import { PITCH } from './football-logic/pitch';
-import { PLAYER_RADIUS, isPlayerDown, isSprinting, type PlayerState } from './football-logic/players';
+import { PLAYER_RADIUS, isSprinting, type PlayerState } from './football-logic/players';
 import { createRng, type Rng } from './football-logic/rng';
 import { SHOOTOUT_RESOLVE_STEPS } from './football-logic/set-pieces';
 import { FORMATIONS, TEAM_SIZE, TEAMS, teamById, type Kit, type Strategy, type TeamDef } from './football-logic/teams';
@@ -39,8 +39,11 @@ import {
   MODE_CARD_W, SELECT_HINT_Y, TEAM_CARD_H, TEAM_CARD_W, VICTORY_FIGURE_Y, VICTORY_HINT_Y, VICTORY_TEAM_Y, VICTORY_TITLE_Y,
   bracketRowY, drawColX, drawRowY, modeCardY, teamCardX, teamCardY,
 } from './football-screen/flow-layout';
-import { GESTURE_IDLE, beginGkCatchGestures, createGestureTimers, diveReach, gestureProgress, resetGestures } from './football-screen/gestures';
+import { GESTURE_IDLE, beginGkCatchGestures, createGestureTimers, gestureProgress, resetGestures } from './football-screen/gestures';
 import { GOAL_MOUTH_DEPTH, NET_CELL, netLineCount } from './football-screen/goal-net';
+import {
+  GRASS_TILE_H, GRASS_TILE_W, forEachGrassCell, grassTileOffset,
+} from './football-screen/grass';
 import {
   SHOT_CHARGE_SEGMENTS, buttonsIdle, chargeSegments, clockText, countdownSeconds, cursorPlayerId,
   halfLabel, keeperHoldsBall, shootoutRoundLabel, smallNumber, sprintBarFraction,
@@ -56,11 +59,15 @@ import {
   MINIMAP_H, MINIMAP_PAD, MINIMAP_W, createMinimapRect, minimapViewRect, minimapX, minimapY,
 } from './football-screen/minimap';
 import { FX_COLORS, createParticlePool, fxSeedFor, startFx, stepFx } from './football-screen/particles';
-import { createDivePose, createPlayerPose, divePose, playerPose } from './football-screen/player-pose';
 import {
   ambienceDue, captionSfxOnEdge, createAmbienceMarks, goalCrowdDue, goalNetDue, halfEndWhistleDue,
   shortPassFiredThisStep, shotFiredThisStep, victoryChantGain,
 } from './football-screen/sfx-map';
+import { SLIDE_TILT_COS, SLIDE_TILT_SIN, choosePlayerSprite, createSpriteChoice } from './football-screen/sprite-frame';
+import {
+  ATLAS_H, ATLAS_W, PLAYER_SPRITE_MAPS, SPRITE_HALF, SPRITE_SIZE, atlasCellX, atlasCellY, bakeSpriteAtlas,
+  createSpritePalette, writeSpritePalette, type SpritePalette,
+} from './football-screen/sprite-maps';
 import { MIN_VIEWPORT_H, MIN_VIEWPORT_W, viewportAllowed } from './football-screen/viewport-guard';
 import { sfxVaultWorldCup } from '@/lib/sfx-vault-world-cup';
 
@@ -97,14 +104,20 @@ const SOLO_TABLES: readonly [KeyTable, KeyTable] = [SOLO, SOLO];
 const ZERO_FORMATIONS: readonly [number, number] = [0, 0];
 
 // ── Palette. One visual version, no skins (spec). ─────────────────────────────
-const GRASS_DARK = '#1f6b32';
-const GRASS_LIGHT = '#247a39';
-const STRIPE_WIDTH = 160;
+// V15-1 (G15-2): two lime greens in mowing stripes, the dark one "stronger/more
+// serious" as Paco asked, each with its own speckle shade. Indexed by grass.ts's tone.
+const GRASS_LIGHT = '#9ccf3f';
+const GRASS_LIGHT_SPECK = '#8fc538';
+const GRASS_DARK = '#7db62f';
+const GRASS_DARK_SPECK = '#70a82a';
+const GRASS_TONE_COLORS: readonly string[] = [GRASS_LIGHT, GRASS_LIGHT_SPECK, GRASS_DARK, GRASS_DARK_SPECK];
+// Brief §8 (deferred minor of step 11): every stroke of drawPitch sets it explicitly
+// instead of inheriting it from whatever was drawn before.
+const PITCH_LINE_WIDTH = 3;
 const LINE = 'rgba(255,255,255,0.75)';
 const GOAL_MOUTH = 'rgba(255,255,255,0.25)';
 const NET_LINE = 'rgba(255,255,255,0.32)';
 const GOAL_FRAME = 'rgba(255,255,255,0.9)';
-const FACING_STICK = 'rgba(0,0,0,0.55)';
 const HEADS_DOWN = 'rgba(0,0,0,0.5)';
 const SPRINT_RING = 'rgba(255,255,255,0.5)';
 const NOTCH_FRAME = 'rgba(0,0,0,0.6)';
@@ -120,10 +133,6 @@ const CURSOR_COLOR = '#ffcf3a';
 const BALL_COLOR = '#ffffff';
 const BALL_TRIM = 'rgba(0,0,0,0.4)';
 const SHADOW = 'rgba(0,0,0,0.35)';
-// G11-1: the head has to read on top of all sixteen teams' kits, so it is a fixed
-// tone with a light trim, not a team colour.
-const HEAD_COLOR = '#23201d';
-const HEAD_TRIM = 'rgba(255,255,255,0.55)';
 const MINIMAP_BG = 'rgba(0,0,0,0.6)';
 const MINIMAP_FRAME = 'rgba(255,255,255,0.6)';
 const CAPTION_BG = 'rgba(0,0,0,0.65)';
@@ -152,8 +161,11 @@ const NOTCH_H = 5;
 const NOTCH_GAP = 2;
 const NOTCH_TOTAL_W = SHOT_CHARGE_SEGMENTS * NOTCH_W + (SHOT_CHARGE_SEGMENTS - 1) * NOTCH_GAP;
 const NOTCH_DY = -24;
-// G11-1: the width of the shoulder stroke, drawn perpendicular to facing.
-const SHOULDER_WIDTH = 4;
+// V15-1 (G15-2 "sombra mínima"): a small ellipse under the sprite's feet, smaller than
+// v1's body shadow, so the sprite and not the shadow is what reads.
+const SPRITE_SHADOW_DY = 4;
+const SPRITE_SHADOW_RX = 10;
+const SPRITE_SHADOW_RY = 4;
 // The minimap's corner and dot sizes: Task 8-2 left both to this file on purpose (its
 // review, note under Issues), so they are named here rather than left as literals in
 // drawMinimap. Bottom-right, because the HUD owns the top strip and the formation
@@ -243,6 +255,39 @@ const FONT_CAPTION = 'bold 48px monospace';
 const FONT_BLOCKED_TITLE = 'bold 26px monospace';
 const FONT_BLOCKED_HINT = 'bold 16px monospace';
 
+// Bakes grass.ts's tile into a canvas ONCE per mount (criterion 20: never per frame).
+function bakeGrassTile(): HTMLCanvasElement {
+  const tile = document.createElement('canvas');
+  tile.width = GRASS_TILE_W;
+  tile.height = GRASS_TILE_H;
+  const c = tile.getContext('2d');
+  if (c === null) return tile;
+  forEachGrassCell((x, y, size, tone) => {
+    c.fillStyle = GRASS_TONE_COLORS[tone];
+    c.fillRect(x, y, size, size);
+  });
+  return tile;
+}
+
+// V15-1: one 240 x 210 atlas canvas (octants across, poses down), created ONCE per
+// mount and re-baked on the startMatch event -- never per frame (criterion 20).
+function createAtlasCanvas(): HTMLCanvasElement {
+  const el = document.createElement('canvas');
+  el.width = ATLAS_W;
+  el.height = ATLAS_H;
+  return el;
+}
+
+function bakeAtlas(atlas: HTMLCanvasElement, palette: Readonly<SpritePalette>): void {
+  const c = atlas.getContext('2d');
+  if (c === null) return;
+  c.clearRect(0, 0, atlas.width, atlas.height);
+  bakeSpriteAtlas(PLAYER_SPRITE_MAPS, palette, (x, y, size, color) => {
+    c.fillStyle = color;
+    c.fillRect(x, y, size, size);
+  });
+}
+
 function VaultWorldCupGame({
   paused,
   muted = false,
@@ -291,6 +336,10 @@ function VaultWorldCupGame({
     const canvas = canvasRef.current;
     if (canvas === null) return;
     const ctx = canvas.getContext('2d')!;
+    // V15-1: pixel art. Smoothing off for every drawImage/pattern of this canvas (the
+    // sprites and the grass); drawPlayer also rounds its screen coordinates, or the
+    // sprites shimmer while the camera glides.
+    ctx.imageSmoothingEnabled = false;
 
     // ── Everything below is created ONCE and mutated in place (criterion 20) ──
     // G9-7: ONE seed per run, read when the mode is built (confirmTeam) -- the only
@@ -327,10 +376,23 @@ function VaultWorldCupGame({
     const captions = createCaptionState();
     const watch = createMatchWatch();
     const viewRect = createMinimapRect();
-    // Criterion 20: created ONCE, written in place by drawPlayer every frame.
+    // V15-1: the grass tile and its pattern, created ONCE (criterion 20). drawPitch
+    // only shifts it with the camera. createPattern can return null (per the DOM
+    // types), and then drawPitch falls back to the flat dark shade.
+    const grassPattern = ctx.createPattern(bakeGrassTile(), 'repeat');
+    // Criterion 20: created ONCE, written in place by runStep/drawPlayer every frame.
     const gestures = createGestureTimers();
-    const pose = createPlayerPose();
-    const dive = createDivePose();
+    const spriteChoice = createSpriteChoice();
+    // V15-1 (G15-2): the three sprite atlases. The keeper's is baked once and for all
+    // (G12-1: the same fluor green and black for the sixteen keepers); home and away
+    // are re-baked by bakeMatchAtlases on every startMatch, from the RESOLVED kits.
+    const spritePalette = createSpritePalette();
+    const atlasHome = createAtlasCanvas();
+    const atlasAway = createAtlasCanvas();
+    const atlasKeeper = createAtlasCanvas();
+    writeSpritePalette(spritePalette, GK_KIT_PRIMARY, GK_KIT_SECONDARY);
+    bakeAtlas(atlasKeeper, spritePalette);
+    bakeMatchAtlases();
 
     const ambienceMarks = createAmbienceMarks();
     let ambienceCount = 0;
@@ -377,6 +439,15 @@ function VaultWorldCupGame({
     let reportedPhaseGroup: PhaseGroup | '' = '';
     let keeperHoldSteps = 0;
     let keeperHoldTeam: 0 | 1 | -1 = -1;
+
+    // On an event (mount, startMatch), never per frame: paints the resolved kits of
+    // the match -- the away side's inverted kit included when it clashes (QA 15-sep).
+    function bakeMatchAtlases(): void {
+      writeSpritePalette(spritePalette, matchKits[HOME].primary, matchKits[HOME].secondary);
+      bakeAtlas(atlasHome, spritePalette);
+      writeSpritePalette(spritePalette, matchKits[AWAY].primary, matchKits[AWAY].secondary);
+      bakeAtlas(atlasAway, spritePalette);
+    }
 
     function teamOf(id: string): TeamDef {
       const def = teamById(TEAMS, id);
@@ -438,6 +509,7 @@ function VaultWorldCupGame({
     ): void {
       run = createMatchRun(home, away, seedForMatch, difficulty, [sideIsHuman(side, 0), sideIsHuman(side, 1)], rules, formations);
       matchKits = resolveMatchKits(home.kit, away.kit);
+      bakeMatchAtlases();
       humanSide = side;
       victoryScreen = screen;
       matchSeed = seedForMatch;
@@ -812,22 +884,27 @@ function VaultWorldCupGame({
     }
 
     function drawPitch(): void {
-      // Grass, in world-aligned stripes so the camera movement is legible. (No
-      // `const match = run.match` here: drawPitch never reads the match, only the
-      // camera and the fixed pitch geometry -- adding it would be an unused local.)
-      ctx.fillStyle = GRASS_DARK;
-      ctx.fillRect(0, 0, VIEW_W, VIEW_H);
-      const first = Math.floor(cam.x / STRIPE_WIDTH);
-      const last = Math.ceil((cam.x + VIEW_W) / STRIPE_WIDTH);
-      ctx.fillStyle = GRASS_LIGHT;
-      for (let i = first; i <= last; i++) {
-        if ((i & 1) === 0) continue;
-        ctx.fillRect(toScreenX(cam, i * STRIPE_WIDTH), 0, STRIPE_WIDTH, VIEW_H);
+      // V15-1 (G15-2): lime mowing stripes with a soft speckle, baked once into
+      // grassPattern. The pattern is anchored to the coordinate origin, so shifting the
+      // transform by the camera's offset inside the tile glues the stripes to the world:
+      // screen pixel s shows tile pixel (s + ox) mod 96 = the stripe of world pixel
+      // s + cam.x (grass.test.ts asserts it). One fill, no allocation. (No
+      // `const match = run.match` here: drawPitch never reads the match.)
+      if (grassPattern === null) {
+        ctx.fillStyle = GRASS_DARK;
+        ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+      } else {
+        const ox = grassTileOffset(cam.x, GRASS_TILE_W);
+        const oy = grassTileOffset(cam.y, GRASS_TILE_H);
+        ctx.setTransform(1, 0, 0, 1, -ox, -oy);
+        ctx.fillStyle = grassPattern;
+        ctx.fillRect(ox, oy, VIEW_W, VIEW_H);
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
       }
 
       const p = PITCH;
       ctx.strokeStyle = LINE;
-      ctx.lineWidth = 3;
+      ctx.lineWidth = PITCH_LINE_WIDTH;
       // Touchlines and goal lines.
       ctx.strokeRect(toScreenX(cam, 0), toScreenY(cam, 0), p.width, p.height);
       // Halfway line.
@@ -850,6 +927,9 @@ function VaultWorldCupGame({
         const dir = side === 0 ? 1 : -1;
         const midY = p.height / 2;
         ctx.strokeStyle = LINE;
+        // Brief §8: without this, the second goal's areas inherit the goal frame's
+        // lineWidth from the first iteration. Explicit, so they can never drift apart.
+        ctx.lineWidth = PITCH_LINE_WIDTH;
         ctx.strokeRect(
           toScreenX(cam, goalX + (dir === 1 ? 0 : -p.bigAreaDepth)),
           toScreenY(cam, midY - p.bigAreaWidth / 2),
@@ -900,113 +980,54 @@ function VaultWorldCupGame({
       }
     }
 
-    // The parked fifteen of the shootout must be drawn STANDING AND STILL (stage B2
-    // §8): placeAroundCentreSpot leaves vx/vy at zero but does NOT clear facing,
-    // downUntilStep, tackleStepsLeft or chargeSteps, so a player who was mid-slide
-    // when the extra time ended would otherwise stay frozen in that pose for the
-    // whole shootout. The screen ignores those fields during the shootout instead of
-    // the engine clearing them (carries #2 and #4 -- see the M-list of the report).
+    // V15-1 (G15-2 + G15-3): every player is ONE sprite from the atlas of its side --
+    // run/idle frames, its own lying-down frame, the keeper's two dive frames, a slide
+    // drawn as the run sprite tilted -- chosen by sprite-frame.ts's choosePlayerSprite.
+    // The direction stick, the head and shoulders of G11-1 and the dive capsule are
+    // gone (G15-3); the shadow, the step-8 goal celebration arcs, the cursor, the
+    // charge notches and the sprint ring stay vector, on top of the sprite.
     //
-    // Two different exclusions, on purpose:
-    //   · `parked` — the fifteen in the centre circle: no facing stick either, they
-    //     are scenery. The taker and the two keepers are NOT parked, because their
-    //     direction is the one thing the player has to read.
-    //   · `down`   — nobody is drawn lying down during the shootout, THE TAKER
-    //     INCLUDED. The B2 report's Minor 2 is precisely that the first taker may
-    //     still be on the ground (or sliding) if the extra time ran out mid-tackle,
-    //     probe P6(1) -- so leaving him out of the exclusion would draw a penalty
-    //     being taken by a man lying flat.
+    // The shootout exclusions of stage B2 §8 live in choosePlayerSprite now:
+    //   · `parked` — the fifteen in the centre circle stand still, whatever slide,
+    //     floor or charge fields the engine left on them.
+    //   · nobody is drawn lying down or sliding during the shootout, THE TAKER
+    //     INCLUDED (B2 report, Minor 2; probe P6(1)).
     function drawPlayer(p: PlayerState, cursor: boolean): void {
       const match = run.match;
       if (!isOnScreen(cam, p.x, p.y, PLAYER_RADIUS * 3)) return;
       const x = toScreenX(cam, p.x);
       const y = toScreenY(cam, p.y);
-      const kit = matchKits[p.team];
       const shootout = match.phase === 'shootout';
       const parked = shootout && p.id !== (match.shootout?.takerId ?? -1) && p.role !== 'gk';
-      const down = !shootout && isPlayerDown(p, match.stepCount);
 
       ctx.fillStyle = SHADOW;
       ctx.beginPath();
-      ctx.ellipse(x, y + PLAYER_RADIUS * 0.6, PLAYER_RADIUS, PLAYER_RADIUS * 0.45, 0, 0, Math.PI * 2);
+      ctx.ellipse(x, y + SPRITE_SHADOW_DY, SPRITE_SHADOW_RX, SPRITE_SHADOW_RY, 0, 0, Math.PI * 2);
       ctx.fill();
 
-      // G11-2: a keeper that has just saved is drawn STRETCHED along the direction it
-      // dived (keeper -> ball at the moment of the catch, stored by the gesture). The
-      // timer is screen state; the engine's keeper never left its feet.
+      // G11-2 still drives the dive: a SCREEN timer started by 'gk-catch'. G15-3 turns
+      // it into two sprite frames chosen by the fraction of the gesture, pointed where
+      // the gesture stored (the ball one step before the catch).
       const gesture = p.role === 'gk' ? gestureProgress(gestures, p.id, match.stepCount) : GESTURE_IDLE;
-      const diving = gesture !== GESTURE_IDLE;
-
-      // A player on the ground is drawn flat: it is a whole second of the match and
-      // the player has to be able to see why nothing responds.
-      // G12-1: the goalkeeper ALWAYS gets the reserved kit, never the resolved match
-      // kit swapped -- this is what the diving capsule above also paints with.
-      ctx.fillStyle = p.role === 'gk' ? GK_KIT_PRIMARY : kit.primary;
-      if (diving) {
-        divePose(x, y, gestures.dirX[p.id], gestures.dirY[p.id], PLAYER_RADIUS, diveReach(gesture), dive);
-        ctx.beginPath();
-        ctx.moveTo(dive.frontX + dive.sideX, dive.frontY + dive.sideY);
-        ctx.lineTo(dive.backX + dive.sideX, dive.backY + dive.sideY);
-        ctx.lineTo(dive.backX - dive.sideX, dive.backY - dive.sideY);
-        ctx.lineTo(dive.frontX - dive.sideX, dive.frontY - dive.sideY);
-        ctx.closePath();
-        ctx.fill();
-        ctx.beginPath();
-        ctx.arc(dive.frontX, dive.frontY, dive.endR, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.beginPath();
-        ctx.arc(dive.backX, dive.backY, dive.endR, 0, Math.PI * 2);
-        ctx.fill();
+      choosePlayerSprite(
+        p, match.stepCount, shootout, parked, gesture, gestures.dirX[p.id], gestures.dirY[p.id], spriteChoice,
+      );
+      // G12-1: the keeper ALWAYS paints from the reserved atlas, never its team's.
+      const atlas = p.role === 'gk' ? atlasKeeper : p.team === HOME ? atlasHome : atlasAway;
+      const sx = atlasCellX(spriteChoice.octant);
+      const sy = atlasCellY(spriteChoice.pose);
+      // Whole pixels, or the pixel art shimmers while the camera glides.
+      const px = Math.round(x);
+      const py = Math.round(y);
+      if (spriteChoice.tilt === 0) {
+        ctx.drawImage(atlas, sx, sy, SPRITE_SIZE, SPRITE_SIZE, px - SPRITE_HALF, py - SPRITE_HALF, SPRITE_SIZE, SPRITE_SIZE);
       } else {
-        ctx.beginPath();
-        if (down) ctx.ellipse(x, y, PLAYER_RADIUS * 1.3, PLAYER_RADIUS * 0.55, 0, 0, Math.PI * 2);
-        else ctx.arc(x, y, PLAYER_RADIUS, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      // The trim: shirt collar for the outfield, a full ring for the keeper, so the
-      // one player who is never controllable is unmistakable. A diving keeper has no
-      // round body to trim -- its own outline is already the silhouette.
-      if (!diving) {
-        ctx.strokeStyle = p.role === 'gk' ? GK_KIT_SECONDARY : kit.secondary;
-        ctx.lineWidth = p.role === 'gk' ? 3 : 2;
-        ctx.beginPath();
-        ctx.arc(x, y, PLAYER_RADIUS - 1, 0, Math.PI * 2);
-        ctx.stroke();
-      }
-
-      // G11-1: head and shoulders on top of the body, oriented with the engine's own
-      // facing. Drawn for EVERY player -- the training statues and the parked fifteen
-      // of the shootout included, the grill is explicit that there is no new branch --
-      // and skipped only where there is no standing figure to draw: a player on the
-      // ground and a keeper mid-dive.
-      if (!down && !diving) {
-        playerPose(x, y, p.facingX, p.facingY, PLAYER_RADIUS, pose);
-        ctx.strokeStyle = p.role === 'gk' ? GK_KIT_SECONDARY : kit.secondary;
-        ctx.lineWidth = SHOULDER_WIDTH;
-        ctx.lineCap = 'round';
-        ctx.beginPath();
-        ctx.moveTo(pose.leftX, pose.leftY);
-        ctx.lineTo(pose.rightX, pose.rightY);
-        ctx.stroke();
-        ctx.lineCap = 'butt';
-        ctx.fillStyle = HEAD_COLOR;
-        ctx.beginPath();
-        ctx.arc(pose.headX, pose.headY, pose.headR, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = HEAD_TRIM;
-        ctx.lineWidth = 1;
-        ctx.stroke();
-      }
-
-      // Facing: a short stick, so the pass cone and the slide direction are readable.
-      if (!down && !parked) {
-        ctx.strokeStyle = FACING_STICK;
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.moveTo(x, y);
-        ctx.lineTo(x + p.facingX * PLAYER_RADIUS * 1.6, y + p.facingY * PLAYER_RADIUS * 1.6);
-        ctx.stroke();
+        // G15-3: the slide is the run sprite tilted. cos/sin were computed once at
+        // module load; the transform is undone on the very next line.
+        const s = SLIDE_TILT_SIN * spriteChoice.tilt;
+        ctx.setTransform(SLIDE_TILT_COS, s, -s, SLIDE_TILT_COS, px, py);
+        ctx.drawImage(atlas, sx, sy, SPRITE_SIZE, SPRITE_SIZE, -SPRITE_HALF, -SPRITE_HALF, SPRITE_SIZE, SPRITE_SIZE);
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
       }
 
       // The fixed goal celebration (spec: always the same one, no variations): the

@@ -1,6 +1,19 @@
-# HANDOFF — VAULT WORLD CUP · v1.5: grill G15 cerrado + PLAN V15-1 «Aspecto» ESCRITO (sin pre-vuelo ni código) · actualizado 2026-09-17
+# HANDOFF — VAULT WORLD CUP · v1.5: V15-1 «Aspecto» CERRADO EN CÓDIGO (sin commit, QA jugado pendiente) · actualizado 2026-09-21
 
-Prompt para retomar: `/retomar tasks/vault-world-cup/HANDOFF-next-session.md` → resolver 6 dudas del plan V15-1 (§-11) → pre-vuelo → SDD V15-1-1 ∥ V15-1-2 → V15-1-3 → V15-1-4 → V15-1-5 → QA jugado.
+Prompt para retomar: `/retomar tasks/vault-world-cup/HANDOFF-next-session.md` → QA jugado V15-1 (qa-paco.md) → ola de fixes si la hay → commit Paco → V15-2 «Mandos» (plan → pre-vuelo → SDD).
+
+## -12. 21-sep: V15-1 «Aspecto» EJECUTADO y CERRADO EN CÓDIGO (sin commitear)
+
+Dudas del plan resueltas por Paco (sección «Resoluciones de Paco (21-sep)» del plan). Pre-vuelo LISTO CON RESERVAS (H1-H12 aplicados).
+SDD en serie V15-1-1→5 en main sin commits (snapshots de árbol vía `.superpowers/sdd/2026-09-21-vault-world-cup-v15-1/sdd.sh`), todas
+revisadas limpias; revisión final opus sin Critical/Important; ola de fixes = 2 comentarios a inglés + punto 18 del QA.
+**Estado:** 1291 tests / 77 ficheros, tsc/eslint 0, motor intacto vs 478fc93, sin Math.random.
+Nuevos: `football-screen/{sprite-maps,grass,sprite-frame}.ts` + tests; modificados `VaultWorldCupGame.tsx`, `view-pipeline.test.ts`, plan;
+BORRADOS `player-pose.ts` + test (commit con `git add -A`).
+**QA de Paco:** `.superpowers/sdd/2026-09-21-vault-world-cup-v15-1/qa-paco.md` (18 puntos: legibilidad 30 px, E/NE, camisetas blancas vs líneas,
+pixelated en retina, estirada, deslizamiento vertical, medio píxel sombra/sprite, césped con cámara, jugadores pegados sin orden por Y).
+**Commit propuesto:** `feat(world-cup): v1.5 aspect — baked top-down pixel-art sprites, lime mown grass, no facing stick (V15-1, G15-2/G15-3)`
+Minors que se quedan (ledger): OCTANT_TAN literal, sin test del umbral RUN_FAST_SPEED_SQ, setTransform asume base identidad, lanzador de tanda en entrada.
 
 ## -11. 17-sep noche: PLAN V15-1 «Aspecto» escrito (NO pre-vuelo, NO código)
 

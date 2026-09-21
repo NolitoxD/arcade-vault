@@ -14,7 +14,7 @@
 **Código a imitar:** `components/games/KongGame.tsx:94-130` (mapas de caracteres, `'.'` transparente) y `:383-420` (`bakeSprite`: hornear en `<canvas>` una vez, el bucle solo hace `drawImage`) · `components/games/football-screen/particles.ts` (preasignación una vez, escritura in-place) · `components/games/football-screen/gestures.ts` (`GESTURE_IDLE`, `diveReach`, `DIVE_REACH_MAX`, `gestures.dirX/dirY`: lo que la estirada consume).
 **Código a modificar:** `components/games/VaultWorldCupGame.tsx` — imports (`:21-66`), paleta (`:99-136`), tamaños (`:139-173`), `getContext` (`:293`), preasignación del efecto (`:325-333`), `startMatch` (`:437-450`), `drawPitch` (`:815-897`), comentario + `drawPlayer` (`:900-1071`). `components/games/football-screen/view-pipeline.test.ts` (sonda del paso 11).
 **Código a borrar:** `components/games/football-screen/player-pose.ts` y `components/games/football-screen/player-pose.test.ts` (G15-3; decisión razonada en Global Constraints).
-**Ledger de este paso:** `.superpowers/sdd/2026-09-17-vault-world-cup-v15-1/progress.md` (lo crea el controlador al empezar la ejecución SDD; cada tarea le añade **una** línea al cerrar).
+**Ledger de este paso:** `.superpowers/sdd/2026-09-21-vault-world-cup-v15-1/progress.md` (lo crea el controlador al empezar la ejecución SDD; cada tarea le añade **una** línea al cerrar).
 
 ---
 
@@ -48,12 +48,12 @@ G15-3 dice «SE BORRA `player-pose.ts` + tests (salvo lo que la estirada necesit
 ### Reglas del repo
 
 - **Commits: SOLO Paco.** Ninguna tarea ejecuta `git add`, `git rm`, `git commit` ni `git stash`. Donde el paso 11 decía «Commit», aquí dice: **dejar el working tree verificado; commit lo hace Paco**. Al final (Task V15-1-5) se propone **UN** mensaje de commit convencional para todo el paso. Borrar ficheros = `rm` en el working tree, nunca `git rm`.
-- **Rama `main`. HEAD de hoy: `9a1d3d6`** (commit de docs del brief/grill de la v1.5 sobre `c71be98`, el cierre de la v1). Working tree limpio al escribir el plan, salvo este fichero de plan (sin trackear). Todas las compuertas del motor comparan contra `9a1d3d6`.
+- **Rama `main`. HEAD de hoy: `478fc93`** (commit de docs del brief/grill de la v1.5 sobre `c71be98`, el cierre de la v1). Working tree limpio al escribir el plan, salvo este fichero de plan, que **ya está trackeado** (entró en `478fc93`) y aparece como modificado (`M`), no como sin trackear. Todas las compuertas del motor comparan contra `478fc93`.
 - **NUNCA arrancar `next dev` ni `next build`.** Paco tiene el suyo en `:3000`. La verificación de cada tarea es `npx vitest run <fichero>` → `npx vitest run` → `npx tsc --noEmit` → `npx eslint <ficheros tocados>`. **El QA visual lo hace Paco** con la lista que deja escrita la tarea de cierre.
-- **EL MOTOR NO SE TOCA. Cero excepciones.** Al cerrar **cada** tarea, `git diff --stat 9a1d3d6 -- components/games/football-logic/` debe salir **VACÍO**. Los módulos nuevos **leen** `PlayerState` (y `isPlayerDown`, `PLAYER_SPEED`, `PLAYER_RADIUS`) y no escriben en nada del motor.
+- **EL MOTOR NO SE TOCA. Cero excepciones.** Al cerrar **cada** tarea, `git diff --stat 478fc93 -- components/games/football-logic/` debe salir **VACÍO**. Los módulos nuevos **leen** `PlayerState` (y `isPlayerDown`, `PLAYER_SPEED`, `PLAYER_RADIUS`) y no escriben en nada del motor.
 - **Determinismo (criterios 1 y 2):** `grep -rn "Math.random" components/games/football-screen/` debe devolver **VACÍO** al cerrar cada tarea (tests incluidos). El moteado del césped sale de un hash entero (`Math.imul`), nunca de `Math.random`. Ningún fichero nuevo de `football-screen/` importa React ni toca `document`, `window`, `canvas` ni `Audio` (el horneado real vive en el `.tsx`; los módulos solo llaman a un callback).
 - **Instantáneas bajo `.superpowers/`: solo `.txt`.** Si el controlador guarda una copia de un fichero de código antes de una tarea (como `snapshot-after-11-3/` del paso 11), va con extensión `.txt` (p. ej. `snapshot-before-v15-1-4/components_games_VaultWorldCupGame.tsx.txt`). **Ninguna copia `*.ts`/`*.tsx` bajo `.superpowers/`**: `tsc` y vitest las recogerían.
-- **Baseline verificada hoy (2026-09-17, HEAD `9a1d3d6`, `npx vitest run` ejecutado al escribir este plan): 1268 tests en 75 ficheros verdes.** Objetivo al cerrar el paso: **1291 tests en 77 ficheros** (1268 + 13 + 8 + 15 − 13; 75 + 3 − 1). Ningún test existente cambia de valor esperado; `view-pipeline.test.ts` cambia de cuerpo pero conserva sus 2 tests.
+- **Baseline verificada hoy (2026-09-17, HEAD `478fc93`, `npx vitest run` ejecutado al escribir este plan): 1268 tests en 75 ficheros verdes.** Objetivo al cerrar el paso: **1291 tests en 77 ficheros** (1268 + 13 + 8 + 15 − 13; 75 + 3 − 1). Ningún test existente cambia de valor esperado; `view-pipeline.test.ts` cambia de cuerpo pero conserva sus 2 tests.
 - **Tests con imports RELATIVOS** (`from './sprite-maps'`, `from '../football-logic/players'`).
 - **Comentarios y nombres de tests en inglés** (convención del repo). El plan, el spec y el chat, en castellano. Este paso no añade texto de UI.
 - **Ficheros en kebab-case**, salvo `VaultWorldCupGame.tsx`. Tipos en PascalCase, `SCREAMING_CASE` para constantes de módulo. TypeScript estricto: nada de `any`, **nada de `as`** para tapar un tipo (se estrecha con predicados, p. ej. `isSpriteChar`), **ningún `!` nuevo**.
@@ -62,14 +62,17 @@ G15-3 dice «SE BORRA `player-pose.ts` + tests (salvo lo que la estirada necesit
 
 ### Orden y paralelismo (para SDD)
 
-| Ola | Tareas | Ficheros que tocan | ¿Paralelas? |
-|---|---|---|---|
-| A | **V15-1-1** `sprite-maps.ts` ∥ **V15-1-2** `grass.ts` + `drawPitch` | 1: solo `sprite-maps.ts/.test.ts` (nuevos) · 2: `grass.ts/.test.ts` (nuevos) + `VaultWorldCupGame.tsx` (paleta, `drawPitch`, preasignación del césped) | **Sí**: ficheros disjuntos |
-| B | **V15-1-3** `sprite-frame.ts` | solo `sprite-frame.ts/.test.ts` (nuevos) | Tras V15-1-1 (importa sus constantes). **Puede correr en paralelo con V15-1-2** si V15-1-2 aún no ha cerrado: disjuntos |
-| C | **V15-1-4** cableado de sprites + borrado de `player-pose` + sonda | `VaultWorldCupGame.tsx`, `view-pipeline.test.ts`, borra `player-pose.ts/.test.ts` | Secuencial: tras V15-1-1, V15-1-2 (mismo `.tsx`) y V15-1-3 |
-| D | **V15-1-5** cierre + `qa-paco.md` | solo ledger | Tras todo |
+**Decisión del controlador (21-sep, H3 del pre-vuelo): las cinco tareas se ejecutan EN SERIE, una detrás de otra — V15-1-1 → V15-1-2 → V15-1-3 → V15-1-4 → V15-1-5 — nunca en paralelo,** aunque los ficheros de las tareas 1, 2 y 3 sean disjuntos. Motivo: cada tarea pasa por un estado rojo **intencionado** (Step 2: `Failed to resolve import`/`TS2307`; controles negativos) y cierra con `npx vitest run` y `npx tsc --noEmit` **globales**; en un mismo working tree, dos subagentes en paralelo verían el rojo intencionado del otro como si fuera su propio gate global — o, peor, uno podría intentar «arreglar» el fichero de la otra tarea. Ejecutar en serie evita esa contaminación sin necesidad de worktrees separados (coste: bajo, son tareas cortas).
 
-Como en el paso 11, con olas paralelas el total de la suite al cerrar una tarea depende de qué otras ya han aterrizado: cada tarea da su **delta** (tests/ficheros que suma) y el total **si se ejecuta sola en este orden**; el controlador comprueba la suma, no el número absoluto intermedio.
+| Orden | Tarea | Ficheros que toca | ¿Paralela? |
+|---|---|---|---|
+| 1 | **V15-1-1** `sprite-maps.ts` | solo `sprite-maps.ts/.test.ts` (nuevos) | No — serie |
+| 2 | **V15-1-2** `grass.ts` + `drawPitch` | `grass.ts/.test.ts` (nuevos) + `VaultWorldCupGame.tsx` (paleta, `drawPitch`, preasignación del césped) | No — serie, tras V15-1-1 |
+| 3 | **V15-1-3** `sprite-frame.ts` | solo `sprite-frame.ts/.test.ts` (nuevos) | No — serie, tras V15-1-2 (y ya depende de V15-1-1, importa sus constantes) |
+| 4 | **V15-1-4** cableado de sprites + borrado de `player-pose` + sonda | `VaultWorldCupGame.tsx`, `view-pipeline.test.ts`, borra `player-pose.ts/.test.ts` | No — serie, tras V15-1-1, V15-1-2 (mismo `.tsx`) y V15-1-3 |
+| 5 | **V15-1-5** cierre + `qa-paco.md` | solo ledger | No — serie, tras todo |
+
+Cada tarea da su **delta** (tests/ficheros que suma) sobre lo que ya ha aterrizado; al ir en serie el total intermedio de cada tarea es acumulado y determinista — el controlador comprueba la suma de deltas, sin la ambigüedad de qué otras tareas han aterrizado que sí existiría con olas paralelas.
 
 ---
 
@@ -86,9 +89,9 @@ Como en el paso 11, con olas paralelas el total de la suite al cerrar una tarea 
 | `components/games/VaultWorldCupGame.tsx` **(modificado)** | V15-1-2: césped por patrón + `lineWidth` explícito. V15-1-4: `imageSmoothingEnabled`, atlas, `drawPlayer` por sprite, fuera palito/cabeza/hombros/cápsula. | 2, 4 |
 | `components/games/football-screen/view-pipeline.test.ts` **(modificado)** | La sonda de 3 partidos pasa por `choosePlayerSprite` en vez de `playerPose`/`divePose`. Sigue con 2 tests. | 4 |
 | `components/games/football-screen/player-pose.ts` + `player-pose.test.ts` **(borrados)** | — (13 tests menos). | 4 |
-| `.superpowers/sdd/2026-09-17-vault-world-cup-v15-1/progress.md` · `qa-paco.md` | Ledger (una línea por tarea) y lista de QA de Paco. | todas · 5 |
+| `.superpowers/sdd/2026-09-21-vault-world-cup-v15-1/progress.md` · `qa-paco.md` | Ledger (una línea por tarea) y lista de QA de Paco. | todas · 5 |
 
-**Lo que este paso NO toca, a propósito:** `components/games/football-logic/**`, `gestures.ts` y su test, `ball-view.ts`, `goal-net.ts`, `minimap.ts` y `drawMinimap`, `drawBall`, `drawVictory`, `app/**` (incluido el CSS del canvas: ver la duda abierta sobre `image-rendering` en V15-1-5), `lib/**`.
+**Lo que este paso NO toca, a propósito:** `components/games/football-logic/**`, `gestures.ts` y su test, `ball-view.ts`, `goal-net.ts`, `minimap.ts` y `drawMinimap`, `drawBall`, `drawVictory`, `app/**` (incluido el CSS del canvas: resuelto por Paco 21-sep — no se añade `image-rendering: pixelated`; se mira en el QA, punto 11), `lib/**`.
 
 ---
 
@@ -99,7 +102,7 @@ Como en el paso 11, con olas paralelas el total de la suite al cerrar una tarea 
 - Test: `components/games/football-screen/sprite-maps.test.ts`
 
 **Interfaces:**
-- Consumes: nada de otras tareas (es la primera de la ola A).
+- Consumes: nada de otras tareas (es la primera de la serie).
 - Produces, y las Tasks V15-1-3 y V15-1-4 consumen literalmente:
   - `type SpriteMap = readonly string[]` · `type SpriteChar = 'O' | 'H' | 'K' | 'S' | 'T' | 'F'` · `type SpritePalette = Record<SpriteChar, string>`
   - `SPRITE_CHARS: readonly SpriteChar[]`, `isSpriteChar(ch: string): ch is SpriteChar`
@@ -221,7 +224,7 @@ describe('rotateMapCW / mirrorMapX', () => {
 });
 
 describe('PLAYER_SPRITE_MAPS', () => {
-  it('holds the eight octants of every pose, 15 x 15 each, with N, NE and E exactly as drawn', () => {
+  it('holds the eight octants of every pose, 15 x 15 each, with N, NE and E exactly the hand-drawn ones', () => {
     expect(PLAYER_SPRITE_MAPS.length).toBe(OCTANT_COUNT);
     for (const poses of PLAYER_SPRITE_MAPS) {
       expect(poses.length).toBe(POSE_COUNT);
@@ -321,7 +324,7 @@ describe('palette and atlas', () => {
     expect(total).toBe(expected);
   });
 
-  it('lays the atlas out as octants across and poses down, one 30 px cell each', () => {
+  it('lays the atlas out with octants across and poses down, one 30 px cell each', () => {
     expect(ATLAS_W).toBe(OCTANT_COUNT * SPRITE_SIZE);
     expect(ATLAS_H).toBe(POSE_COUNT * SPRITE_SIZE);
     expect(atlasCellX(OCTANT_NE)).toBe(7 * SPRITE_SIZE);
@@ -882,14 +885,14 @@ Si «points the head where the octant says» falla en alguna celda, **no toques 
 npx vitest run
 npx tsc --noEmit
 npx eslint components/games/football-screen/sprite-maps.ts components/games/football-screen/sprite-maps.test.ts
-git diff --stat 9a1d3d6 -- components/games/football-logic/
+git diff --stat 478fc93 -- components/games/football-logic/
 grep -rn "Math.random\|document\.\|window\.\| as " components/games/football-screen/sprite-maps.ts components/games/football-screen/sprite-maps.test.ts
 ```
 Esperado: delta **+13 tests / +1 fichero** (sola en este orden: **1281 / 76** verdes), `tsc` y `eslint` sin salida, el `git diff` del motor **vacío**, el `grep` **vacío**.
 
 - [ ] **Step 7: Anotar en el ledger**
 
-Añade una línea a `.superpowers/sdd/2026-09-17-vault-world-cup-v15-1/progress.md`:
+Añade una línea a `.superpowers/sdd/2026-09-21-vault-world-cup-v15-1/progress.md`:
 `V15-1-1 hecha: sprite-maps.ts (21 mapas a mano, 56 derivados, horneado sin DOM) + 13 tests. Motor intacto. Controles negativos aplicados y deshechos. Working tree verificado; commit lo hace Paco.`
 
 - [ ] **Step 8: Dejar el working tree verificado; commit lo hace Paco**
@@ -906,7 +909,7 @@ No ejecutes `git add` ni `git commit`. El mensaje único del paso se propone en 
 - Modify: `components/games/VaultWorldCupGame.tsx` (imports `:21-66`, paleta `:99-102`, preasignación junto a `const viewRect = createMinimapRect();` `:329`, `drawPitch` `:815-897`)
 
 **Interfaces:**
-- Consumes: nada de las Tasks V15-1-1/V15-1-3 (disjunta; paralela en la ola A).
+- Consumes: nada de las Tasks V15-1-1/V15-1-3 (ficheros disjuntos, pero va en serie tras V15-1-1 — H3 del pre-vuelo: sin paralelismo, ver «Orden y paralelismo»).
 - Produces, y el componente consume:
   - `GRASS_STRIPE_WIDTH = 48`, `GRASS_TILE_W = 96`, `GRASS_TILE_H = 96`, `GRASS_CELL = 2`, `GRASS_SPECKLE_PERCENT = 12`
   - `GRASS_TONE_LIGHT = 0`, `GRASS_TONE_LIGHT_SPECK = 1`, `GRASS_TONE_DARK = 2`, `GRASS_TONE_DARK_SPECK = 3`
@@ -1044,12 +1047,12 @@ Crea `components/games/football-screen/grass.ts`:
 // in 160-unit stripes to the Tehkan reference's look -- TWO lime greens, one stronger,
 // in narrow "mowing" stripes with a soft speckle. The reference's pitch is vertical and
 // its stripes horizontal; ours is horizontal, so our stripes stay VERTICAL and aligned
-// with the world, as in v1 (odd stripe index = light shade).
+// with the world, like v1 (odd stripe index = light shade).
 //
 // The component bakes ONE tile -- two stripes wide -- into a canvas when it mounts,
 // turns it into a repeating CanvasPattern once, and every frame fills the screen with
 // that pattern shifted by grassTileOffset(camera): one fill call, no allocation
-// (criterion 20). The speckle comes from an integer hash, never from Math.random, so
+// (criterion 20). The speckle comes from an integer hash, never from a random source, so
 // the pitch is the same pixel for pixel on every run (criterion 1's spirit applied to
 // the screen: reproducible captures for the QA).
 //
@@ -1059,7 +1062,7 @@ Crea `components/games/football-screen/grass.ts`:
 export const GRASS_STRIPE_WIDTH = 48;
 export const GRASS_TILE_W = GRASS_STRIPE_WIDTH * 2; // one light + one dark stripe
 export const GRASS_TILE_H = 96;
-export const GRASS_CELL = 2; // pixel-art grain, the same 2 px as the sprites
+export const GRASS_CELL = 2; // pixel-art grain, matching the sprites' 2 px
 export const GRASS_SPECKLE_PERCENT = 12;
 
 export const GRASS_TONE_LIGHT = 0;
@@ -1115,7 +1118,7 @@ Esperado: **PASA**, 8 tests. (Medido al escribir el plan con este mismo hash: 13
 
 - [ ] **Step 6: Cablear el componente — imports, paleta y horneado único**
 
-En `components/games/VaultWorldCupGame.tsx`, junto a los imports de `./football-screen/` (orden alfabético: después de `./football-screen/gestures`), añade:
+En `components/games/VaultWorldCupGame.tsx`, junto a los imports de `./football-screen/` (orden alfabético: después de `./football-screen/goal-net`), añade:
 
 ```ts
 import {
@@ -1215,13 +1218,13 @@ Después, en el mismo `drawPitch`:
 npx vitest run
 npx tsc --noEmit
 npx eslint components/games/football-screen/grass.ts components/games/football-screen/grass.test.ts components/games/VaultWorldCupGame.tsx
-git diff --stat 9a1d3d6 -- components/games/football-logic/
+git diff --stat 478fc93 -- components/games/football-logic/
 grep -rn "Math.random" components/games/football-screen/
 grep -n "STRIPE_WIDTH\|#1f6b32\|#247a39" components/games/VaultWorldCupGame.tsx
 grep -n "lineWidth = PITCH_LINE_WIDTH" components/games/VaultWorldCupGame.tsx
 grep -n "createPattern\|bakeGrassTile()" components/games/VaultWorldCupGame.tsx
 ```
-Esperado: delta **+8 tests / +1 fichero** (sola tras V15-1-1: **1289 / 77**; sola sobre la baseline: 1276 / 76), `tsc` y `eslint` sin salida, `git diff` del motor **vacío**, `grep Math.random` **vacío**, el `grep` de `STRIPE_WIDTH` y los verdes viejos **vacío**, el de `PITCH_LINE_WIDTH` con **exactamente 2** líneas dentro de `drawPitch`, y `createPattern`/`bakeGrassTile()` con **1** línea cada uno, ambas en la preasignación del efecto (ninguna dentro de `drawPitch`).
+Esperado: delta **+8 tests / +1 fichero** (sola tras V15-1-1: **1289 / 77**; sola sobre la baseline: 1276 / 76), `tsc` y `eslint` sin salida, `git diff` del motor **vacío**, `grep Math.random` **vacío**, el `grep` de `STRIPE_WIDTH` y los verdes viejos **vacío**, el de `PITCH_LINE_WIDTH` con **exactamente 2** líneas dentro de `drawPitch`, y `createPattern`/`bakeGrassTile()` con **2 líneas cada uno** (la preasignación del efecto + un comentario que menciona cada nombre — p. ej. «createPattern can return null…» y la declaración `function bakeGrassTile(): HTMLCanvasElement`); ninguna de las 4 dentro de `drawPitch`.
 
 - [ ] **Step 9: Anotar en el ledger**
 
@@ -1562,8 +1565,8 @@ Esperado: **PASA**, 15 tests.
 
 - [ ] **Step 5: Romperlo a propósito (control negativo)**
 
-1. Cambia temporalmente `OCTANT_TAN` a `1` y ejecuta. Esperado: **fallan** «switches from axis to diagonal at tan(22.5 deg)» y «lands 72 directions round the circle». **Deshaz.**
-2. Cambia temporalmente `RUN_CYCLE` a `[POSE_RUN_1, POSE_RUN_1, POSE_RUN_1, POSE_RUN_1]`. Esperado: **fallan** los dos tests de ciclo y el de desfase. **Deshaz.**
+1. Cambia temporalmente `OCTANT_TAN` a `1` y ejecuta. Esperado: fallan, **al menos**, «switches from axis to diagonal at tan(22.5 deg)» y «lands 72 directions round the circle» (medido: falla también «maps the four diagonals», 3 en total — el control discrimina igualmente). **Deshaz.**
+2. Cambia temporalmente `RUN_CYCLE` a `[POSE_RUN_1, POSE_RUN_1, POSE_RUN_1, POSE_RUN_1]`. Esperado: fallan, **al menos**, los dos tests de ciclo y el de desfase (medido: falla también «writes in place and returns nothing», 4 en total — el control discrimina igualmente). **Deshaz.**
 3. En `choosePlayerSprite`, cambia temporalmente `if (!shootout && isPlayerDown(p, stepCount))` por `if (isPlayerDown(p, stepCount))`. Esperado: **falla** «lays a player down in open play, but never during the shootout, taker included». **Deshaz** y vuelve a verlo verde.
 
 - [ ] **Step 6: Verificación completa**
@@ -1572,7 +1575,7 @@ Esperado: **PASA**, 15 tests.
 npx vitest run
 npx tsc --noEmit
 npx eslint components/games/football-screen/sprite-frame.ts components/games/football-screen/sprite-frame.test.ts
-git diff --stat 9a1d3d6 -- components/games/football-logic/
+git diff --stat 478fc93 -- components/games/football-logic/
 grep -n "Math.atan2\|Math.sqrt\|Math.hypot\|Math.random" components/games/football-screen/sprite-frame.ts
 grep -n "Math.cos\|Math.sin" components/games/football-screen/sprite-frame.ts
 ```
@@ -1602,10 +1605,10 @@ No ejecutes `git add` ni `git commit`.
 - Produces: nada nuevo para tareas posteriores; cierra el cableado del paso.
 
 **Contexto que el ejecutor no tiene:**
-- **Instantánea previa (la hace el controlador antes de despachar):** `VaultWorldCupGame.tsx` copiado a `.superpowers/sdd/2026-09-17-vault-world-cup-v15-1/snapshot-before-v15-1-4/components_games_VaultWorldCupGame.tsx.txt` (extensión `.txt`, nunca `.tsx`).
+- **Instantánea previa (la hace el controlador antes de despachar):** `VaultWorldCupGame.tsx` copiado a `.superpowers/sdd/2026-09-21-vault-world-cup-v15-1/snapshot-before-v15-1-4/components_games_VaultWorldCupGame.tsx.txt` (extensión `.txt`, nunca `.tsx`).
 - **Qué se queda de `drawPlayer` y qué se va (G15-3):** se queda **la sombra** (más pequeña: «sombra mínima»), los **arcos de celebración** de v1 (el abrazo es V15-5), el **triángulo del cursor**, las **muescas de carga** y el **aro de sprint**, todo vectorial y sin cambios. Se van el **cuerpo** (círculo/elipse), el **ribete**, la **cápsula** del portero, la **cabeza y los hombros** de G11-1 y el **palito de dirección**. Con ellos se van `HEAD_COLOR`, `HEAD_TRIM`, `SHOULDER_WIDTH`, `FACING_STICK`, los objetos `pose` y `dive`, el import de `player-pose` y el uso de `diveReach` en el componente (ahora lo usa `sprite-frame.ts`).
-- **Atlas:** tres `<canvas>` de 240 × 210 creados **una vez** al montar: local, visitante y portero. El del portero se hornea una sola vez con `GK_KIT_PRIMARY`/`GK_KIT_SECONDARY` (G12-1: igual para los 16 porteros). Local y visitante se re-hornean en `startMatch` justo después de `matchKits = resolveMatchKits(...)` (así el visitante sale con su equipación invertida si choca, QA del 15-sep) y también al montar (el placeholder). Re-hornear = `clearRect` + ~2 900 `fillRect` por atlas: un evento, no un frame.
-- **Nitidez:** `ctx.imageSmoothingEnabled = false` una vez tras `getContext` (el componente no tenía ningún `drawImage` hasta ahora: no afecta a nada existente; sí al patrón del césped, que también queda nítido), y coordenadas de pantalla redondeadas con `Math.round` antes de `drawImage`, o los sprites tiemblan al moverse la cámara (brief §1, «Pega»). **`image-rendering: pixelated` NO se añade en este paso** — ver duda abierta en V15-1-5: el CSS del canvas (`VaultWorldCupGame.tsx` JSX y `app/globals.css:210`) nunca lo **amplía** en escritorio (`maxWidth/maxHeight: 100%` solo encogen, y por debajo de 768 px el juego está bloqueado por `viewport-guard`), pero en pantallas con `devicePixelRatio` 2 el navegador sí escala el lienzo 800 × 500 y la decisión afecta también al texto del HUD. Es de Paco.
+- **Atlas:** tres `<canvas>` de 240 × 210 creados **una vez** al montar: local, visitante y portero. El del portero se hornea una sola vez con `GK_KIT_PRIMARY`/`GK_KIT_SECONDARY` (G12-1: igual para los 16 porteros). Local y visitante se re-hornean en `startMatch` justo después de `matchKits = resolveMatchKits(...)` (así el visitante sale con su equipación invertida si choca, QA del 15-sep) y también al montar (el placeholder). Re-hornear = `clearRect` + ~5 300 `fillRect` por atlas (2·N + 4·NE + 2·E × 667 celdas opacas cada juego a mano = 5 336): un evento, no un frame.
+- **Nitidez:** `ctx.imageSmoothingEnabled = false` una vez tras `getContext` (el componente no tenía ningún `drawImage` hasta ahora: no afecta a nada existente; sí al patrón del césped, que también queda nítido), y coordenadas de pantalla redondeadas con `Math.round` antes de `drawImage`, o los sprites tiemblan al moverse la cámara (brief §1, «Pega»). **`image-rendering: pixelated` NO se añade en este paso** — resuelto por Paco (21-sep): el CSS del canvas (`VaultWorldCupGame.tsx` JSX y `app/globals.css:210`) nunca lo **amplía** en escritorio (`maxWidth/maxHeight: 100%` solo encogen, y por debajo de 768 px el juego está bloqueado por `viewport-guard`), pero en pantallas con `devicePixelRatio` 2 el navegador sí escala el lienzo 800 × 500 y la decisión afecta también al texto del HUD; se mira en el QA (punto 11), no queda como duda abierta.
 - **Deslizamiento inclinado:** `ctx.setTransform(cos, s, -s, cos, px, py)` con `s = SLIDE_TILT_SIN · tilt`, `drawImage` centrado en el origen y `ctx.setTransform(1, 0, 0, 1, 0, 0)` inmediatamente después. El lienzo no usa ninguna otra transformación (medido: ni `setTransform`, ni `scale`, ni `translate`, ni `save` en el componente antes de V15-1; V15-1-2 añade el `setTransform` del césped, que también se deshace en el acto).
 
 - [ ] **Step 1: Reescribir la sonda en rojo**
@@ -1770,9 +1773,17 @@ describe('the view layer (steps 11 and V15-1) over three full matches', () => {
       for (let i = 0; i < m.players.length; i++) {
         const p = m.players[i];
         if (p.role === 'gk') continue;
-        if (gestureProgress(gestures, p.id, m.stepCount) !== GESTURE_IDLE) outfieldGestures++;
+        const progress = gestureProgress(gestures, p.id, m.stepCount);
+        if (progress !== GESTURE_IDLE) outfieldGestures++;
         const parked = shootout && p.id !== takerId;
-        choosePlayerSprite(p, m.stepCount, shootout, parked, GESTURE_IDLE, 0, 0, choice);
+        // H12 del pre-vuelo (21-sep): se pasa la fracción real del gesto, SIN la puerta
+        // de rol (`p.role === 'gk' ? progress : GESTURE_IDLE` que usaba el otro test de
+        // este fichero) -- si no, outfieldDives solo podría ser > 0 con la función
+        // gravemente rota, porque choosePlayerSprite jamás ve un progress !== GESTURE_IDLE
+        // para un jugador de campo. Con la fracción real, outfieldDives === 0 depende de
+        // que los gestos solo arranquen en porteros (comprobado por beginGkCatchGestures),
+        // que es la garantía que este test dice dar.
+        choosePlayerSprite(p, m.stepCount, shootout, parked, progress, gestures.dirX[p.id], gestures.dirY[p.id], choice);
         if (choice.pose === POSE_DIVE_0 || choice.pose === POSE_DIVE_1) outfieldDives++;
       }
     }
@@ -1805,7 +1816,8 @@ En `components/games/VaultWorldCupGame.tsx`:
 
 1. **Borra** la línea `import { createDivePose, createPlayerPose, divePose, playerPose } from './football-screen/player-pose';`.
 2. En el import de `./football-screen/gestures`, **quita** `diveReach` (queda `GESTURE_IDLE, beginGkCatchGestures, createGestureTimers, gestureProgress, resetGestures`).
-3. Añade, en orden alfabético entre los imports de `./football-screen/` (tras `./football-screen/sfx-map`):
+3. En el import de `./football-logic/players` (`:14`, `import { PLAYER_RADIUS, isPlayerDown, isSprinting, type PlayerState } from './football-logic/players';`), **quita** `isPlayerDown` → queda `import { PLAYER_RADIUS, isSprinting, type PlayerState } from './football-logic/players';`. El único uso de `isPlayerDown` en el `.tsx` (el `const down = !shootout && isPlayerDown(p, match.stepCount);` de `drawPlayer`) lo borra el Step 6 al sustituir el cuerpo por el sprite (ahora `choosePlayerSprite`/`sprite-frame.ts` deciden el tumbado); dejar el import sin tocar deja un `eslint` `no-unused-vars` que hace fallar la compuerta del Step 7.
+4. Añade, en orden alfabético entre los imports de `./football-screen/` (tras `./football-screen/sfx-map`):
 
 ```ts
 import { SLIDE_TILT_COS, SLIDE_TILT_SIN, choosePlayerSprite, createSpriteChoice } from './football-screen/sprite-frame';
@@ -1815,7 +1827,7 @@ import {
 } from './football-screen/sprite-maps';
 ```
 
-4. **Borra** de la paleta `const FACING_STICK = 'rgba(0,0,0,0.55)';` y el bloque:
+5. **Borra** de la paleta `const FACING_STICK = 'rgba(0,0,0,0.55)';` y el bloque:
 
 ```ts
 // G11-1: the head has to read on top of all sixteen teams' kits, so it is a fixed
@@ -1824,7 +1836,7 @@ const HEAD_COLOR = '#23201d';
 const HEAD_TRIM = 'rgba(255,255,255,0.55)';
 ```
 
-5. **Sustituye** en los tamaños el bloque:
+6. **Sustituye** en los tamaños el bloque:
 
 ```ts
 // G11-1: the width of the shoulder stroke, drawn perpendicular to facing.
@@ -1841,7 +1853,7 @@ const SPRITE_SHADOW_RX = 10;
 const SPRITE_SHADOW_RY = 4;
 ```
 
-6. Junto a `bakeGrassTile` (nivel de módulo, fuera del componente; la añadió V15-1-2), añade:
+7. Junto a `bakeGrassTile` (nivel de módulo, fuera del componente; la añadió V15-1-2), añade:
 
 ```ts
 // V15-1: one 240 x 210 atlas canvas (octants across, poses down), created ONCE per
@@ -1989,9 +2001,9 @@ por:
 npx vitest run
 npx tsc --noEmit
 npx eslint components/games/football-screen/view-pipeline.test.ts components/games/VaultWorldCupGame.tsx
-git diff --stat 9a1d3d6 -- components/games/football-logic/
-grep -rn "player-pose\|playerPose\|divePose\|createPlayerPose\|createDivePose" components/ app/
-grep -n "FACING_STICK\|HEAD_COLOR\|HEAD_TRIM\|SHOULDER_WIDTH\|diveReach" components/games/VaultWorldCupGame.tsx
+git diff --stat 478fc93 -- components/games/football-logic/
+grep -rnw "player-pose\|playerPose\|divePose\|createPlayerPose\|createDivePose" components/games/football-screen components/games/VaultWorldCupGame.tsx app/
+grep -n "FACING_STICK\|HEAD_COLOR\|HEAD_TRIM\|SHOULDER_WIDTH\|diveReach\|isPlayerDown" components/games/VaultWorldCupGame.tsx
 grep -n "createAtlasCanvas()\|bakeMatchAtlases()\|bakeAtlas(\|imageSmoothingEnabled" components/games/VaultWorldCupGame.tsx
 grep -n "drawImage\|setTransform" components/games/VaultWorldCupGame.tsx
 ls components/games/football-screen/player-pose.ts 2>&1
@@ -2000,7 +2012,7 @@ Esperado:
 - **1291 tests / 77 ficheros** verdes (con V15-1-1, V15-1-2 y V15-1-3 ya en el árbol: 1304 − 13 del test borrado; 78 − 1), `tsc` y `eslint` sin salida, `git diff` del motor **vacío**.
 - Los dos primeros `grep` **vacíos**.
 - El tercero: `imageSmoothingEnabled` **1** vez (tras `getContext`); `createAtlasCanvas()` **3** usos en la preasignación + la declaración; `bakeMatchAtlases()` **2** llamadas (preasignación y `startMatch`) + la declaración; `bakeAtlas(` en la declaración, en la preasignación del portero y dentro de `bakeMatchAtlases` — **ninguna** línea dentro de `drawPlayer`, `drawPitch` ni `draw`.
-- El cuarto: `drawImage` **2** líneas, ambas en `drawPlayer`; `setTransform` **4** líneas: 2 en `drawPitch` (césped) y 2 en `drawPlayer` (deslizamiento), cada `setTransform` con desplazamiento seguido de su `setTransform(1, 0, 0, 1, 0, 0)`.
+- El cuarto: `drawImage` **3** líneas — 2 llamadas reales en `drawPlayer` + 1 mención en el comentario del Step 5.1 («Smoothing off for every drawImage/pattern…»); `setTransform` **4** líneas: 2 en `drawPitch` (césped) y 2 en `drawPlayer` (deslizamiento), cada `setTransform` con desplazamiento seguido de su `setTransform(1, 0, 0, 1, 0, 0)`.
 - `ls` → `No such file or directory`.
 
 - [ ] **Step 8: Anotar en el ledger**
@@ -2016,8 +2028,8 @@ No ejecutes `git add`, `git rm` ni `git commit`.
 ### Task V15-1-5 (cierre): verificación del paso, lista de QA de Paco y mensaje de commit
 
 **Files:**
-- Modify: `.superpowers/sdd/2026-09-17-vault-world-cup-v15-1/progress.md`
-- Create: `.superpowers/sdd/2026-09-17-vault-world-cup-v15-1/qa-paco.md`
+- Modify: `.superpowers/sdd/2026-09-21-vault-world-cup-v15-1/progress.md`
+- Create: `.superpowers/sdd/2026-09-21-vault-world-cup-v15-1/qa-paco.md`
 - Ningún fichero de código se toca en esta tarea. Si al verificar aparece un fallo, **se arregla en la tarea que lo introdujo**, no aquí.
 
 **Interfaces:**
@@ -2036,21 +2048,21 @@ Esperado: **1291 tests en 77 ficheros verdes** (1268 + 13 + 8 + 15 − 13; 75 + 
 - [ ] **Step 2: Las compuertas de las Global Constraints**
 
 ```bash
-git diff --stat 9a1d3d6 -- components/games/football-logic/
+git diff --stat 478fc93 -- components/games/football-logic/
 grep -rn "Math.random" components/games/football-screen/
 grep -rn "@/" components/games/football-screen/sprite-maps.ts components/games/football-screen/sprite-frame.ts components/games/football-screen/grass.ts
 grep -rn "React\|document\.\|window\.\|new Audio" components/games/football-screen/sprite-maps.ts components/games/football-screen/sprite-frame.ts components/games/football-screen/grass.ts
 grep -rn " as " components/games/football-screen/sprite-maps.ts components/games/football-screen/sprite-frame.ts components/games/football-screen/grass.ts
 find .superpowers -name "*.ts" -o -name "*.tsx"
 ```
-Esperado: los **seis vacíos**. El primero es el que importa: el motor sigue exactamente como lo dejó `9a1d3d6`.
+Esperado: los **seis vacíos**. El primero es el que importa: el motor sigue exactamente como lo dejó `478fc93`.
 
 - [ ] **Step 3: Repasar el diff entero con ojos de revisor**
 
 ```bash
 git status --short
-git diff --stat 9a1d3d6
-git diff 9a1d3d6 -- components/games/VaultWorldCupGame.tsx
+git diff --stat 478fc93
+git diff 478fc93 -- components/games/VaultWorldCupGame.tsx
 ```
 Comprueba, una por una:
 1. `git status` muestra: 6 ficheros nuevos en `football-screen/` (`sprite-maps`, `sprite-frame`, `grass`, cada uno con su `.test.ts`), 2 borrados (`player-pose.ts`, `player-pose.test.ts`), 2 modificados (`VaultWorldCupGame.tsx`, `view-pipeline.test.ts`), el plan y el ledger. Nada más.
@@ -2061,7 +2073,7 @@ Comprueba, una por una:
 
 - [ ] **Step 4: Escribir la lista de QA de Paco**
 
-Crea `.superpowers/sdd/2026-09-17-vault-world-cup-v15-1/qa-paco.md` con exactamente esto:
+Crea `.superpowers/sdd/2026-09-21-vault-world-cup-v15-1/qa-paco.md` con exactamente esto:
 
 ```markdown
 # QA jugado — V15-1 «Aspecto» (v1.5)
@@ -2110,21 +2122,23 @@ Ten abierta `references/vault-world-cup-tehkan.png` al lado.
 
 - [ ] **Step 5: Cerrar el ledger**
 
-Añade a `.superpowers/sdd/2026-09-17-vault-world-cup-v15-1/progress.md`:
+Añade a `.superpowers/sdd/2026-09-21-vault-world-cup-v15-1/progress.md`:
 
 ```
-V15-1 COMPLETO en código: 1291 tests / 77 ficheros verdes, tsc y eslint limpios, motor intacto desde 9a1d3d6 (git diff vacío). G15-2 (sprites 8 direcciones horneados por partido, césped lima moteado) y G15-3 (capas; palito fuera; player-pose borrado entero) implementados; lineWidth explícito (brief §8). Lista de QA en qa-paco.md. Pendiente: commit de Paco + QA jugado.
+V15-1 COMPLETO en código: 1291 tests / 77 ficheros verdes, tsc y eslint limpios, motor intacto desde 478fc93 (git diff vacío). G15-2 (sprites 8 direcciones horneados por partido, césped lima moteado) y G15-3 (capas; palito fuera; player-pose borrado entero) implementados; lineWidth explícito (brief §8). Lista de QA en qa-paco.md. Pendiente: commit de Paco + QA jugado.
 ```
 
-- [ ] **Step 6: Dudas abiertas para Paco (lista, no cambios)**
+- [ ] **Step 6: Resueltas por Paco (lista, no cambios)**
 
-Añade a `progress.md` bajo el encabezado `## Dudas abiertas para Paco (no decididas en V15-1)`:
-1. `image-rendering: pixelated` en el `<canvas>` (punto 11 del QA): nítido en retina, pero también pixela el texto del HUD y los menús.
-2. Pelo y piel iguales para los 18 jugadores (un solo `SPRITE_HAIR`/`SPRITE_SKIN`). G15-2 pide pelo, no variedad; variar por id sería otra paleta por jugador o más atlas.
-3. Estirada sin desplazamiento: el sprite no avanza hacia el balón (punto 6 del QA).
-4. Ángulo y sentido del deslizamiento inclinado (`SLIDE_TILT_RAD = 0.45`, signo de `tackleDirX`) (punto 7).
+Añade a `progress.md` bajo el encabezado `## Resueltas por Paco (21-sep, antes del pre-vuelo)` las 6 resoluciones (H4 del pre-vuelo: ya no son dudas abiertas, se registran como decididas):
+1. **Base de compuertas:** `478fc93` (docs sobre `9a1d3d6`; mismo código).
+2. **`image-rendering: pixelated`:** NO se añade en V15-1; se mira en el QA (punto 11).
+3. **Pelo y piel:** iguales para los 18 jugadores (un solo `SPRITE_HAIR`/`SPRITE_SKIN`) en la v1.5. G15-2 pide pelo, no variedad; variar por id sería otra paleta por jugador o más atlas.
+4. **Estirada del portero:** sin desplazamiento hacia el balón en V15-1; se valora en el QA (punto 6).
+5. **Deslizamiento:** `SLIDE_TILT_RAD = 0.45` inclinado hacia donde va el jugador (signo de `tackleDirX`); se valora en el QA (punto 7).
+6. **Mapas E/NE derivados de N:** se valida su legibilidad a 30 px en el QA (puntos 1-2).
 
-Y bajo `## Peticiones separadas al motor`: `ninguna.` — el hueco vacío también es información.
+Bajo `## Dudas abiertas para Paco`: `ninguna.` Bajo `## Peticiones separadas al motor`: `ninguna.` — el hueco vacío también es información.
 
 - [ ] **Step 7: Proponer el commit del paso — NO ejecutes `git add` ni `git commit`**
 
@@ -2134,14 +2148,14 @@ Mensaje único para Paco:
 feat(world-cup): v1.5 aspect — baked top-down pixel-art sprites, lime mown grass, no facing stick (V15-1, G15-2/G15-3)
 ```
 
-Recuérdale que el commit incluye dos **borrados** (`player-pose.ts` y su test) que hay que añadir con `git add -A components/games/football-screen/` o equivalente, y que el plan (`docs/superpowers/plans/2026-09-17-vault-world-cup-v15-1-aspect.md`) y el ledger están sin trackear: es suyo decidir si entran en el mismo commit.
+Recuérdale que el commit incluye dos **borrados** (`player-pose.ts` y su test) que hay que añadir con `git add -A components/games/football-screen/` o equivalente, y que el plan (`docs/superpowers/plans/2026-09-17-vault-world-cup-v15-1-aspect.md`) está **modificado** (trackeado desde `478fc93`) y el ledger **sin trackear**: es suyo decidir si entran en el mismo commit.
 
 ---
 
 ## Self-review (ejecutada al escribir el plan, 17-sep)
 
 **1. Cobertura del spec.**
-- **G15-2** — sprites horneados por dirección → V15-1-1 (`bakeSpriteAtlas`) + V15-1-4 (atlas en el `.tsx`); 3 a mano N/NE/E + rotación/espejo = 8 → V15-1-1 (`HAND_*`, `rotateMapCW`, `mirrorMapX`, `buildPlayerSpriteMaps`, test de dirección de la cabeza en 56 celdas); estilo `KongGame.tsx` → mapas de caracteres + horneado una vez; 3 fotogramas carrera + quieto + tumbado → `POSE_RUN_0..2`, `POSE_IDLE`, `POSE_DOWN` (V15-1-1) y su selección (V15-1-3); paleta por partido → `writeSpritePalette` + `bakeMatchAtlases` en `startMatch` con `resolveMatchKits` (V15-1-4); ~28-32 px con radio intacto → `SPRITE_SIZE = 30` + test que fija `PLAYER_RADIUS === 12`; pelo, camiseta con kit, piernas animadas → tests «always draws hair, a kit shirt…» y «animates the legs»; sombra mínima → `SPRITE_SHADOW_*` (V15-1-4); césped de dos verdes en bandas tipo corte → V15-1-2 (`grass.ts` + patrón), con moteado determinista (hash entero, test de reproducibilidad). Octante sin trigonometría y fotograma desde `stepCount`/`id`/velocidad → V15-1-3. `imageSmoothingEnabled = false` y redondeo → V15-1-4 Step 5-6; `image-rendering: pixelated` comprobado (no se amplía por CSS en escritorio) y elevado a Paco como duda.
+- **G15-2** — sprites horneados por dirección → V15-1-1 (`bakeSpriteAtlas`) + V15-1-4 (atlas en el `.tsx`); 3 a mano N/NE/E + rotación/espejo = 8 → V15-1-1 (`HAND_*`, `rotateMapCW`, `mirrorMapX`, `buildPlayerSpriteMaps`, test de dirección de la cabeza en 56 celdas); estilo `KongGame.tsx` → mapas de caracteres + horneado una vez; 3 fotogramas carrera + quieto + tumbado → `POSE_RUN_0..2`, `POSE_IDLE`, `POSE_DOWN` (V15-1-1) y su selección (V15-1-3); paleta por partido → `writeSpritePalette` + `bakeMatchAtlases` en `startMatch` con `resolveMatchKits` (V15-1-4); ~28-32 px con radio intacto → `SPRITE_SIZE = 30` + test que fija `PLAYER_RADIUS === 12`; pelo, camiseta con kit, piernas animadas → tests «always draws hair, a kit shirt…» y «animates the legs»; sombra mínima → `SPRITE_SHADOW_*` (V15-1-4); césped de dos verdes en bandas tipo corte → V15-1-2 (`grass.ts` + patrón), con moteado determinista (hash entero, test de reproducibilidad). Octante sin trigonometría y fotograma desde `stepCount`/`id`/velocidad → V15-1-3. `imageSmoothingEnabled = false` y redondeo → V15-1-4 Step 5-6; `image-rendering: pixelated` comprobado (no se amplía por CSS en escritorio) y resuelto por Paco (21-sep): no se añade, se mira en el QA (punto 11).
 - **G15-3** — carrera/quieto, tumbado propio → V15-1-3 prioridades 3 y 5; deslizamiento = carrera inclinada → prioridad 4 + `setTransform` en V15-1-4; estirada GK 2 fotogramas por la fracción del gesto → `diveSpritePose` (V15-1-3) + test 0→1→0; cursor, muescas y aro vectoriales → V15-1-4 Step 6.3 (intactos); palito fuera → V15-1-4 Step 4.4 y 6.2 + grep; `player-pose.ts` + tests borrados → V15-1-4 Step 3, con la decisión razonada en Global Constraints (nada que rescatar para la estirada). La celebración de v1 se queda → V15-1-4 Step 6.3.
 - **G12-1** — verde flúor en todas las poses → atlas de portero único + test «bakes the reserved keeper green into every pose of every octant».
 - **Brief §8** — `lineWidth` explícito → V15-1-2 Step 7 + grep de 2 líneas.
@@ -2152,4 +2166,14 @@ Recuérdale que el commit incluye dos **borrados** (`player-pose.ts` y su test) 
 
 **3. Consistencia de nombres.** `POSE_*`/`OCTANT_*`/`SPRITE_SIZE`/`SPRITE_HALF`/`ATLAS_W`/`ATLAS_H`/`atlasCellX`/`atlasCellY` se declaran en V15-1-1 y se consumen con esos nombres en V15-1-3, V15-1-4 y la sonda. `choosePlayerSprite(p, stepCount, shootout, parked, diveProgress, diveDirX, diveDirY, out)` tiene la misma firma y orden en su test, en `drawPlayer` y en los dos tests de la sonda. `SpriteChoice.tilt` es `-1 | 0 | 1` en V15-1-3 y se compara con `=== 0` y se multiplica en V15-1-4. `grassTileOffset(camera, tile)` y `GRASS_TILE_W/H` coinciden entre `grass.test.ts` y `drawPitch`. `bakeAtlas`/`createAtlasCanvas`/`bakeMatchAtlases` (V15-1-4) y `bakeGrassTile` (V15-1-2) solo existen en el `.tsx`. `GESTURE_IDLE`, `gestureProgress`, `DIVE_REACH_MAX`, `diveReach`, `DIVE_PEAK`, `GK_DIVE_STEPS` son los exports reales de `gestures.ts` (medidos con grep).
 
-**Riesgo que el plan NO cierra y que solo cierra el QA de Paco:** la legibilidad del pixel-art a 30 px (mapas E/NE partidos de giro/cizallado de N), el contraste de líneas blancas y camisetas blancas sobre lima, y la nitidez en pantallas retina. Están en `qa-paco.md` (puntos 1, 2, 10 y 11) y las decisiones que no son de código van a «Dudas abiertas».
+**Riesgo que el plan NO cierra y que solo cierra el QA de Paco:** la legibilidad del pixel-art a 30 px (mapas E/NE partidos de giro/cizallado de N), el contraste de líneas blancas y camisetas blancas sobre lima, y la nitidez en pantallas retina. Están en `qa-paco.md` (puntos 1, 2, 10 y 11); las decisiones de diseño que no son de código ya las resolvió Paco el 21-sep (ver «Resoluciones de Paco» y el Step 6 de V15-1-5) y se validan en ese mismo QA, no quedan como dudas abiertas.
+
+## Resoluciones de Paco (21-sep, antes del pre-vuelo)
+
+- **Base de compuertas:** `478fc93` (docs sobre `9a1d3d6`; mismo código). Sustituido en todo el plan.
+- **`image-rendering: pixelated`:** NO se añade en V15-1; se mira en el QA (punto 11).
+- **Pelo y piel:** iguales para los 18 jugadores en la v1.5.
+- **Estirada del portero:** sin desplazamiento hacia el balón en V15-1; se valora en el QA (punto 6).
+- **Deslizamiento:** `SLIDE_TILT_RAD = 0.45` inclinado hacia donde va el jugador (signo de `tackleDirX`).
+- **Mapas E/NE derivados de N:** se valida su legibilidad a 30 px en el QA.
+→ El Step 6 de V15-1-5 registra estas como «resueltas por Paco 21-sep», no como dudas abiertas.
