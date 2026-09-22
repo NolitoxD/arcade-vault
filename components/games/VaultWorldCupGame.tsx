@@ -28,17 +28,20 @@ import {
   CAPTION_TEXT, collectCaptions, createCaptionState, createMatchWatch, pushCaption, resetCaptionState, resetMatchWatch,
   stepCaption, updateWatch, type ShowingCaption,
 } from './football-screen/captions';
+import { CONTROL_HINTS, TWO_PLAYER_SCHEME_NOTE, keeperHintFor } from './football-screen/control-hints';
 import {
   MODE_BLURBS, MODE_LIST, MODE_NAMES, createFlowState, flowAfterModeBuilt, flowBuildMode, flowCaptionsDrained,
   flowConfirmBracket, flowConfirmDraw, flowConfirmMode, flowConfirmTeam, flowContinue, flowCpuPair, flowExitMatch,
   flowHumanCount, flowMatchOver, flowMoveBracketChoice, flowMoveMode, flowMoveTeam, flowPickingHuman, flowRecordCpuResult,
-  flowSetFormation, flowSkipSpectate, flowSpectateOver, phaseGroup, type PhaseGroup,
+  flowSetFormation, flowSetKeyScheme, flowSkipSpectate, flowSpectateOver, flowToggleKeyScheme, phaseGroup, type PhaseGroup,
 } from './football-screen/flow';
 import {
   BRACKET_ELIMINATED_Y, BRACKET_HINT_Y, BRACKET_PROMPT_Y, BRACKET_ROW_H, DRAW_ROW_H, FORMATION_ROW_Y, MODE_CARD_H,
-  MODE_CARD_W, SELECT_HINT_Y, TEAM_CARD_H, TEAM_CARD_W, VICTORY_FIGURE_Y, VICTORY_HINT_Y, VICTORY_TEAM_Y, VICTORY_TITLE_Y,
+  MODE_CARD_W, MODE_HINT_Y, MODE_SCHEME_DETAIL_Y, MODE_SCHEME_ROW_Y, SELECT_HINT_Y, TEAM_CARD_H, TEAM_CARD_W,
+  VICTORY_FIGURE_Y, VICTORY_HINT_Y, VICTORY_TEAM_Y, VICTORY_TITLE_Y,
   bracketRowY, drawColX, drawRowY, modeCardY, teamCardX, teamCardY,
 } from './football-screen/flow-layout';
+import { PAD_KEYS, routeGamepadStrategy, routeGamepadToPad } from './football-screen/gamepad-input';
 import { GESTURE_IDLE, beginGkCatchGestures, createGestureTimers, gestureProgress, resetGestures } from './football-screen/gestures';
 import { GOAL_MOUTH_DEPTH, NET_CELL, netLineCount } from './football-screen/goal-net';
 import {
@@ -49,8 +52,9 @@ import {
   halfLabel, keeperHoldsBall, shootoutRoundLabel, smallNumber, sprintBarFraction,
 } from './football-screen/hud';
 import {
-  SOLO, TWO_PLAYER_P1, TWO_PLAYER_P2, TWO_PLAYER_TABLES, createPadState, padAdvance, padBlur, padChoice, padClear,
-  padDown, padFormationChoice, padKeyFor, padToTeamInput, padUp, type KeyTable, type PadState,
+  ARROWS_SOLO, KEY_SCHEME_STORAGE_KEY, SOLO_TABLES_BY_SCHEME, TWO_PLAYER_P1, TWO_PLAYER_P2, TWO_PLAYER_TABLES,
+  createPadState, isPauseKey, loadKeyScheme, overlayPadToTeamInput, padAdvance, padBlur, padChoice, padClear, padDown,
+  padFormationChoice, padKeyFor, padToTeamInput, padUp, saveKeyScheme, type KeyTable, type PadKey, type PadState,
 } from './football-screen/keyboard';
 import { SPECTATE_SPEED, createStepBudget } from './football-screen/loop';
 import { createFramePlan, planFrame, planHalfAmbience } from './football-screen/match-loop';
@@ -69,6 +73,8 @@ import {
   createSpritePalette, writeSpritePalette, type SpritePalette,
 } from './football-screen/sprite-maps';
 import { MIN_VIEWPORT_H, MIN_VIEWPORT_W, viewportAllowed } from './football-screen/viewport-guard';
+import { createGamepadPad, type GamepadPad } from '@/lib/gamepad';
+import { pollGamepads } from '@/lib/gamepad-navigator';
 import { sfxVaultWorldCup } from '@/lib/sfx-vault-world-cup';
 
 interface VaultWorldCupGameProps {
@@ -89,6 +95,11 @@ interface VaultWorldCupGameProps {
   // nor upon exit): the play page redirects to detail after showing the panel for
   // a couple of seconds.
   onViewportBlocked?: () => void;
+  // G15-6: the pause keys live in the component, which knows the active key scheme
+  // (Esc always; P only while no active table reads it -- with Clásico P is "right").
+  // The play page keeps the `paused` state and flips it here; the gamepad's Start
+  // (G15-20) lands here too.
+  onPauseToggle?: () => void;
 }
 
 // ── The two display slots of the scoreboard. NOT "human" and "CPU" any more: who is
@@ -100,7 +111,6 @@ const AWAY = 1 as const;
 const KEEPER_HOLD_STEPS = stepsFor(2);
 // The bank, as ids, once: the selector and the draw read it by index.
 const BANK_IDS: readonly string[] = TEAMS.map((t) => t.id);
-const SOLO_TABLES: readonly [KeyTable, KeyTable] = [SOLO, SOLO];
 const ZERO_FORMATIONS: readonly [number, number] = [0, 0];
 
 // ── Palette. One visual version, no skins (spec). ─────────────────────────────
@@ -187,8 +197,6 @@ const BALL_MARGIN = 30;
 const HINT_AIM = 'CRUCETA: APUNTAR · SALE SOLO';
 const BLOCKED_TITLE = 'AGRANDA LA VENTANA';
 const BLOCKED_HINT = `MÍNIMO ${MIN_VIEWPORT_W} × ${MIN_VIEWPORT_H}`;
-const KEEPER_HINT = 'SAQUE: K CORTO · J LARGO · ';
-const KEEPER_HINT_P1 = 'SAQUE: V CORTO · C LARGO · ';
 const STRATEGY_LABEL: Readonly<Record<Strategy, string>> = { attack: 'ATAQUE', neutral: 'NEUTRAL', defend: 'DEFENSA' };
 // One hint per key table (G9-2), chosen by table identity in draw(): no string is built.
 const FORMATION_HINT_SOLO = '1/2/3 ALINEACIÓN · 4/5/6 ESTRATEGIA';
@@ -200,10 +208,8 @@ const CARD_BG = 'rgba(20,20,30,0.85)';
 const CARD_BORDER = '#444455';
 const DIM_TEXT = 'rgba(232,244,255,0.4)';
 const MODE_TITLE = 'ELIGE MODO';
-const MODE_HINT = 'ARRIBA / ABAJO · A (J) PARA CONFIRMAR';
 const TEAM_TITLE_SOLO = 'ELIGE TU SELECCIÓN';
 const TEAM_TITLES_TWO: readonly [string, string] = ['JUGADOR 1 (WASD): ELIGE TU SELECCIÓN', 'JUGADOR 2 (FLECHAS): ELIGE TU SELECCIÓN'];
-const TEAM_HINT_SOLO = 'CRUCETA · A (J) CONFIRMA · 1/2/3 ALINEACIÓN';
 const TEAM_HINTS_TWO: readonly [string, string] = ['WASD · C CONFIRMA · 1/2/3 ALINEACIÓN', 'FLECHAS · J CONFIRMA · 7/8/9 ALINEACIÓN'];
 const TAKEN_TAG = 'J1';
 const FORMATION_ROW_LABEL = 'ALINEACIÓN:';
@@ -213,10 +219,9 @@ function buildFormationLabels(keys: readonly string[]): string[] {
   for (let i = 0; i < FORMATIONS.length; i++) out.push(`${keys[i]} ${FORMATIONS[i].name}`);
   return out;
 }
-const FORMATION_LABELS_SOLO: readonly string[] = buildFormationLabels(SOLO.formation);
+const FORMATION_LABELS_SOLO: readonly string[] = buildFormationLabels(ARROWS_SOLO.formation);
 const FORMATION_LABELS_P2: readonly string[] = buildFormationLabels(TWO_PLAYER_P2.formation);
 const DRAW_TITLE = 'SORTEO DEL MUNDIAL';
-const DRAW_HINT = 'A (J) PARA CONTINUAR';
 const YOU_TAG = 'TÚ';
 const BRACKET_TITLE_PREFIX = 'CUADRO · ';
 const BRACKET_VS = ' VS ';
@@ -227,11 +232,7 @@ const BRACKET_ELIMINATED_PREFIX = 'ELIMINADOS: ';
 const BRACKET_LIST_SEP = ' · ';
 const BRACKET_VER = 'VER';
 const BRACKET_SALTAR = 'SALTAR';
-const BRACKET_CHOICE_HINT = 'IZQ / DER · A (J) CONFIRMA';
-const BRACKET_PLAY_HINT = 'A (J) PARA JUGAR';
-const SPECTATE_BANNER = 'PARTIDO DE LA CPU · X4 · A (J) SALTA AL RESULTADO';
 const TRAINING_HINT = 'R PARA SALIR';
-const VICTORY_HINT = 'A (J) · CONTINUAR';
 const STATUS_SELECTOR = 'SELECTOR';
 const STATUS_VICTORY = 'VICTORIA';
 const CUP_COLOR = '#ffcf3a';
@@ -299,6 +300,7 @@ function VaultWorldCupGame({
   onGameOver,
   onVictory,
   onViewportBlocked,
+  onPauseToggle,
 }: VaultWorldCupGameProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const pausedRef = useRef(paused);
@@ -310,6 +312,7 @@ function VaultWorldCupGame({
   const onGameOverRef = useRef(onGameOver);
   const onVictoryRef = useRef(onVictory);
   const onViewportBlockedRef = useRef(onViewportBlocked);
+  const onPauseToggleRef = useRef(onPauseToggle);
 
   useEffect(() => {
     pausedRef.current = paused;
@@ -330,7 +333,8 @@ function VaultWorldCupGame({
     onGameOverRef.current = onGameOver;
     onVictoryRef.current = onVictory;
     onViewportBlockedRef.current = onViewportBlocked;
-  }, [onScoreChange, onClockChange, onStatusChange, onPhaseChange, onGameOver, onVictory, onViewportBlocked]);
+    onPauseToggleRef.current = onPauseToggle;
+  }, [onScoreChange, onClockChange, onStatusChange, onPhaseChange, onGameOver, onVictory, onViewportBlocked, onPauseToggle]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -347,6 +351,14 @@ function VaultWorldCupGame({
     const fixedSeed = seed;
     let runSeed = 0;
     const flow = createFlowState();
+    // G15-6: the chosen key scheme survives a reload. Two closures over localStorage,
+    // created once; loadKeyScheme/saveKeyScheme wrap them in try/catch, so a private
+    // window or blocked site data simply starts on Flechas and forgets on reload.
+    const readStoredScheme = (): string | null => window.localStorage.getItem(KEY_SCHEME_STORAGE_KEY);
+    const writeStoredScheme = (value: string): void => {
+      window.localStorage.setItem(KEY_SCHEME_STORAGE_KEY, value);
+    };
+    flowSetKeyScheme(flow, loadKeyScheme(readStoredScheme));
     // Placeholders so nothing below is nullable: replaced by flowBuildMode / startMatch
     // the first time the player confirms. Neither is ever stepped or drawn as such.
     let mode: GameMode = createFriendlyMode('friendly-cpu', TEAMS[0].id, TEAMS[1].id);
@@ -366,7 +378,31 @@ function VaultWorldCupGame({
     // Two pads, one per TEAM (not per player): pads[t] drives team t when it is human.
     // The tables say which keys each pad listens to (G9-2).
     const pads: [PadState, PadState] = [createPadState('neutral', 0), createPadState('neutral', 0)];
-    let tables: readonly [KeyTable, KeyTable] = SOLO_TABLES;
+    // G15-20: the two physical pads (mando 1, mando 2), read once per frame by
+    // pollGamepadFrame, and one PadState per TEAM they drive through padDown/padUp --
+    // the keyboard's own entries; runStep lays them over the keyboard's, which stays
+    // live at the same time. All created once (criterion 20).
+    const gamepads: readonly [GamepadPad, GamepadPad] = [createGamepadPad(), createGamepadPad()];
+    const gamepadPads: [PadState, PadState] = [createPadState('neutral', 0), createPadState('neutral', 0)];
+    // G15-20 (pre-flight H8): pollGamepadFrame only calls pollGamepads -- and so
+    // navigator.getGamepads(), criterion 20's exception -- while gamepadSeen is true.
+    // The initial poll catches a pad already connected before entering the page
+    // (Chrome/Firefox do not always expose it until the first button press, but if it
+    // is already exposed this picks it up without waiting for one); 'gamepadconnected'
+    // turns it on live; 'gamepaddisconnected' only turns it off once a fresh poll
+    // confirms none is left (so a second pad that is still alive does not turn it
+    // off). A keyboard-only player never pays for the array allocation, nor for the
+    // Gamepad/GamepadButton instances Chrome creates per pad on every call.
+    let gamepadSeen = pollGamepads(gamepads) > 0;
+    function handleGamepadConnected(): void {
+      gamepadSeen = true;
+    }
+    function handleGamepadDisconnected(): void {
+      gamepadSeen = pollGamepads(gamepads) > 0;
+    }
+    window.addEventListener('gamepadconnected', handleGamepadConnected);
+    window.addEventListener('gamepaddisconnected', handleGamepadDisconnected);
+    let tables: readonly [KeyTable, KeyTable] = SOLO_TABLES_BY_SCHEME[flow.keyScheme];
     const runFormations: [number, number] = [0, 0];
     const cursorIds: [number, number] = [-1, -1];
 
@@ -513,10 +549,11 @@ function VaultWorldCupGame({
       humanSide = side;
       victoryScreen = screen;
       matchSeed = seedForMatch;
-      tables = side === 'both' ? TWO_PLAYER_TABLES : SOLO_TABLES;
+      tables = side === 'both' ? TWO_PLAYER_TABLES : SOLO_TABLES_BY_SCHEME[flow.keyScheme];
       speed = side === 'none' ? SPECTATE_SPEED : 1;
       for (let t = 0; t < 2; t++) {
         padBlur(pads[t]);
+        padBlur(gamepadPads[t]);
         pads[t].formation = formations[t];
         pads[t].strategy = 'neutral';
       }
@@ -716,8 +753,14 @@ function VaultWorldCupGame({
       // direction has to be read HERE, before this step's stepMatchRun runs it over.
       const prevBallX = match.ball.x;
       const prevBallY = match.ball.y;
-      if (run.human[0]) padToTeamInput(pads[0], first, run.inputs[0]);
-      if (run.human[1]) padToTeamInput(pads[1], first, run.inputs[1]);
+      if (run.human[0]) {
+        padToTeamInput(pads[0], first, run.inputs[0]);
+        overlayPadToTeamInput(gamepadPads[0], first, run.inputs[0]);
+      }
+      if (run.human[1]) {
+        padToTeamInput(pads[1], first, run.inputs[1]);
+        overlayPadToTeamInput(gamepadPads[1], first, run.inputs[1]);
+      }
       stepMatchRun(run);
 
       // 1. The ball being struck (audio table: ActionEvent 'shot' with ok).
@@ -869,6 +912,8 @@ function VaultWorldCupGame({
         if (plan.advancePad) {
           padAdvance(pads[0]);
           padAdvance(pads[1]);
+          padAdvance(gamepadPads[0]);
+          padAdvance(gamepadPads[1]);
         }
         reportHud();
         return;
@@ -1313,13 +1358,13 @@ function VaultWorldCupGame({
       }
 
       // S-SC3, for the human keeper who holds the ball (see runStep point 6). The hint
-      // names J1's keys when J1's table is the one in use.
+      // names the keys of the table in use (keeperHintFor).
       if (keeperHoldTeam !== -1 && isOpenPlay(match.phase)) {
         ctx.textAlign = 'center';
         ctx.font = FONT_SMALL;
         ctx.fillStyle = HUD_ACCENT;
         const left = countdownSeconds(KEEPER_HOLD_STEPS - keeperHoldSteps);
-        const hint = tables[keeperHoldTeam] === TWO_PLAYER_P1 ? KEEPER_HINT_P1 : KEEPER_HINT;
+        const hint = keeperHintFor(tables[keeperHoldTeam]);
         ctx.fillText(hint + smallNumber(left), VIEW_W / 2, HUD_H + 16);
       }
 
@@ -1327,7 +1372,7 @@ function VaultWorldCupGame({
         ctx.textAlign = 'center';
         ctx.font = FONT_SMALL;
         ctx.fillStyle = HUD_ACCENT;
-        ctx.fillText(SPECTATE_BANNER, VIEW_W / 2, HUD_H + 16);
+        ctx.fillText(CONTROL_HINTS[flow.keyScheme].spectate, VIEW_W / 2, HUD_H + 16);
       } else if (!match.rules.timed) {
         ctx.textAlign = 'center';
         ctx.font = FONT_SMALL;
@@ -1409,7 +1454,18 @@ function VaultWorldCupGame({
         ctx.fillStyle = selected ? HUD_TEXT : DIM_TEXT;
         ctx.fillText(MODE_BLURBS[MODE_LIST[i]], VIEW_W / 2, y + 48);
       }
-      drawHint(MODE_HINT, VIEW_H - 24);
+      // G15-6: the key-scheme row, changed with left/right from any card. Dimmed while
+      // AMISTOSO A DOS is highlighted: G9-2's split is fixed there.
+      const hints = CONTROL_HINTS[flow.keyScheme];
+      const two = flowHumanCount(flow) === 2;
+      ctx.textAlign = 'center';
+      ctx.font = FONT_MENU_BLURB;
+      ctx.fillStyle = two ? DIM_TEXT : HUD_ACCENT;
+      ctx.fillText(hints.schemeRow, VIEW_W / 2, MODE_SCHEME_ROW_Y);
+      ctx.font = FONT_SMALL;
+      ctx.fillStyle = two ? DIM_TEXT : HUD_TEXT;
+      ctx.fillText(two ? TWO_PLAYER_SCHEME_NOTE : hints.schemeDetail, VIEW_W / 2, MODE_SCHEME_DETAIL_Y);
+      drawHint(hints.mode, MODE_HINT_Y);
     }
 
     function drawTeamSelect(): void {
@@ -1452,7 +1508,7 @@ function VaultWorldCupGame({
         ctx.fillStyle = i === flow.formation[picking] ? HUD_ACCENT : HUD_TEXT;
         ctx.fillText(labels[i], 150 + i * 200, FORMATION_ROW_Y);
       }
-      drawHint(two ? TEAM_HINTS_TWO[picking] : TEAM_HINT_SOLO, SELECT_HINT_Y);
+      drawHint(two ? TEAM_HINTS_TWO[picking] : CONTROL_HINTS[flow.keyScheme].teamSolo, SELECT_HINT_Y);
     }
 
     function drawDraw(): void {
@@ -1469,7 +1525,7 @@ function VaultWorldCupGame({
           ctx.font = FONT_MENU_ITEM;
         }
       }
-      drawHint(DRAW_HINT, VIEW_H - 24);
+      drawHint(CONTROL_HINTS[flow.keyScheme].draw, VIEW_H - 24);
     }
 
     function drawBracket(): void {
@@ -1513,7 +1569,7 @@ function VaultWorldCupGame({
         ctx.fillStyle = DIM_TEXT;
         ctx.fillText(bracketEliminated, VIEW_W / 2, BRACKET_ELIMINATED_Y);
       }
-      drawHint(bracketHasChoice ? BRACKET_CHOICE_HINT : BRACKET_PLAY_HINT, BRACKET_HINT_Y);
+      drawHint(bracketHasChoice ? CONTROL_HINTS[flow.keyScheme].bracketChoice : CONTROL_HINTS[flow.keyScheme].bracketPlay, BRACKET_HINT_Y);
     }
 
     // Spec: a fixed composition painted on canvas -- the winner's kit and name lifting
@@ -1558,7 +1614,7 @@ function VaultWorldCupGame({
       ctx.fillRect(cx - 30, cy - 118, 60, 26);
       ctx.fillRect(cx - 8, cy - 92, 16, 14);
       ctx.fillRect(cx - 24, cy - 78, 48, 8);
-      drawHint(VICTORY_HINT, VICTORY_HINT_Y);
+      drawHint(CONTROL_HINTS[flow.keyScheme].victory, VICTORY_HINT_Y);
     }
 
     function drawMatch(): void {
@@ -1597,6 +1653,8 @@ function VaultWorldCupGame({
       // guard may leave the canvas frozen on the frame before, because the last
       // thing the screen has to say -- GANADOR / ELIMINADO / EMPATE, or the panel
       // that explains the block -- is drawn after both of them happen.
+      // G15-20: the gamepads are polled first, so this frame's update sees their input.
+      pollGamepadFrame();
       update(frameMs);
       draw();
       // G10-4: after draw(), same reasoning -- the phase this frame just drew is the
@@ -1613,136 +1671,234 @@ function VaultWorldCupGame({
       );
     }
 
-    // The menu keys go through the SOLO table (arrows or WASD + J), so both players
-    // can drive the menus; the team selector of the two-player mode uses each player's
-    // own table (G9-2), so J2 picks with the arrows and J while J1 holds WASD and C.
-    function tableForPicker(): KeyTable {
-      return flowHumanCount(flow) === 2 ? TWO_PLAYER_TABLES[flowPickingHuman(flow)] : SOLO;
+    // G15-6: the menus read the ACTIVE solo scheme (Flechas or Clásico), never a fixed
+    // table; the two-player team selector keeps each player's own table (G9-2), so J2
+    // picks with the arrows and J while J1 holds WASD and C.
+    function menuTable(): KeyTable {
+      return SOLO_TABLES_BY_SCHEME[flow.keyScheme][0];
     }
 
-    function handleKeyDown(e: KeyboardEvent): void {
-      if (isTypingTarget(e)) return;
-      if (!sfxReady) {
-        sfxReady = true;
-        // QA fix (2026-09-11): this lazy audio setup ran unguarded before the menu
-        // dispatch below. A throw here (autoplay policy, a bad SFX_VOLUME entry after
-        // a future edit) would abort handleKeyDown for the CURRENT key -- including a
-        // first-ever confirm on ELIGE MODO -- while sfxReady is already latched true,
-        // so every later key silently skips this block and looks fine. sfx is
-        // best-effort; it must never be able to eat the keystroke that triggered it.
-        try {
-          sfxVaultWorldCup.init();
-          sfxVaultWorldCup.setMuted(mutedRef.current);
-        } catch {
-          // no-op: the menu/match dispatch below still has to run this frame.
-        }
-      }
-      if (pausedRef.current || blocked) return;
-      const key = e.key.toLowerCase();
-      switch (flow.phase) {
-        case 'mode-select': {
-          if (e.repeat) return;
-          const k = padKeyFor(SOLO, key);
+    function tableForPicker(): KeyTable {
+      return flowHumanCount(flow) === 2 ? TWO_PLAYER_TABLES[flowPickingHuman(flow)] : menuTable();
+    }
+
+    // The pair of tables isPauseKey looks at: the match's own during a match (so the
+    // two-player friendly pauses on P whatever scheme is stored), the two players' on
+    // their selector, and the chosen scheme on every other screen.
+    function pauseTables(): readonly [KeyTable, KeyTable] {
+      const phase = flow.phase;
+      if (phase === 'match' || phase === 'over' || phase === 'spectate') return tables;
+      if (phase === 'team-select' && flowHumanCount(flow) === 2) return TWO_PLAYER_TABLES;
+      return SOLO_TABLES_BY_SCHEME[flow.keyScheme];
+    }
+
+    function requestPause(): void {
+      const cb = onPauseToggleRef.current;
+      if (cb !== undefined) cb();
+    }
+
+    function toggleKeyScheme(): void {
+      flowToggleKeyScheme(flow);
+      saveKeyScheme(writeStoredScheme, flow.keyScheme);
+    }
+
+    // One action per pad key on the menu screen showing now. The keyboard (through the
+    // menu table) and, from V15-2-7, the gamepad both land here. false = the key means
+    // nothing on this screen, so the keyboard handler must not preventDefault it.
+    function menuAction(k: PadKey): boolean {
+      const phase = flow.phase;
+      switch (phase) {
+        case 'mode-select':
           if (k === 'up') flowMoveMode(flow, -1);
           else if (k === 'down') flowMoveMode(flow, 1);
+          else if (k === 'left' || k === 'right') toggleKeyScheme();
           else if (k === 'a') flowConfirmMode(flow);
-          else return;
-          e.preventDefault();
-          return;
-        }
-        case 'team-select': {
-          if (e.repeat) return;
-          const table = tableForPicker();
-          const picker = flowPickingHuman(flow);
-          const k = padKeyFor(table, key);
+          else return false;
+          return true;
+        case 'team-select':
           if (k === 'up') flowMoveTeam(flow, 0, -1, TEAMS.length);
           else if (k === 'down') flowMoveTeam(flow, 0, 1, TEAMS.length);
           else if (k === 'left') flowMoveTeam(flow, -1, 0, TEAMS.length);
           else if (k === 'right') flowMoveTeam(flow, 1, 0, TEAMS.length);
           else if (k === 'a') confirmTeam();
-          // Cheap minor: only the FORMATION row of the picker's table is routed here --
-          // a strategy key (4/5/6, 0 ' ¡) is a mid-match choice and must not
-          // preventDefault or touch the pad at this screen.
-          else if (padFormationChoice(pads[picker], table, key)) flowSetFormation(flow, picker, pads[picker].formation);
-          else return;
-          e.preventDefault();
-          return;
-        }
-        case 'draw': {
-          if (e.repeat) return;
-          if (padKeyFor(SOLO, key) !== 'a') return;
-          e.preventDefault();
+          else return false;
+          return true;
+        case 'draw':
+          if (k !== 'a') return false;
           flowConfirmDraw(flow);
           refreshBracketView();
-          return;
-        }
-        case 'bracket': {
-          if (e.repeat) return;
-          const k = padKeyFor(SOLO, key);
+          return true;
+        case 'bracket':
           if (k === 'left') flowMoveBracketChoice(flow, -1);
           else if (k === 'right') flowMoveBracketChoice(flow, 1);
           else if (k === 'a') confirmBracket();
-          else return;
-          e.preventDefault();
-          return;
-        }
-        case 'spectate': {
-          if (e.repeat) return;
-          if (padKeyFor(SOLO, key) !== 'a') return;
-          e.preventDefault();
+          else return false;
+          return true;
+        case 'spectate':
+          if (k !== 'a') return false;
           skipSpectate();
-          return;
-        }
-        case 'victory': {
-          if (e.repeat) return;
-          if (padKeyFor(SOLO, key) !== 'a') return;
-          e.preventDefault();
+          return true;
+        case 'victory':
+          if (k !== 'a') return false;
           continueFromVictory();
+          return true;
+        case 'match':
+        case 'over':
+          return false;
+      }
+    }
+
+    // G15-20, once per frame before update(). Start pauses (and un-pauses) on any
+    // screen. While paused or blocked nothing else is read and the gamepad pads are
+    // lifted with no edge, every frame: a button held through the pause must not fire
+    // on resume (padClear's rule). In a match each pad drives its team; on the menus a
+    // fresh push or press is one menuAction -- the keyboard's own path. pollGamepads
+    // itself only runs while gamepadSeen (pre-flight H8, see above): otherwise
+    // gamepads[] just keeps reading as disconnected, so everything below is a no-op.
+    function pollGamepadFrame(): void {
+      if (gamepadSeen) pollGamepads(gamepads);
+      if (gamepads[0].edge.start === 'pressed' || gamepads[1].edge.start === 'pressed') requestPause();
+      if (pausedRef.current || blocked) {
+        padBlur(gamepadPads[0]);
+        padBlur(gamepadPads[1]);
+        return;
+      }
+      if (flow.phase === 'match') {
+        routeMatchGamepad(0);
+        routeMatchGamepad(1);
+        return;
+      }
+      // Fix round 1, finding 2: a menu is a single-input screen, like the keyboard's
+      // own menuTable() (one table, not two) -- so only mando 1 drives it, or two
+      // pads both pressing the same frame would fire menuAction twice (double
+      // confirm, cursor jumping two rows). The two-player team selector is the one
+      // screen with two real pickers, and routeMenuGamepad already restricts each
+      // slot to its own player there.
+      routeMenuGamepad(0);
+      if (flow.phase === 'team-select' && flowHumanCount(flow) === 2) routeMenuGamepad(1);
+    }
+
+    // Mando 1 = J1 (team 0) and mando 2 = J2 (team 1) in the two-player friendly; alone,
+    // mando 1 plays the human's side and mando 2 is ignored (G15-20). A pad that is gone
+    // lifts its team's gamepad pad with no edge.
+    function routeMatchGamepad(slot: 0 | 1): void {
+      const side = humanSide;
+      let team: 0 | 1;
+      if (side === 'both') team = slot;
+      else if (side === 'none' || slot === 1) return;
+      else team = side;
+      const gp = gamepads[slot];
+      if (!gp.connected) {
+        padBlur(gamepadPads[team]);
+        return;
+      }
+      routeGamepadToPad(gp, gamepadPads[team]);
+      routeGamepadStrategy(gp, pads[team]);
+    }
+
+    // On the two-player team selector each pad picks for its own player (mando 1 = J1).
+    // Every other menu is only ever called with slot 0 (fix round 1, finding 2): this
+    // guard is what makes mando 2 a no-op there, matching the keyboard's own single
+    // menuTable().
+    function routeMenuGamepad(slot: 0 | 1): void {
+      const gp = gamepads[slot];
+      if (!gp.connected) return;
+      if (flow.phase === 'team-select' && flowHumanCount(flow) === 2 && flowPickingHuman(flow) !== slot) return;
+      for (let i = 0; i < PAD_KEYS.length; i++) {
+        const k = PAD_KEYS[i];
+        if (gp.edge[k] !== 'pressed') continue;
+        ensureSfx();
+        menuAction(k);
+      }
+    }
+
+    // QA fix (2026-09-11): the lazy audio setup used to run unguarded before the menu
+    // dispatch. A throw here (autoplay policy, a bad SFX_VOLUME entry after a future
+    // edit) would abort the CURRENT key -- including a first-ever confirm on ELIGE
+    // MODO -- while sfxReady is already latched true, so every later key silently
+    // skips this block and looks fine. sfx is best-effort; it must never eat the
+    // input that triggered it. G15-20: the gamepad's first menu press calls it too.
+    function ensureSfx(): void {
+      if (sfxReady) return;
+      sfxReady = true;
+      try {
+        sfxVaultWorldCup.init();
+        sfxVaultWorldCup.setMuted(mutedRef.current);
+      } catch {
+        // no-op: the menu/match dispatch still has to run this frame.
+      }
+    }
+
+    function handleKeyDown(e: KeyboardEvent): void {
+      if (isTypingTarget(e)) return;
+      ensureSfx();
+      const key = e.key.toLowerCase();
+      // G15-6: Esc always; P only while no active table reads it. BEFORE the paused
+      // guard, or the key could never lift the pause it set.
+      if (isPauseKey(key, pauseTables())) {
+        e.preventDefault();
+        if (!e.repeat) requestPause();
+        return;
+      }
+      if (pausedRef.current || blocked) return;
+      if (e.repeat) return;   // auto-repeat is not a new press: the pad edges are ours
+      const phase = flow.phase;
+      if (phase === 'over') return;
+      if (phase === 'match') {
+        if (key === 'r') {
+          // S-FL4 / S-FL6: R leaves the training only; flowExitMatch is a no-op in a timed match.
+          flowExitMatch(flow, mode);
+          // flowExitMatch only ever moves the flow away from 'match' into
+          // 'mode-select' (flowReset): `!== 'match'` reads the same as
+          // `=== 'mode-select'` here without tripping tsc's literal-narrowing
+          // check, which does not know an opaque call can mutate flow.phase.
+          if (flow.phase !== 'match') {
+            padBlur(pads[0]);
+            padBlur(pads[1]);
+            reportStatus(STATUS_SELECTOR);
+            e.preventDefault();
+          }
           return;
         }
-        case 'match': {
-          if (e.repeat) return;   // auto-repeat is not a new press: the pad edges are ours
-          if (key === 'r') {
-            // S-FL4 / S-FL6: R leaves the training only; flowExitMatch is a no-op in a timed match.
-            flowExitMatch(flow, mode);
-            // flowExitMatch only ever moves the flow away from 'match' into
-            // 'mode-select' (flowReset): `!== 'match'` reads the same as
-            // `=== 'mode-select'` here without tripping tsc's literal-narrowing
-            // check, which does not know an opaque call can mutate flow.phase.
-            if (flow.phase !== 'match') {
-              padBlur(pads[0]);
-              padBlur(pads[1]);
-              reportStatus(STATUS_SELECTOR);
-              e.preventDefault();
-            }
+        // One handler, two pads, two tables: a key of one table leaves the other pad
+        // untouched (keyboard.test.ts, "routing a key through both tables").
+        for (let t = 0; t < 2; t++) {
+          if (!run.human[t]) continue;
+          const k = padKeyFor(tables[t], key);
+          if (k !== null) {
+            e.preventDefault();
+            padDown(pads[t], k);
             return;
           }
-          // One handler, two pads, two tables: a key of one table leaves the other pad
-          // untouched (keyboard.test.ts, "routing a key through both tables").
-          for (let t = 0; t < 2; t++) {
-            if (!run.human[t]) continue;
-            const k = padKeyFor(tables[t], key);
-            if (k !== null) {
-              e.preventDefault();
-              padDown(pads[t], k);
-              return;
-            }
-            if (padChoice(pads[t], tables[t], key)) {
-              e.preventDefault();
-              return;
-            }
+          if (padChoice(pads[t], tables[t], key)) {
+            e.preventDefault();
+            return;
           }
-          return;
         }
-        case 'over':
-          return;
+        return;
+      }
+      const table = phase === 'team-select' ? tableForPicker() : menuTable();
+      const k = padKeyFor(table, key);
+      if (k !== null && menuAction(k)) {
+        e.preventDefault();
+        return;
+      }
+      // Cheap minor: only the FORMATION row of the picker's table is routed here --
+      // a strategy key (4/5/6, 0 ' ¡) is a mid-match choice and must not
+      // preventDefault or touch the pad at this screen.
+      if (phase === 'team-select') {
+        const picker = flowPickingHuman(flow);
+        if (padFormationChoice(pads[picker], table, key)) {
+          flowSetFormation(flow, picker, pads[picker].formation);
+          e.preventDefault();
+        }
       }
     }
 
     function handleKeyUp(e: KeyboardEvent): void {
       const key = e.key.toLowerCase();
       for (let t = 0; t < 2; t++) {
-        // Fix round 1, finding 3: in solo mode tables = [SOLO, SOLO], so an unfiltered
+        // Fix round 1, finding 3: in solo mode tables = the chosen scheme's pair, so an unfiltered
         // loop would also padUp the CPU's own pad, which never gets a matching padDown.
         if (!run.human[t]) continue;
         const k = padKeyFor(tables[t], key);
@@ -1758,6 +1914,8 @@ function VaultWorldCupGame({
     function handleBlur(): void {
       padBlur(pads[0]);
       padBlur(pads[1]);
+      padBlur(gamepadPads[0]);
+      padBlur(gamepadPads[1]);
     }
 
     // Spec: "solo desktop; si el viewport se reduce en partida, se para y redirige".
@@ -1820,6 +1978,8 @@ function VaultWorldCupGame({
       document.removeEventListener('keyup', handleKeyUp);
       window.removeEventListener('blur', handleBlur);
       window.removeEventListener('resize', handleResize);
+      window.removeEventListener('gamepadconnected', handleGamepadConnected);
+      window.removeEventListener('gamepaddisconnected', handleGamepadDisconnected);
       sfxVaultWorldCup.dispose();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

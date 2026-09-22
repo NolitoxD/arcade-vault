@@ -6,10 +6,11 @@ import { createPlayers, stepPlayer, TACKLE_STEPS, type PlayerState } from './pla
 import { LONG_PASS_VZ, createBall, givePossession, stickToOwner, type BallState } from './ball';
 import type { Rng } from './rng';
 import {
-  CONTROL_HYSTERESIS, GK_HOLD_STEPS, LONG_PASS_HOLD_STEPS, LONG_PASS_SPEED, SHORT_PASS_SPEED, SHOT_CHARGE_STEPS,
-  SHOT_SPEED_MAX, SHOT_SPEED_MIN, STEAL_CHANCE, STEAL_CHANCE_VS_SPRINT, STEAL_RANGE, TACKLE_MISS_DOWN_STEPS,
-  aimPass, applyButtons, applyKeeperButtons, chargeFraction, createActionEvent, freestMateDir, longPass, pickPassTarget,
-  releaseFromGoalkeeper, shoot, shortPass, shotSpeed, startTackle, steal, stepTackle, updateControlled,
+  CONTROL_HYSTERESIS, GK_HOLD_STEPS, LONG_PASS_HOLD_STEPS, LONG_PASS_SPEED, MANUAL_SWITCH_POOL, SHORT_PASS_SPEED,
+  SHOT_CHARGE_STEPS, SHOT_SPEED_MAX, SHOT_SPEED_MIN, STEAL_CHANCE, STEAL_CHANCE_VS_SPRINT, STEAL_RANGE,
+  TACKLE_MISS_DOWN_STEPS, aimPass, applyButtons, applyKeeperButtons, chargeFraction, createActionEvent, freestMateDir,
+  longPass, nextManualControl, pickPassTarget, releaseFromGoalkeeper, shoot, shortPass, shotSpeed, startTackle, steal,
+  stepTackle, updateControlled,
   type ActionEvent,
 } from './actions';
 
@@ -781,5 +782,65 @@ describe('updateControlled: the derived controlled player (criteria 4 and 5)', (
     updateControlled(w.players, w.ball, controlled);
     expect(controlled[0]).toBe(4);
     expect(controlled[1]).toBe(12);
+  });
+});
+
+// ── G15-5 (grill of the v1.5, 17-sep): C with the rival on the ball or the ball loose
+// hands control to the next teammate by distance, rotating through the nearest. ──
+describe('nextManualControl: the manual switch with C (G15-5)', () => {
+  // Our 1, 2, 3 and 4 in a line at 50, 100, 150 and 200 u from the ball; everybody
+  // else is still parked on the bottom touchline by world(), 690+ u away.
+  function scene(): World {
+    const w = world();
+    w.ball.x = 1000; w.ball.y = 600;
+    at(w.players[1], 1050, 600);
+    at(w.players[2], 1100, 600);
+    at(w.players[3], 1150, 600);
+    at(w.players[4], 1200, 600);
+    return w;
+  }
+
+  it('hands control to the nearest teammate that is not the current one', () => {
+    const w = scene();
+    expect(nextManualControl(w.players, w.ball, 0, 1, 0)).toBe(2);
+  });
+
+  it('walks down the MANUAL_SWITCH_POOL nearest on repeated presses and wraps back to the nearest', () => {
+    const w = scene();
+    expect(MANUAL_SWITCH_POOL).toBe(3);
+    expect(nextManualControl(w.players, w.ball, 0, 2, 0)).toBe(3);
+    expect(nextManualControl(w.players, w.ball, 0, 3, 0)).toBe(1);
+    // 4 is the fourth nearest, outside the pool: straight to the nearest.
+    expect(nextManualControl(w.players, w.ball, 0, 4, 0)).toBe(1);
+  });
+
+  it('never hands control to the keeper, a rival or a teammate on the floor', () => {
+    const w = scene();
+    at(w.players[0], 1010, 600);        // our keeper, 10 u
+    at(w.players[10], 1020, 600);       // a rival, 20 u
+    w.players[2].downUntilStep = 50;    // 100 u, but on the floor until step 50
+    expect(nextManualControl(w.players, w.ball, 0, 1, 10)).toBe(3);
+    expect(nextManualControl(w.players, w.ball, 0, 1, 50)).toBe(2);   // back on his feet at step 50
+  });
+
+  it('breaks an exact distance tie by the lowest id, like updateControlled', () => {
+    const w = world();
+    w.ball.x = 1000; w.ball.y = 600;
+    at(w.players[1], 1050, 600);   // 50 u
+    at(w.players[6], 1000, 680);   // 80 u
+    at(w.players[5], 920, 600);    // 80 u
+    expect(nextManualControl(w.players, w.ball, 0, 1, 0)).toBe(5);
+    expect(nextManualControl(w.players, w.ball, 0, 5, 0)).toBe(6);
+  });
+
+  it('returns -1 when nobody else can take over, and the nearest when the current id is not ours', () => {
+    const w = scene();
+    for (let id = 2; id <= 8; id++) w.players[id].downUntilStep = 100;
+    expect(nextManualControl(w.players, w.ball, 0, 1, 0)).toBe(-1);
+    const v = scene();
+    expect(nextManualControl(v.players, v.ball, 0, -1, 0)).toBe(1);
+    expect(nextManualControl(v.players, v.ball, 0, 12, 0)).toBe(1);   // a rival's id is not a current of ours
+    // Team 1 works the same: all eight parked, 17 (x = 780) is the nearest to (1000, 600).
+    expect(nextManualControl(v.players, v.ball, 1, 10, 0)).toBe(17);
   });
 });

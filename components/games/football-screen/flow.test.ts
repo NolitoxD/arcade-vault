@@ -11,7 +11,8 @@ import {
   createFlowState, flowAfterModeBuilt, flowBracketAction, flowBuildMode, flowCaptionsDrained, flowConfirmBracket,
   flowConfirmDraw, flowConfirmMode, flowConfirmTeam, flowContinue, flowCpuPair, flowExitMatch, flowHumanCount,
   flowMatchOver, flowModeKind, flowMoveBracketChoice, flowMoveMode, flowMoveTeam, flowPickingHuman, flowRecordCpuResult,
-  flowReset, flowSetFormation, flowSkipSpectate, flowSpectateOver, phaseGroup, type FlowPhase, type FlowState,
+  flowReset, flowSetFormation, flowSetKeyScheme, flowSkipSpectate, flowSpectateOver, flowToggleKeyScheme, phaseGroup,
+  type FlowPhase, type FlowState,
 } from './flow';
 
 const BANK_IDS: readonly string[] = TEAMS.map((t) => t.id);
@@ -108,6 +109,35 @@ describe('the mode selector', () => {
     // A second A on a screen that is not mode-select does nothing to the mode.
     flowMoveMode(f, 1);
     expect(flowModeKind(f)).toBe('friendly-cpu');
+  });
+
+  it('starts on Flechas and keeps the chosen scheme across a reset (G15-6: a preference, not a run)', () => {
+    const f = createFlowState();
+    expect(f.keyScheme).toBe('arrows');
+    flowToggleKeyScheme(f);
+    expect(f.keyScheme).toBe('classic');
+    flowConfirmMode(f);
+    flowReset(f);
+    expect(f.phase).toBe('mode-select');
+    expect(f.keyScheme).toBe('classic');
+  });
+
+  it('flowToggleKeyScheme flips the scheme on mode-select only', () => {
+    const f = createFlowState();
+    flowToggleKeyScheme(f);
+    flowToggleKeyScheme(f);
+    expect(f.keyScheme).toBe('arrows');
+    flowConfirmMode(f);
+    flowToggleKeyScheme(f);
+    expect(f.phase).toBe('team-select');
+    expect(f.keyScheme).toBe('arrows');
+  });
+
+  it('flowSetKeyScheme sets it on any screen (the stored choice is loaded before the first frame)', () => {
+    const f = createFlowState();
+    flowConfirmMode(f);
+    flowSetKeyScheme(f, 'classic');
+    expect(f.keyScheme).toBe('classic');
   });
 });
 

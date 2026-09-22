@@ -216,17 +216,20 @@ function VaultWorldCupPlayInner() {
     setGameKey((k) => k + 1);
   }, [username]);
 
-  // P pauses, R restarts -- only once a World Cup has reported its end (a stray R
-  // mid-match must not wipe a run; inside a training match R is the game's own exit,
-  // handled entirely by the component's own keydown handler, never by the page).
+  // G15-6: the component owns the pause keys now (it knows the active key scheme and
+  // the gamepad's Start); it only asks the page to flip the state it keeps.
+  const togglePause = useCallback(() => {
+    setPaused((p) => !p);
+  }, []);
+
+  // R restarts -- only once a World Cup has reported its end (a stray R mid-match must
+  // not wipe a run; inside a training match R is the game's own exit, handled entirely
+  // by the component's own keydown handler, never by the page). The pause keys (Esc,
+  // and P unless the Clásico scheme reads it) moved into the component (G15-6).
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent): void {
       if (e.repeat || isTypingTarget(e)) return;
-      const key = e.key.toLowerCase();
-      if (key === 'p') {
-        e.preventDefault();
-        setPaused((p) => !p);
-      } else if (key === 'r' && over) {
+      if (e.key.toLowerCase() === 'r' && over) {
         e.preventDefault();
         restart();
       }
@@ -284,6 +287,7 @@ function VaultWorldCupPlayInner() {
             onGameOver={handleGameOver}
             onVictory={handleVictory}
             onViewportBlocked={handleViewportBlocked}
+            onPauseToggle={togglePause}
           />
         </div>
         <div className="crt-bottom">

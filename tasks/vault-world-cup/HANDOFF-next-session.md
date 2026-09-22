@@ -1,6 +1,34 @@
-# HANDOFF — VAULT WORLD CUP · v1.5: V15-1 HECHO (`90dc114`) + ampliación G15-16..22 · siguiente plan V15-2 «Mandos» · actualizado 2026-09-21
+# HANDOFF — VAULT WORLD CUP · v1.5: V15-2 «Mandos» CERRADO EN CÓDIGO (sin commit, QA jugado pendiente) · actualizado 2026-09-22
 
-Prompt para retomar: `/retomar tasks/vault-world-cup/HANDOFF-next-session.md` → writing-plans V15-2 «Mandos» (G15-5, G15-6, G15-20) → pre-vuelo → SDD → QA jugado.
+Prompt para retomar: `/retomar tasks/vault-world-cup/HANDOFF-next-session.md` → QA jugado V15-2 (qa-paco.md, 16 puntos) → ola de fixes si la hay → commit Paco → plan V15-3 «Contenido».
+
+## -15. 22-sep: V15-2 «Mandos» EJECUTADO y CERRADO EN CÓDIGO (sin commitear)
+
+Pre-vuelo LISTO CON RESERVAS (H1-H10 aplicados; rulings H7 y H8 del controlador). SDD en serie V15-2-1→8 sobre main sin commits
+(snapshots de árbol, `.superpowers/sdd/2026-09-22-vault-world-cup-v15-2/sdd.sh`). Tres rondas de arreglo: test poco discriminante de fases
+(V15-2-2), estado heredado entre mandos al desconectar (V15-2-6) y comentarios en castellano + menús por dos mandos + flanco fantasma tras
+el relevo (V15-2-7). Revisión final opus: **Ready for Paco's commit**, 0 Critical/Important.
+**Estado:** 1338 tests / 80 ficheros, tsc limpio, eslint sin errores nuevos (page.tsx mantiene sus 3 previos), motor acotado a
+`actions.ts`/`match.ts` (+tests) y SIN regrabado.
+Nuevos: `football-screen/{control-hints,gamepad-input}.ts` + tests, `lib/gamepad.ts` + test, `lib/gamepad-navigator.ts`.
+Modificados: `VaultWorldCupGame.tsx`, `play/page.tsx` (la pausa sale de la página), `keyboard.ts`, `flow.ts`, `flow-layout.ts`,
+`lib/games-registry.ts` (catálogo) y sus tests, `specs/31` (anotación de G15-5), plan.
+**QA de Paco:** `.superpowers/sdd/2026-09-22-vault-world-cup-v15-2/qa-paco.md` (16 puntos: los dos teclados, Esc, persistencia, mando USB/BT,
+dos mandos a dos, cambio con L, desenchufar el mando 1 en pleno partido, Gamepad API solo en localhost).
+**Commit propuesto:** `feat(world-cup): v1.5 controls — manual switch on C, Flechas/Clásico key schemes with Esc pause, physical gamepad (V15-2, G15-5/G15-6/G15-20)`
+Minors que se quedan (ledger): menús con CLÁSICO a dos, Start del mando en menús, un menuAction por flanco, jugador tumbado bajo bloqueo, cableado .tsx sin tests.
+
+## -14. 22-sep: PLAN V15-2 «Mandos» escrito (sin pre-vuelo ni código)
+
+HEAD `b130c06`. Plan `docs/superpowers/plans/2026-09-22-vault-world-cup-v15-2-controls.md` (sin trackear), ledger `.superpowers/sdd/2026-09-22-vault-world-cup-v15-2/`.
+8 tareas en serie: 1 nextManualControl (+5) · 2 cambio con C en stepMatch, bloqueo 36 pasos (+9) · 3 tablas ARROWS/CLASSIC + isPauseKey + localStorage (+6)
+· 4 esquema en FlowState + control-hints.ts (+9) · 5 cableado .tsx, pausa pasa al componente (onPauseToggle), P sale de page.tsx · 6 lib/gamepad.ts +
+gamepad-navigator.ts (+8) · 7 mando en el juego + catálogo (+7) · 8 cierre qa-paco. Objetivo 1335/80 (base 1291/77). Motor: actions/match (+tests), sin regrabado.
+Planificador lo probó en scratchpad: 1335/80 verdes, tsc limpio, controles negativos OK. page.tsx ya tenía 3 errores eslint en b130c06.
+**Dudas (valor provisional):** (1) L rota entre 3 más cercanos de pie; (2) sprint tras cambio solo si C se mantiene 0,25 s; (3) teclado se cambia con IZQ/DER
+en ELIGE MODO; (4) L1→ATAQUE, R1→DEFENSA, sin botón para formación ni R; (5) solitario = mando 1, no estándar se lee como estándar, si cae el 1 el 2 pasa a 1;
+(6) teclados comparten solo 1-6; (7) comentario de positionTeam en ai.ts → V15-4.
+**G15-23 CERRADA:** online = V15-6 tras prod. Dudas 1-7 aceptadas (sección final del plan).
 
 ## -13. 21-sep tarde: QA de V15-1 «jugabilidad de 10» (commit + push `90dc114`) + AMPLIACIÓN G15-16..22
 

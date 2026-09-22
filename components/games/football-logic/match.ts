@@ -1,15 +1,16 @@
 import type { Vec2 } from './geometry';
 import { centerX, centerY, type PitchDef } from './pitch';
 import { TEAM_SIZE, type Formation, type Strategy, type TeamDef } from './teams';
-import type { TeamInput } from './input';
+import { copyTeamInput, createTeamInput, isDown, type TeamInput } from './input';
 import type { Rng } from './rng';
 import { HALF_SECONDS, HALF_SECONDS_MAX, HALF_STEPS, EXTRA_TIME_SECONDS, EXTRA_TIME_STEPS } from './clock';
 import { STEP_MS, stepPhysics, stepsFor } from './step';
 import { createPlayers, placeByFormation, type PlayerState } from './players';
 import { createBall, stepBall, type BallState } from './ball';
 import {
-  applyButtons, applyKeeperButtons, clearActionEvent, createActionEvent, releaseFromGoalkeeper, stepTackle,
-  updateControlled, type ActionEvent,
+  MANUAL_SWITCH_LOCK_STEPS, MANUAL_SWITCH_SPRINT_HOLD_STEPS, applyButtons, applyKeeperButtons, clearActionEvent,
+  createActionEvent, nextManualControl, releaseFromGoalkeeper, stepTackle, updateControlled, updateTeamControl,
+  type ActionEvent,
 } from './actions';
 import { applyKickError, keeperCatch, keeperStep, positionTeam, type AiProfile } from './ai';
 import {
@@ -65,13 +66,19 @@ export type MatchState = {
   // sets it when it rolls and clears it as soon as the ball leaves the radius.
   catchRolled: [boolean, boolean];
   lastGoalTeam: 0 | 1 | -1;
+  // G15-5: the human's manual switch, per team. lockSteps > 0 keeps the switched player
+  // controlled against the hysteresis (updateTeamControlOf); sprintHoldSteps > 0 keeps
+  // the press that switched from sprinting until C has been HELD that long
+  // (physicsInputsFor). Always 0 for a CPU team -- it never presses C -- and wiped
+  // whenever the phase leaves open play (end of stepMatch).
+  manualSwitch: { lockSteps: [number, number]; sprintHoldSteps: [number, number] };
   // Fix round 1: one ActionEvent per player id (18 total), not per team -- a
   // shared per-team slot let a second same-team tackler's clean outcome
   // overwrite a first tackler's foul in the same step (see stepOpenPlay).
   // Stage B (D4): gkEvent is gone (each keeper writes its own slot events[gk.id])
   // and liveControlled is the controlled tuple stepPhysics and positionTeam see
   // THIS step: match.controlled, or -1 for a team whose keeper holds the ball.
-  scratch: { events: ActionEvent[]; liveControlled: [number, number]; call: RefereeCall; aim: Vec2; setPiece: SetPieceState; shootout: ShootoutState };
+  scratch: { events: ActionEvent[]; liveControlled: [number, number]; call: RefereeCall; aim: Vec2; setPiece: SetPieceState; shootout: ShootoutState; physicsInputs: [TeamInput, TeamInput] };
 };
 
 export { HALF_SECONDS, HALF_SECONDS_MAX, HALF_STEPS, EXTRA_TIME_SECONDS, EXTRA_TIME_STEPS };
@@ -150,6 +157,7 @@ export function createMatch(
     rules,
     catchRolled: [false, false],
     lastGoalTeam: -1,
+    manualSwitch: { lockSteps: [0, 0], sprintHoldSteps: [0, 0] },
     scratch: {
       events: createPlayerEvents(TEAM_SIZE * 2),
       liveControlled: [-1, -1],
@@ -157,6 +165,7 @@ export function createMatch(
       aim: { x: 0, y: 0 },
       setPiece: createSetPieceState(),
       shootout: createShootoutState(),
+      physicsInputs: [createTeamInput(), createTeamInput()],
     },
   };
   startKickoff(match, kickoffTeamFor(1));
@@ -377,6 +386,81 @@ function applyTeamInput(match: MatchState, team: 0 | 1, input: TeamInput, rng: R
   }
 }
 
+// ── G15-5: the manual switch (grill of the v1.5, 17-sep) ─────────────────────────
+
+function clearManualSwitch(match: MatchState): void {
+  const ms = match.manualSwitch;
+  ms.lockSteps[0] = 0;
+  ms.lockSteps[1] = 0;
+  ms.sprintHoldSteps[0] = 0;
+  ms.sprintHoldSteps[1] = 0;
+}
+
+function ownSideHasBall(match: MatchState, team: 0 | 1): boolean {
+  const owner = match.ball.owner;
+  return owner !== null && match.players[owner].team === team;
+}
+
+// C pressed with the rival on the ball or the ball loose -- not with our own keeper or
+// an outfield teammate holding it -- hands control to the next nearest (actions.ts,
+// nextManualControl) and arms the lock and the sprint hold. Called from stepOpenPlay
+// only, so a press on a restart or in the shootout does nothing. No rng draw. The CPU
+// never presses C (ai.ts writes only 'held'/'up' into c), so for a CPU side this is a
+// no-op and no recording moves.
+function applyManualSwitch(match: MatchState, team: 0 | 1, input: TeamInput): void {
+  if (input.c !== 'pressed' || team === match.rules.frozenTeam || ownSideHasBall(match, team)) return;
+  const next = nextManualControl(match.players, match.ball, team, match.controlled[team], match.stepCount);
+  if (next < 0) return;
+  match.controlled[team] = next;
+  match.manualSwitch.lockSteps[team] = MANUAL_SWITCH_LOCK_STEPS;
+  match.manualSwitch.sprintHoldSteps[team] = MANUAL_SWITCH_SPRINT_HOLD_STEPS;
+}
+
+// "Pulsar = solo cambio; mantener después sí esprinta": while the C that switched is
+// still down and the hold has not run out, the physics sees it up. Letting go cancels
+// the hold; holding past it sprints. Writes the scratch copy, never the caller's input.
+function muteSwitchSprint(match: MatchState, team: 0 | 1, input: TeamInput): void {
+  const hold = match.manualSwitch.sprintHoldSteps;
+  if (hold[team] === 0) return;
+  if (!isDown(input.c)) {
+    hold[team] = 0;
+    return;
+  }
+  input.c = 'up';
+  hold[team]--;
+}
+
+// The TeamInputs stepPhysics sees this step: copies of the caller's (two copies of
+// seven fields, no allocation) with the switch's sprint muted. For a side with no hold
+// running they are byte-for-byte the caller's.
+function physicsInputsFor(match: MatchState, inputs: readonly [TeamInput, TeamInput]): readonly [TeamInput, TeamInput] {
+  const out = match.scratch.physicsInputs;
+  copyTeamInput(inputs[0], out[0]);
+  copyTeamInput(inputs[1], out[1]);
+  muteSwitchSprint(match, 0, out[0]);
+  muteSwitchSprint(match, 1, out[1]);
+  return out;
+}
+
+// The derived rule (actions.ts, updateTeamControl) with the manual lock on top: while
+// a lock runs the switched player stays, whatever the hysteresis says -- unless the
+// side wins the ball, which ends the lock at once (spec: "ganar el balón rompe el
+// bloqueo" -- any own player, our keeper included: a catch is winning the ball too,
+// even though liveControlledFor keeps the cursor off him while he holds it). With no
+// lock this IS updateTeamControl, called in the order the updateControlled it
+// replaces at the end of stepMatch used: team 0, then team 1.
+function updateTeamControlOf(match: MatchState, team: 0 | 1): void {
+  const lock = match.manualSwitch.lockSteps;
+  if (lock[team] > 0) {
+    if (!ownSideHasBall(match, team)) {
+      lock[team]--;
+      return;
+    }
+    lock[team] = 0;
+  }
+  updateTeamControl(match.players, match.ball, match.controlled, team);
+}
+
 function stepOpenPlay(match: MatchState, inputs: readonly [TeamInput, TeamInput], rng: Rng): void {
   const { players, ball, scratch } = match;
   // Whole-stage review C1: only the two controlled slots used to be cleared (by
@@ -396,13 +480,18 @@ function stepOpenPlay(match: MatchState, inputs: readonly [TeamInput, TeamInput]
   // (5) physics, tackles, referee, clock exactly as in stage A.
   keeperCatchFor(match, 0, rng);
   keeperCatchFor(match, 1, rng);
+  // G15-5: (1b) a human's C press without the ball switches the controlled, after the
+  // catches (a catch makes it our ball: no switch) and before anyone reads who is
+  // controlled this step. No draw, and a no-op for the CPU.
+  applyManualSwitch(match, 0, inputs[0]);
+  applyManualSwitch(match, 1, inputs[1]);
   scratch.liveControlled[0] = liveControlledFor(match, 0);
   scratch.liveControlled[1] = liveControlledFor(match, 1);
   runTeamAi(match, 0);
   runTeamAi(match, 1);
   applyTeamInput(match, 0, inputs[0], rng);
   applyTeamInput(match, 1, inputs[1], rng);
-  stepPhysics(players, ball, inputs, scratch.liveControlled, match.attackDir, match.pitch, match.stepCount);
+  stepPhysics(players, ball, physicsInputsFor(match, inputs), scratch.liveControlled, match.attackDir, match.pitch, match.stepCount);
   dropFrozenPickup(match);
   for (let i = 0; i < players.length; i++) {
     // Fix round 1: each player writes its own outcome into its own slot
@@ -587,5 +676,9 @@ export function stepMatch(match: MatchState, inputs: readonly [TeamInput, TeamIn
   }
   match.stepCount++;
   match.clockMs = match.halfStep * STEP_MS;
-  updateControlled(match.players, match.ball, match.controlled);
+  // G15-5: a switch only lives in open play -- a goal, a restart, the half-time or the
+  // shootout wipes it -- and while it lives it overrides the derived rule.
+  if (!isOpenPlay(match.phase)) clearManualSwitch(match);
+  updateTeamControlOf(match, 0);
+  updateTeamControlOf(match, 1);
 }

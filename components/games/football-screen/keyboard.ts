@@ -8,7 +8,7 @@ import type { Strategy } from '../football-logic/teams';
 // second keyboard: it derives its own table over the same seven pad keys.
 export type PadKey = 'up' | 'down' | 'left' | 'right' | 'a' | 'b' | 'c';
 
-// source for pickBindings below, which derives the two-player tables and SOLO
+// source for pickBindings below, which derives the two-player tables and ARROWS_SOLO
 // (§8.2 of the final review): the two-player mode SPLITS this table, not extends it.
 export const KEY_BINDINGS: Readonly<Record<string, PadKey>> = {
   arrowup: 'up',
@@ -60,7 +60,63 @@ function pickBindings(source: Readonly<Record<string, PadKey>>, keys: readonly s
 const P1_MOVE_KEYS: readonly string[] = ['w', 'a', 's', 'd'];
 const P2_KEYS: readonly string[] = ['arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'j', 'k', 'l'];
 
-export const SOLO: KeyTable = { pad: KEY_BINDINGS, formation: FORMATION_KEYS, strategy: STRATEGY_KEYS };
+// G15-6 (grill of the v1.5, 17-sep): solo, training and the World Cup choose between
+// TWO schemes on ELIGE MODO; the old WASD + arrows map is no longer one of them.
+//   · Flechas (default) -- the arrows + J/K/L: exactly J2's pad, with J1's number rows.
+//   · Clásico -- Q up, A down, O left, P right + Z/X/C, same number rows. Literal, like
+//     J1's C/V/B: KEY_BINDINGS has no q/o/p/z/x and maps `a` to "left".
+// The two pads share no key ("por si juegan dos juntos"); the two-player mode is not
+// choosable and keeps G9-2's tables.
+export type KeyScheme = 'arrows' | 'classic';
+export const KEY_SCHEMES: readonly KeyScheme[] = ['arrows', 'classic'];
+export const DEFAULT_KEY_SCHEME: KeyScheme = 'arrows';
+export const KEY_SCHEME_STORAGE_KEY = 'av_vwc_key_scheme';
+
+export const ARROWS_SOLO: KeyTable = { pad: pickBindings(KEY_BINDINGS, P2_KEYS), formation: FORMATION_KEYS, strategy: STRATEGY_KEYS };
+
+export const CLASSIC_SOLO: KeyTable = {
+  pad: { q: 'up', a: 'down', o: 'left', p: 'right', z: 'a', x: 'b', c: 'c' },
+  formation: FORMATION_KEYS,
+  strategy: STRATEGY_KEYS,
+};
+
+// Indexed by team, like TWO_PLAYER_TABLES: the solo human may be either side.
+export const SOLO_TABLES_BY_SCHEME: Readonly<Record<KeyScheme, readonly [KeyTable, KeyTable]>> = {
+  arrows: [ARROWS_SOLO, ARROWS_SOLO],
+  classic: [CLASSIC_SOLO, CLASSIC_SOLO],
+};
+
+// G15-6: Esc always pauses; P pauses only while neither active table reads it -- with
+// Clásico the P is "right". Derived from the tables, so the two-player mode (nobody
+// reads P) keeps pausing on P just like before.
+export function isPauseKey(key: string, tables: readonly [KeyTable, KeyTable]): boolean {
+  if (key === 'escape') return true;
+  return key === 'p' && padKeyFor(tables[0], 'p') === null && padKeyFor(tables[1], 'p') === null;
+}
+
+// The stored choice, read and written through callbacks so this module never touches
+// the DOM. Any value but the two exact names is Flechas; a storage that THROWS (private
+// window, blocked site data) is Flechas on read and a silent no-op on write -- the
+// choice then lasts this visit only.
+export function parseKeyScheme(raw: string | null): KeyScheme {
+  return raw === 'classic' ? 'classic' : raw === 'arrows' ? 'arrows' : DEFAULT_KEY_SCHEME;
+}
+
+export function loadKeyScheme(read: () => string | null): KeyScheme {
+  try {
+    return parseKeyScheme(read());
+  } catch {
+    return DEFAULT_KEY_SCHEME;
+  }
+}
+
+export function saveKeyScheme(write: (value: string) => void, scheme: KeyScheme): void {
+  try {
+    write(scheme);
+  } catch {
+    // no-op: see above.
+  }
+}
 
 export const TWO_PLAYER_P1: KeyTable = {
   pad: { ...pickBindings(KEY_BINDINGS, P1_MOVE_KEYS), c: 'a', v: 'b', b: 'c' },
@@ -232,6 +288,26 @@ function settle(b: ButtonState): ButtonState {
   if (b === 'pressed') return 'held';
   if (b === 'released') return 'up';
   return b;
+}
+
+// G15-20: a second PadState -- the gamepad's -- laid over the TeamInput padToTeamInput
+// just wrote from the keyboard, so both devices play at once. An axis the keyboard
+// leaves at 0 is taken from the gamepad; each button keeps the stronger of the two
+// states (pressed > held > released > up), so holding on either device holds. `first`
+// means what it means for padToTeamInput: from the second step of a frame on, the
+// gamepad's edges are settled too.
+const BUTTON_STRENGTH: Readonly<Record<ButtonState, number>> = { up: 0, released: 1, held: 2, pressed: 3 };
+
+function stronger(a: ButtonState, b: ButtonState): ButtonState {
+  return BUTTON_STRENGTH[b] > BUTTON_STRENGTH[a] ? b : a;
+}
+
+export function overlayPadToTeamInput(pad: PadState, first: boolean, out: TeamInput): void {
+  if (out.dx === 0) out.dx = axisOf(pad.left, pad.right);
+  if (out.dy === 0) out.dy = axisOf(pad.up, pad.down);
+  out.a = stronger(out.a, first ? pad.a : settle(pad.a));
+  out.b = stronger(out.b, first ? pad.b : settle(pad.b));
+  out.c = stronger(out.c, first ? pad.c : settle(pad.c));
 }
 
 // Called ONCE at the end of each frame **that actually ran a step**, after every step

@@ -40,6 +40,11 @@ export function modeCardY(index: number): number {
   return MODE_CARD_TOP + index * (MODE_CARD_H + MODE_CARD_GAP);
 }
 
+// G15-6: under the four cards, the key-scheme row and its detail line, then the hint.
+export const MODE_SCHEME_ROW_Y = 434;
+export const MODE_SCHEME_DETAIL_Y = 454;
+export const MODE_HINT_Y = VIEW_H - 24;
+
 // ── Bracket: one row per pair of the round, then the prompt and the fallen ───────
 export const BRACKET_ROW_TOP = 96;
 export const BRACKET_ROW_H = 40;

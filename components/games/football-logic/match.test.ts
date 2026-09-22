@@ -2,10 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { PITCH, centerX, centerY } from './pitch';
 import { FORMATIONS, TEAMS, TEAM_SIZE, OUTFIELD as OUTFIELD_COUNT, type Formation, type TeamDef } from './teams';
 import { dist } from './geometry';
-import { createTeamInput, copyTeamInput, toAxis, type TeamInput } from './input';
+import { createTeamInput, copyTeamInput, toAxis, type ButtonState, type TeamInput } from './input';
 import { STEP_MS, stepsFor } from './step';
-import { GK_LINE_DIST, TACKLE_DIST, TACKLE_STEPS, type PlayerState } from './players';
-import { createBall, type BallState } from './ball';
+import { GK_LINE_DIST, TACKLE_DIST, TACKLE_STEPS, isSprinting, type PlayerState } from './players';
+import { createBall, givePossession, type BallState } from './ball';
 import { createRng, type Rng } from './rng';
 import { checkGoalkeepersInBox } from './invariants';
 import {
@@ -18,8 +18,11 @@ import {
   SET_PIECE_COUNTDOWN_STEPS, SHOOTOUT_RESOLVE_SECONDS, SHOOTOUT_RESOLVE_STEPS, SHOOTOUT_ROUNDS,
   createShootoutState, resetShootout, shootoutWinner, type SetPieceState, type ShootoutState,
 } from './set-pieces';
-import { GK_HOLD_STEPS, SHORT_PASS_SPEED, STEAL_CHANCE, STEAL_CHANCE_VS_SPRINT, freestMateDir, shotSpeed } from './actions';
-import { applyKickError, humanProfile, profileFor, type AiProfile } from './ai';
+import {
+  GK_HOLD_STEPS, MANUAL_SWITCH_LOCK_STEPS, MANUAL_SWITCH_SPRINT_HOLD_STEPS, SHORT_PASS_SPEED, STEAL_CHANCE,
+  STEAL_CHANCE_VS_SPRINT, freestMateDir, shotSpeed,
+} from './actions';
+import { applyKickError, createAiState, decideTeamInput, humanProfile, profileFor, type AiProfile } from './ai';
 
 const TEAM_PAIR: [TeamDef, TeamDef] = [TEAMS[0], TEAMS[1]];
 const CY = centerY(PITCH);
@@ -752,6 +755,10 @@ function sameMatch(a: MatchState, b: MatchState): boolean {
   if (a.formationIndex[0] !== b.formationIndex[0] || a.formationIndex[1] !== b.formationIndex[1]) return false;
   if (a.strategies[0] !== b.strategies[0] || a.strategies[1] !== b.strategies[1]) return false;
   if (a.catchRolled[0] !== b.catchRolled[0] || a.catchRolled[1] !== b.catchRolled[1]) return false;
+  const sa = a.manualSwitch;
+  const sb = b.manualSwitch;
+  if (sa.lockSteps[0] !== sb.lockSteps[0] || sa.lockSteps[1] !== sb.lockSteps[1]) return false;
+  if (sa.sprintHoldSteps[0] !== sb.sprintHoldSteps[0] || sa.sprintHoldSteps[1] !== sb.sprintHoldSteps[1]) return false;
   if (!sameSetPiece(a.setPiece, b.setPiece)) return false;
   if (!sameShootout(a.shootout, b.shootout)) return false;
   if (a.players.length !== b.players.length) return false;
@@ -1799,5 +1806,286 @@ describe('G9-1: match rules (clock off, frozen team)', () => {
       // tackle -- proof this scenario is a real threat the training rule had to stop.
       if (rules === NORMAL_RULES) expect(tackleStarted || possessionChanged).toBe(true);
     }
+  });
+});
+
+// ── G15-5 (grill of the v1.5, 17-sep): the manual switch with C, inside the engine. ──
+
+// Team 0 presses, holds or lets go of C; team 1 stays idle.
+function teamZeroC(c: ButtonState): readonly [TeamInput, TeamInput] {
+  const t0 = createTeamInput();
+  t0.c = c;
+  return [t0, createTeamInput()];
+}
+const PRESS_C = teamZeroC('pressed');
+const HOLD_C = teamZeroC('held');
+const RELEASE_C = teamZeroC('released');
+
+// Our 1, 2 and 3 in a line at 50, 100 and 150 u behind ballX on the centre line, our
+// 1 controlled; our other five parked on the top touchline and the rival's 11-17 on
+// the bottom one (the keepers stay where they are: they are clamped to their box).
+function lineUpBehind(m: MatchState, ballX: number): void {
+  for (let id = 4; id <= 8; id++) { m.players[id].x = 200 + id * 40; m.players[id].y = 40; }
+  for (let id = 11; id <= 17; id++) { m.players[id].x = 200 + id * 40; m.players[id].y = 1260; }
+  for (let i = 1; i <= 3; i++) {
+    const p = m.players[i];
+    p.x = ballX - 50 * i; p.y = CY; p.facingX = 1; p.facingY = 0; p.downUntilStep = 0; p.tackleStepsLeft = 0;
+  }
+  m.controlled[0] = 1;
+}
+
+// Like lineUpBehind, but 10/20/30 u apart -- all under CONTROL_HYSTERESIS (40) --
+// instead of 50/100/150. Used only by negative control 6 (a press outside open play):
+// the end-of-step reset always wipes manualSwitch.lockSteps for a non-open-play phase, so
+// a corrupted controlled[0] can only be CAUGHT if the derived rule's hysteresis then keeps
+// it (as it would in real play, per the spec) rather than snapping straight back to the
+// nearest -- which lineUpBehind's wide gaps would do, hiding the bug (review-2.md,
+// Important #1).
+function lineUpTight(m: MatchState, ballX: number): void {
+  for (let id = 4; id <= 8; id++) { m.players[id].x = 200 + id * 40; m.players[id].y = 40; }
+  for (let id = 11; id <= 17; id++) { m.players[id].x = 200 + id * 40; m.players[id].y = 1260; }
+  for (let i = 1; i <= 3; i++) {
+    const p = m.players[i];
+    p.x = ballX - 10 * i; p.y = CY; p.facingX = 1; p.facingY = 0; p.downUntilStep = 0; p.tackleStepsLeft = 0;
+  }
+  m.controlled[0] = 1;
+}
+
+// Open play; the rival's 10 holds the ball and stands still (he is team 1's controlled
+// and gets an idle input); our 1/2/3 lined up behind the ball.
+function defending(): MatchState {
+  const m = fresh();
+  resumePlay(m);
+  const owner = m.players[10];
+  owner.x = 1000; owner.y = CY; owner.facingX = 1; owner.facingY = 0;
+  givePossession(m.ball, owner, m.stepCount);   // glues the ball at x = 1000 + CONTROL_DIST = 1018
+  m.controlled[1] = 10;
+  lineUpBehind(m, m.ball.x);
+  return m;
+}
+
+describe('the manual switch with C (G15-5)', () => {
+  it('a press with the rival on the ball hands control to the next nearest, and repeated presses rotate through the three nearest', () => {
+    const m = defending();
+    const rng = createRng(1);
+    stepMatch(m, PRESS_C, rng);
+    expect(m.controlled[0]).toBe(2);
+    expect(m.manualSwitch.lockSteps[0]).toBe(MANUAL_SWITCH_LOCK_STEPS - 1);
+    stepMatch(m, IDLE, rng);
+    // Without the lock the hysteresis would hand it straight back: 1 is 50+ u nearer.
+    expect(m.controlled[0]).toBe(2);
+    stepMatch(m, PRESS_C, rng);
+    expect(m.controlled[0]).toBe(3);
+    stepMatch(m, IDLE, rng);
+    stepMatch(m, PRESS_C, rng);
+    expect(m.controlled[0]).toBe(1);
+    expect(m.manualSwitch.lockSteps[1]).toBe(0);   // the idle side never switched
+  });
+
+  it('a press on a loose ball switches too, in a normal match and in the training ruleset -- but never for the frozen team', () => {
+    for (const rules of [NORMAL_RULES, TRAINING_RULES]) {
+      const m = createMatch(TEAM_PAIR, FORMATIONS, PITCH, PROFILES, rules);
+      resumePlay(m);
+      freeBall(m, 1000, CY, 0, 0);
+      lineUpBehind(m, 1000);
+      m.players[10].x = 600; m.players[10].y = 1260;   // the rival's 10 parked too
+      stepMatch(m, PRESS_C, createRng(1));
+      expect(m.controlled[0]).toBe(2);
+
+      // Guardrail (frozenTeam in applyManualSwitch): unreachable in play today (the
+      // frozen team is the CPU and match-run.ts never gives it a TeamInput other than
+      // 'up'), so this is the only place that presses C for it directly. Only makes
+      // sense under TRAINING_RULES, where team 1 is frozen.
+      if (rules === TRAINING_RULES) {
+        const m2 = createMatch(TEAM_PAIR, FORMATIONS, PITCH, PROFILES, rules);
+        resumePlay(m2);
+        freeBall(m2, 1000, CY, 0, 0);
+        lineUpBehind(m2, 1000);
+        m2.players[10].x = 600; m2.players[10].y = 1260;
+        const twin = createMatch(TEAM_PAIR, FORMATIONS, PITCH, PROFILES, rules);
+        resumePlay(twin);
+        freeBall(twin, 1000, CY, 0, 0);
+        lineUpBehind(twin, 1000);
+        twin.players[10].x = 600; twin.players[10].y = 1260;
+        const pressC1: readonly [TeamInput, TeamInput] = [createTeamInput(), createTeamInput()];
+        pressC1[1].c = 'pressed';
+        stepMatch(m2, pressC1, createRng(1));
+        stepMatch(twin, IDLE, createRng(1));
+        expect(m2.manualSwitch.lockSteps[1]).toBe(0);
+        expect(m2.controlled[1]).toBe(twin.controlled[1]);
+      }
+    }
+  });
+
+  it('no switch while our own side has the ball: an outfield owner, or our keeper', () => {
+    const own = defending();
+    givePossession(own.ball, own.players[1], own.stepCount);
+    stepMatch(own, PRESS_C, createRng(1));
+    expect(own.controlled[0]).toBe(1);
+    expect(own.manualSwitch.lockSteps[0]).toBe(0);
+    const keeper = defending();
+    givePossession(keeper.ball, keeper.players[0], keeper.stepCount);
+    const twin = defending();
+    givePossession(twin.ball, twin.players[0], twin.stepCount);
+    stepMatch(keeper, PRESS_C, createRng(1));
+    stepMatch(twin, IDLE, createRng(1));
+    expect(keeper.manualSwitch.lockSteps[0]).toBe(0);
+    expect(keeper.controlled[0]).toBe(twin.controlled[0]);
+  });
+
+  it('a press outside open play does nothing: kickoff, set piece and shootout', () => {
+    // review-2.md, Important #1: a scene where our side already has the ball (fresh()'s
+    // own kickoff) or where the derived rule restores control after the reset (a plain
+    // atShootout()) cannot fail even if applyManualSwitch ignored the phase entirely --
+    // ownSideHasBall or the post-reset derived rule would hide the bug. Each scene below
+    // gives the ball to the RIVAL and lines our 1/2/3 up TIGHT (lineUpTight, 10/20/30 u
+    // apart, under CONTROL_HYSTERESIS): the end-of-step reset always wipes the lock for a
+    // non-open-play phase, so only a controlled[0] the derived rule's hysteresis then
+    // HOLDS ONTO (rather than snapping back to the true nearest) can catch a wrongly
+    // accepted press -- lineUpBehind's wide 50 u gaps would self-heal and hide the bug.
+    const scenes: readonly (() => MatchState)[] = [
+      () => {
+        // Kickoff taken by the rival: score for us, then the restart belongs to team 1.
+        const m = fresh();
+        resumePlay(m);
+        scoreGoal(m, 0);
+        endGoalPause(m);
+        lineUpTight(m, m.ball.x);
+        return m;
+      },
+      () => { const m = defending(); callSetPiece(m, 'free-kick', 1, 1000, CY); lineUpTight(m, m.ball.x); return m; },
+      () => {
+        // The shootout always opens on OUR kick (team 0); take it first (IDLE) so the
+        // next one -- the ball and the taker -- belongs to the rival.
+        const m = atShootout();
+        takeKick(m, createRng(3));
+        lineUpTight(m, m.ball.x);
+        return m;
+      },
+    ];
+    for (const make of scenes) {
+      const pressed = make();
+      const idleTwin = make();
+      const phase = pressed.phase;
+      stepMatch(pressed, PRESS_C, createRng(1));
+      stepMatch(idleTwin, IDLE, createRng(1));
+      expect(pressed.phase).toBe(phase);
+      expect(pressed.manualSwitch.lockSteps[0]).toBe(0);
+      expect(pressed.controlled[0]).toBe(idleTwin.controlled[0]);
+    }
+  });
+
+  it('the lock lasts exactly MANUAL_SWITCH_LOCK_STEPS steps, and our side winning the ball ends it at once', () => {
+    const m = defending();
+    const rng = createRng(1);
+    stepMatch(m, PRESS_C, rng);
+    for (let i = 1; i < MANUAL_SWITCH_LOCK_STEPS; i++) stepMatch(m, IDLE, rng);
+    expect(m.controlled[0]).toBe(2);             // MANUAL_SWITCH_LOCK_STEPS steps in all, the press included
+    expect(m.manualSwitch.lockSteps[0]).toBe(0);
+    stepMatch(m, IDLE, rng);
+    expect(m.controlled[0]).toBe(1);             // the derived rule is back: 1 chased the ball, 2 stood still
+    const won = defending();
+    stepMatch(won, PRESS_C, createRng(1));
+    expect(won.controlled[0]).toBe(2);
+    givePossession(won.ball, won.players[3], won.stepCount);
+    stepMatch(won, IDLE, createRng(1));
+    expect(won.controlled[0]).toBe(3);           // the owner always has control
+    expect(won.manualSwitch.lockSteps[0]).toBe(0);
+  });
+
+  it('our keeper winning the ball (a catch) also ends the lock at once, not just an outfield winner', () => {
+    // review-2.md, Minor (spec wins): the brief only broke the lock for an outfield
+    // winner, but the spec text is "ganar el balón rompe el bloqueo" -- any own player,
+    // keeper included. A catch is winning the ball too, even though liveControlledFor
+    // keeps the cursor off him while he holds it (D4).
+    const m = defending();
+    stepMatch(m, PRESS_C, createRng(1));
+    expect(m.controlled[0]).toBe(2);
+    expect(m.manualSwitch.lockSteps[0]).toBeGreaterThan(0);
+    givePossession(m.ball, m.players[0], m.stepCount);   // our keeper "catches" it
+    stepMatch(m, IDLE, createRng(1));
+    expect(m.manualSwitch.lockSteps[0]).toBe(0);
+  });
+
+  it('a tap only switches and never sprints; holding C past MANUAL_SWITCH_SPRINT_HOLD_STEPS does sprint', () => {
+    const tap = defending();
+    const rngTap = createRng(1);
+    stepMatch(tap, PRESS_C, rngTap);
+    for (let i = 0; i < 3; i++) stepMatch(tap, HOLD_C, rngTap);
+    stepMatch(tap, RELEASE_C, rngTap);
+    expect(tap.controlled[0]).toBe(2);
+    expect(isSprinting(tap.players[2])).toBe(false);
+    expect(tap.players[2].sprintCooldownSteps).toBe(0);   // no burst was started, so none was cut short
+    const hold = defending();
+    const rng = createRng(1);
+    stepMatch(hold, PRESS_C, rng);
+    expect(isSprinting(hold.players[2])).toBe(false);
+    for (let i = 1; i < MANUAL_SWITCH_SPRINT_HOLD_STEPS; i++) {
+      stepMatch(hold, HOLD_C, rng);
+      expect(isSprinting(hold.players[2])).toBe(false);
+    }
+    stepMatch(hold, HOLD_C, rng);
+    expect(isSprinting(hold.players[2])).toBe(true);
+  });
+
+  it('a goal, a set piece and the half-time wipe the lock and the sprint hold', () => {
+    const interruptions: readonly ((m: MatchState) => void)[] = [
+      (m) => { scoreGoal(m, 1); },
+      (m) => { callSetPiece(m, 'throw-in', 1, 1000, 0); },
+      (m) => { endHalf(m); },
+    ];
+    for (const interrupt of interruptions) {
+      const m = defending();
+      const rng = createRng(1);
+      stepMatch(m, PRESS_C, rng);
+      expect(m.manualSwitch.lockSteps[0]).toBeGreaterThan(0);
+      expect(m.manualSwitch.sprintHoldSteps[0]).toBeGreaterThan(0);
+      interrupt(m);
+      stepMatch(m, HOLD_C, rng);
+      expect(m.manualSwitch.lockSteps[0]).toBe(0);
+      expect(m.manualSwitch.sprintHoldSteps[0]).toBe(0);
+    }
+  });
+
+  it('a match with C presses replays identically, step by step (criterion 1 still holds)', () => {
+    const a = fresh();
+    const b = fresh();
+    const rngA = createRng(5);
+    const rngB = createRng(5);
+    const live: [TeamInput, TeamInput] = [createTeamInput(), createTeamInput()];
+    let switches = 0;
+    let firstMismatch = -1;
+    for (let step = 0; step < 2 * HALF_STEPS && a.phase !== 'over'; step++) {
+      policy(a, 0, live[0]);
+      policy(a, 1, live[1]);
+      if (step % 45 === 0) live[0].c = 'pressed';
+      const before = a.controlled[0];
+      stepMatch(a, live, rngA);
+      stepMatch(b, live, rngB);
+      if (a.manualSwitch.lockSteps[0] === MANUAL_SWITCH_LOCK_STEPS - 1 && a.controlled[0] !== before) switches++;
+      if (firstMismatch < 0 && !sameMatch(a, b)) firstMismatch = step;
+    }
+    expect(firstMismatch).toBe(-1);
+    expect(switches).toBeGreaterThan(0);   // not vacuous: the presses did switch
+  });
+
+  it('the CPU never presses C in a whole CPU-vs-CPU match, so no CPU recording can move (G15-15: no re-recording)', () => {
+    const m = fresh();
+    const states = [createAiState(), createAiState()];
+    const cpuRngs = [createRng(7), createRng(8)];
+    const rng = createRng(9);
+    const live: [TeamInput, TeamInput] = [createTeamInput(), createTeamInput()];
+    let presses = 0;
+    let steps = 0;
+    while (m.phase !== 'over' && steps < RECORD_CAP) {
+      decideTeamInput(m, 0, PROFILES[0], states[0], cpuRngs[0], live[0]);
+      decideTeamInput(m, 1, PROFILES[1], states[1], cpuRngs[1], live[1]);
+      if (live[0].c === 'pressed' || live[1].c === 'pressed') presses++;
+      stepMatch(m, live, rng);
+      if (m.manualSwitch.lockSteps[0] > 0 || m.manualSwitch.lockSteps[1] > 0) presses++;
+      steps++;
+    }
+    expect(steps).toBeGreaterThan(HALF_STEPS);
+    expect(presses).toBe(0);
   });
 });

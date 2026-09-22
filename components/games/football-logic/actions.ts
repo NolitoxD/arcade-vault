@@ -69,6 +69,15 @@ export const TACKLE_FOUL_RADIUS = 2 * PLAYER_RADIUS; // 24
 const TACKLE_MISS_DOWN_SECONDS = 1;
 export const TACKLE_MISS_DOWN_STEPS = stepsFor(TACKLE_MISS_DOWN_SECONDS); // 60
 export const CONTROL_HYSTERESIS = 40;
+
+// G15-5 (grill of the v1.5, 17-sep): the human's manual switch. The pool is how many
+// of the nearest a repeated C rotates through; the lock keeps the switched player
+// against the hysteresis for ~0.6 s (to tune in QA); the hold is how long C must stay
+// down after a switch before it sprints ("pulsar = solo cambio; mantener sí esprinta").
+// The hold matches LONG_PASS_HOLD_SECONDS: 0.25 s is this game's "held, not tapped".
+export const MANUAL_SWITCH_POOL = 3;
+export const MANUAL_SWITCH_LOCK_STEPS = stepsFor(0.6); // 36
+export const MANUAL_SWITCH_SPRINT_HOLD_STEPS = stepsFor(0.25); // 15
 const GK_HOLD_SECONDS = 2;
 export const GK_HOLD_STEPS = stepsFor(GK_HOLD_SECONDS); // 120
 
@@ -354,7 +363,9 @@ function isControllable(p: PlayerState, team: 0 | 1): boolean {
   return p.team === team && p.role !== 'gk';
 }
 
-function updateTeamControl(players: readonly PlayerState[], ball: BallState, controlled: [number, number], team: 0 | 1): void {
+// Exported for G15-5: match.ts calls it team by team, with the manual lock on top.
+// The body is the stage-A rule, untouched.
+export function updateTeamControl(players: readonly PlayerState[], ball: BallState, controlled: [number, number], team: 0 | 1): void {
   if (ball.owner !== null && isControllable(players[ball.owner], team)) {
     controlled[team] = ball.owner;
     return;
@@ -379,10 +390,60 @@ function updateTeamControl(players: readonly PlayerState[], ball: BallState, con
   controlled[team] = best;
 }
 
-// Derived, never an input (spec): owner if an outfield player of the team has the
-// ball; else the nearest outfield player (never the keeper), lowest id on ties,
-// with CONTROL_HYSTERESIS so it does not flicker. Writes into `controlled`.
+// Derived (spec): owner if an outfield player of the team has the ball; else the
+// nearest outfield player (never the keeper), lowest id on ties, with
+// CONTROL_HYSTERESIS so it does not flicker. Writes into `controlled`. Since G15-5 it
+// is no longer "never an input" for a human: stepMatch lets a C press override it for
+// MANUAL_SWITCH_LOCK_STEPS (match.ts, updateTeamControlOf) -- the replay is still
+// seed + TeamInput, and the CPU never presses C.
 export function updateControlled(players: readonly PlayerState[], ball: BallState, controlled: [number, number]): void {
   updateTeamControl(players, ball, controlled, 0);
   updateTeamControl(players, ball, controlled, 1);
+}
+
+// G15-5: the pool a manual switch ranks -- the team's outfield players on their feet,
+// plus the current one whatever its state, so its own rank is always defined.
+function inSwitchPool(p: PlayerState, team: 0 | 1, self: number, stepCount: number): boolean {
+  return isControllable(p, team) && (p.id === self || !isPlayerDown(p, stepCount));
+}
+
+// How many of the pool are strictly nearer the ball than p (lowest id first on an
+// exact tie) -- chaseRank's rule (ai.ts), over the switch pool.
+function switchRank(p: PlayerState, players: readonly PlayerState[], ball: BallState, team: 0 | 1, self: number, stepCount: number): number {
+  const mine = dist(p.x, p.y, ball.x, ball.y);
+  let rank = 0;
+  for (let i = 0; i < players.length; i++) {
+    const q = players[i];
+    if (q.id === p.id || !inSwitchPool(q, team, self, stepCount)) continue;
+    const d = dist(q.x, q.y, ball.x, ball.y);
+    if (d < mine || (d === mine && q.id < p.id)) rank++;
+  }
+  return rank;
+}
+
+// G15-5: who takes over when the human presses C without the ball. The current one
+// holds rank r among the MANUAL_SWITCH_POOL nearest; the next is rank r + 1, and after
+// the last of the pool comes the nearest again, so repeated presses rotate and never
+// return the current one. A current outside the pool (or not ours at all) goes straight
+// to the nearest. -1 when there is nobody to switch to. Allocates nothing: at most 64
+// distances, and only on the step of a press.
+export function nextManualControl(players: readonly PlayerState[], ball: BallState, team: 0 | 1, current: number, stepCount: number): number {
+  const self = current >= 0 && current < players.length && isControllable(players[current], team) ? current : -1;
+  let size = 0;
+  for (let i = 0; i < players.length; i++) if (inSwitchPool(players[i], team, self, stepCount)) size++;
+  const pool = size < MANUAL_SWITCH_POOL ? size : MANUAL_SWITCH_POOL;
+  let target = 0;
+  if (self >= 0) {
+    if (pool < 2) return -1;
+    const mine = switchRank(players[self], players, ball, team, self, stepCount);
+    target = mine + 1 < pool ? mine + 1 : 0;
+  } else if (pool < 1) {
+    return -1;
+  }
+  for (let i = 0; i < players.length; i++) {
+    const p = players[i];
+    if (p.id === self || !inSwitchPool(p, team, self, stepCount)) continue;
+    if (switchRank(p, players, ball, team, self, stepCount) === target) return p.id;
+  }
+  return -1;
 }

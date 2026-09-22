@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { VIEW_H, VIEW_W } from './camera';
 import {
-  BRACKET_ROW_H, BRACKET_ROW_TOP, DRAW_COL_X, FORMATION_ROW_Y, MODE_CARD_GAP, MODE_CARD_H, MODE_CARD_TOP, SELECT_HINT_Y,
+  BRACKET_ROW_H, BRACKET_ROW_TOP, DRAW_COL_X, FORMATION_ROW_Y, MODE_CARD_GAP, MODE_CARD_H, MODE_CARD_TOP,
+  MODE_HINT_Y, MODE_SCHEME_DETAIL_Y, MODE_SCHEME_ROW_Y, SELECT_HINT_Y,
   TEAM_CARD_H, TEAM_CARD_W, TEAM_GRID_COLS, TEAM_GRID_GAP_X, TEAM_GRID_GAP_Y, TEAM_GRID_TOP, VICTORY_HINT_Y,
   bracketRowY, drawColX, drawRowY, modeCardY, teamCardX, teamCardY, teamGridWidth,
 } from './flow-layout';
@@ -48,5 +49,12 @@ describe('the other screens', () => {
     expect(drawColX(0)).toBe(DRAW_COL_X[0]);
     expect(drawColX(4)).toBe(DRAW_COL_X[1]);
     expect(VICTORY_HINT_Y).toBeLessThan(VIEW_H);
+  });
+
+  it('the key-scheme row and its detail sit between the last mode card and the hint (G15-6)', () => {
+    expect(MODE_SCHEME_ROW_Y - 8).toBeGreaterThan(modeCardY(3) + MODE_CARD_H);
+    expect(MODE_SCHEME_DETAIL_Y).toBeGreaterThan(MODE_SCHEME_ROW_Y + 12);
+    expect(MODE_SCHEME_DETAIL_Y + 8).toBeLessThan(MODE_HINT_Y - 6);
+    expect(MODE_HINT_Y).toBe(VIEW_H - 24);
   });
 });

@@ -116,4 +116,13 @@ describe('games registry', () => {
     expect(GAMES['vault-world-cup'].controls.touch.keyMap).toEqual({});
     expect(getKeyMap('vault-world-cup')).toEqual({});
   });
+
+  it('vault-world-cup documents both solo key schemes, the Esc pause, the manual switch and the gamepad (V15-2)', () => {
+    const rows = GAMES['vault-world-cup'].controls.keyboard;
+    const has = (key: string): boolean => rows.some((r) => r.keys.includes(key));
+    for (const key of ['Q', 'O', 'P', 'Z', 'X', 'ESC', 'MANDO']) expect(has(key)).toBe(true);
+    expect(rows.some((r) => r.action.includes('cambio de jugador'))).toBe(true);
+    // G15-6: WASD is only J1's in the two-player friendly now.
+    for (const r of rows) if (r.keys.includes('W')) expect(r.action.startsWith('A dos')).toBe(true);
+  });
 });

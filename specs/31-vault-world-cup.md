@@ -193,6 +193,15 @@ portero) más cercano al balón, desempate por `id` más bajo (nunca por orden d
 **histéresis de 40 unidades**: solo cambia si otro compañero está al menos 40 u más cerca que el
 actual. Así el replay solo necesita semilla + secuencia de `TeamInput`.
 
+> **G15-5 (v1.5, paso V15-2): para el humano deja de ser «nunca entrada».** En juego abierto, con el
+> rival en posesión o el balón suelto, el flanco `c === 'pressed'` de su `TeamInput` pasa el control al
+> siguiente compañero más cercano al balón (rotando entre los `MANUAL_SWITCH_POOL = 3` más cercanos de
+> pie, nunca el actual) y lo bloquea `MANUAL_SWITCH_LOCK_STEPS` (0,6 s) frente a la histéresis; ganar el
+> balón rompe el bloqueo, y cualquier saque, gol, descanso o la tanda lo borra. Pulsar no esprinta;
+> mantener C más de `MANUAL_SWITCH_SPRINT_HOLD_STEPS` (0,25 s) sí. Como el cambio sale de la entrada, el
+> replay sigue siendo semilla + `TeamInput` (criterio 1). La CPU nunca pulsa C, así que para ella el
+> controlado sigue siendo exactamente el derivado (sin regrabado).
+
 **Paso fijo de simulación** (grill 2026-09-04): el motor expone `STEP_MS = 1000 / 60` y
 `stepMatch(match, inputs, rng)` **sin `dtMs`**. Un `dtMs` variable rompería el determinismo entre
 ordenadores (60 fps frente a 144 fps producen secuencias distintas). El componente lleva un
@@ -500,6 +509,8 @@ amistoso a dos sea justo, y que el Mundial dé ganas de otro.
 4. **Nueve por equipo**, y el portero nunca es el jugador controlado.
 5. **Se controla siempre el más cercano al balón**, con histéresis de 40 u para que no parpadee,
    y el cambio es automático y derivado del estado (no es entrada).
+   *G15-5 (v1.5): salvo el cambio manual del humano con C al defender, que sale de su `TeamInput`
+   (ver «El controlado es estado derivado»).*
 
 **Juego**
 6. **El balón va pegado al pie** y un rival puede robarlo de pie o con entrada al suelo.
@@ -922,3 +933,4 @@ La v1 es el MVP; la v1.5 es el producto fino. Lo apuntado en el grill del 04-sep
   - **G15-20 · Mando físico**: Gamepad API; módulo común `lib/gamepad` que traduce a las mismas entradas que el teclado (reutilizable en el portal), aplicado ahora solo a VAULT WORLD CUP. Mapeo estándar: stick izq./cruceta = mover; abajo (A/✕) = chut; derecha (B/○) = pase; izquierda (X/□) = sprint/cambio; L1/R1 = estrategia; Start = pausa. Teclado sigue activo a la vez; a dos: mando 1 = J1, mando 2 = J2 (si solo hay uno, J2 teclado). Menús navegables con mando. Excepción anotada al criterio 20: `navigator.getGamepads()` crea el array por frame (inevitable). En V15-2 (1,5-2 días).
   - **G15-21 · Celebración de victoria**: reutiliza particles.ts existente (confeti amistoso / fuegos Mundial). Amistoso ganado: confeti empieza sobre el campo al pitido final, más denso y con colores del kit propio. Mundial ganado: fuegos + confeti a la vez, más densos, confeti dorado + kit, destello dorado en la copa. Solo pantalla, en V15-5.
   - **G15-22 · Calendario revisado**: V15-1 Aspecto HECHO (`90dc114`) → V15-2 Mandos (cambio L, teclados, Esc, localStorage, mando físico; 1,5-2 días) → V15-3 Contenido (20 selecciones, 5×4, minicampo, Mundial 16, plantilla 14 + pantalla ALINEACIÓN; 2 días) → V15-4 Motor (11v11, atributos, postes/larguero, tarjetas, lesiones, pausa gol 4 s; UN regrabado + sonda 40; 2-3 días) → V15-5 Espectáculo (celebración abrazo, red ondula, nombres/dorsales en eventos, pantalla previa, celebración de victoria). Objetivo de Paco: la semana que viene; calidad antes que calendario.
+  - **G15-23 · Online**: el online (amistoso 1v1 y Mundial a dos por Supabase Realtime, lockstep de TeamInput) NO entra antes de producción: va como **V15-6 tras la subida**, durante la beta. Prod sale con multijugador local.

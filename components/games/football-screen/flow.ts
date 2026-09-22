@@ -6,6 +6,7 @@ import {
 import { createRng } from '../football-logic/rng';
 import { nextCpuPair, resolveCpuMatch } from '../football-logic/world-cup';
 import { TEAM_GRID_COLS } from './flow-layout';
+import { DEFAULT_KEY_SCHEME, type KeyScheme } from './keyboard';
 
 // G9-9: the flow lives inside the component, one canvas, one loop -- and its phase
 // machine lives HERE, pure and tested, so VaultWorldCupGame.tsx only asks and draws.
@@ -80,10 +81,14 @@ export type FlowState = {
   formation: [number, number];  // per human; 0 = 3-3-2 (G9-5)
   bracketChoice: 0 | 1;         // 0 = VER, 1 = SALTAR
   after: FlowPhase;             // where 'over' goes once the captions drain
+  keyScheme: KeyScheme;         // G15-6: Flechas or Clásico; a preference, so it survives a reset
 };
 
 export function createFlowState(): FlowState {
-  return { phase: 'mode-select', modeIndex: 0, picking: 0, cursor: 0, picked: [-1, -1], formation: [0, 0], bracketChoice: 0, after: 'mode-select' };
+  return {
+    phase: 'mode-select', modeIndex: 0, picking: 0, cursor: 0, picked: [-1, -1], formation: [0, 0], bracketChoice: 0,
+    after: 'mode-select', keyScheme: DEFAULT_KEY_SCHEME,
+  };
 }
 
 // Back to the mode selector, in place. modeIndex is kept on purpose: "otra vez" lands
@@ -129,6 +134,17 @@ export function flowConfirmMode(f: FlowState): void {
   f.picked[1] = -1;
   f.formation[0] = 0;
   f.formation[1] = 0;
+}
+
+// G15-6: the key-scheme row of ELIGE MODO, flipped with left/right from any card.
+export function flowToggleKeyScheme(f: FlowState): void {
+  if (f.phase !== 'mode-select') return;
+  f.keyScheme = f.keyScheme === 'arrows' ? 'classic' : 'arrows';
+}
+
+// Loads the stored choice (the component reads localStorage once, at mount).
+export function flowSetKeyScheme(f: FlowState, scheme: KeyScheme): void {
+  f.keyScheme = scheme;
 }
 
 // ── team-select ─────────────────────────────────────────────────────────────────
