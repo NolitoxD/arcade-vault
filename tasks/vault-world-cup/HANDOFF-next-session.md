@@ -1,6 +1,24 @@
-# HANDOFF — VAULT WORLD CUP · v1.5: V15-1 «Aspecto» CERRADO EN CÓDIGO (sin commit, QA jugado pendiente) · actualizado 2026-09-21
+# HANDOFF — VAULT WORLD CUP · v1.5: V15-1 HECHO (`90dc114`) + ampliación G15-16..22 · siguiente plan V15-2 «Mandos» · actualizado 2026-09-21
 
-Prompt para retomar: `/retomar tasks/vault-world-cup/HANDOFF-next-session.md` → QA jugado V15-1 (qa-paco.md) → ola de fixes si la hay → commit Paco → V15-2 «Mandos» (plan → pre-vuelo → SDD).
+Prompt para retomar: `/retomar tasks/vault-world-cup/HANDOFF-next-session.md` → writing-plans V15-2 «Mandos» (G15-5, G15-6, G15-20) → pre-vuelo → SDD → QA jugado.
+
+## -13. 21-sep tarde: QA de V15-1 «jugabilidad de 10» (commit + push `90dc114`) + AMPLIACIÓN G15-16..22
+
+Paco jugó V15-1: perfecto. Lo que vio como «tarjetas» eran faltas (tarjetas siguen pendientes en V15-4).
+Nuevas decisiones (spec 31 al final + grill-log.md): **G15-16** 11v11 en amistoso/a dos/Mundial (entrenamiento intacto), 4-4-2/4-3-3/5-3-2,
+campo ~10 % mayor; **G15-17** plantilla 14 (3 reservas) + pantalla ALINEACIÓN editable (cambios misma posición, editar nombre, localStorage);
+**G15-18** lesiones (~8 % de faltas, determinista, tope 1/equipo, cambio por reserva); **G15-19** pantalla previa estilo foto Tehkan;
+**G15-20** mando físico (Gamepad API, `lib/gamepad`, J1/J2 por mando); **G15-21** celebración de victoria reforzada (particles.ts existente);
+**G15-22** calendario: V15-2 Mandos (1,5-2 d) → V15-3 Contenido (2 d) → V15-4 Motor (2-3 d, un regrabado) → V15-5 Espectáculo. Objetivo: semana que viene.
+Workspace `.superpowers/sdd/2026-09-21-vault-world-cup-v15-1/` ya prescindible (V15-1 commiteado).
+
+**Después de la v1.5 (Paco, 21-sep):** deploy a Vercel desde GitHub con Supabase de producción clonada y SIN login GitHub en prod →
+beta informal (hijo y conocidos reportan bugs) → en paralelo, juego de plataformas estilo Mario Bros (pantallas corridas, etapas,
+customizable) empezando por `/spec`.
+**ONLINE antes de producción (Paco, 21-sep noche, SIN grillar):** amistoso online 1v1 y Mundial online a dos (cada humano en una mitad
+del cuadro) con Supabase Realtime. Propuesta técnica: lockstep de TeamInput por broadcast sobre el motor determinista; resto de partidos
+local vs CPU; cuadro compartido en tabla. Grillar al retomar: ¿entra antes de prod o en la release siguiente?, salas por código,
+desconexiones, ranking.
 
 ## -12. 21-sep: V15-1 «Aspecto» EJECUTADO y CERRADO EN CÓDIGO (sin commitear)
 
