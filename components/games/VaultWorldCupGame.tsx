@@ -14,9 +14,12 @@ import { PITCH } from './football-logic/pitch';
 import { PLAYER_RADIUS, isSprinting, type PlayerState } from './football-logic/players';
 import { createRng, type Rng } from './football-logic/rng';
 import { SHOOTOUT_RESOLVE_STEPS } from './football-logic/set-pieces';
-import { FORMATIONS, TEAM_SIZE, TEAMS, teamById, type Kit, type Strategy, type TeamDef } from './football-logic/teams';
+import { SQUAD_SIZE } from './football-logic/squads';
 import {
-  cpuMatchSeed, currentDifficulty, humanPairIndex, isStillIn, pairAwayId, pairCount, pairHomeId, pairResult, roundLabel,
+  FORMATIONS, TEAM_SIZE, TEAMS, teamById, type Formation, type Kit, type Strategy, type TeamDef,
+} from './football-logic/teams';
+import {
+  WORLD_CUP_SIZE, cpuMatchSeed, currentDifficulty, humanPairIndex, pairAwayId, pairCount, pairHomeId, pairResult, roundLabel,
 } from './football-logic/world-cup';
 
 import { ballLift, ballScale, ballShadowFade, ballShadowScale } from './football-screen/ball-view';
@@ -30,17 +33,23 @@ import {
 } from './football-screen/captions';
 import { CONTROL_HINTS, TWO_PLAYER_SCHEME_NOTE, keeperHintFor } from './football-screen/control-hints';
 import {
-  MODE_BLURBS, MODE_LIST, MODE_NAMES, createFlowState, flowAfterModeBuilt, flowBuildMode, flowCaptionsDrained,
-  flowConfirmBracket, flowConfirmDraw, flowConfirmMode, flowConfirmTeam, flowContinue, flowCpuPair, flowExitMatch,
-  flowHumanCount, flowMatchOver, flowMoveBracketChoice, flowMoveMode, flowMoveTeam, flowPickingHuman, flowRecordCpuResult,
-  flowSetFormation, flowSetKeyScheme, flowSkipSpectate, flowSpectateOver, flowToggleKeyScheme, phaseGroup, type PhaseGroup,
+  BRACKET_CHOICE_COUNT, MODE_BLURBS, MODE_LIST, MODE_NAMES, createFlowState, flowAfterModeBuilt, flowBuildMode,
+  flowCaptionsDrained, flowConfirmBracket, flowConfirmDraw, flowConfirmLineup, flowConfirmMode, flowConfirmTeam,
+  flowContinue, flowCpuPair, flowExitMatch, flowHumanCount, flowLineupBeginEdit, flowLineupCancelChoice,
+  flowLineupChoose, flowLineupEndEdit, flowLineupMove, flowMatchOver, flowMoveBracketChoice, flowMoveMode,
+  flowMoveTeam, flowPickingHuman, flowRecordCpuResult, flowSetFormation, flowSetKeyScheme, flowSkipSpectate,
+  flowSpectateOver, flowToggleKeyScheme, phaseGroup, type PhaseGroup,
 } from './football-screen/flow';
 import {
-  BRACKET_ELIMINATED_Y, BRACKET_HINT_Y, BRACKET_PROMPT_Y, BRACKET_ROW_H, DRAW_ROW_H, FORMATION_ROW_Y, MODE_CARD_H,
-  MODE_CARD_W, MODE_HINT_Y, MODE_SCHEME_DETAIL_Y, MODE_SCHEME_ROW_Y, SELECT_HINT_Y, TEAM_CARD_H, TEAM_CARD_W,
+  BRACKET_BUTTON_H, BRACKET_BUTTON_W, BRACKET_BUTTON_Y, BRACKET_HINT_Y, BRACKET_PROMPT_Y, BRACKET_ROW_H, DRAW_ROW_H,
+  FORMATION_ROW_Y, LINEUP_HINT_Y, LINEUP_LABEL_DY, LINEUP_PITCH_H, LINEUP_PITCH_W, LINEUP_PITCH_X, LINEUP_PITCH_Y,
+  LINEUP_RESERVE_X, LINEUP_STATUS_Y, MODE_CARD_H, MODE_CARD_W, MODE_HINT_Y, MODE_SCHEME_DETAIL_Y, MODE_SCHEME_ROW_Y,
+  SELECT_HINT_Y, TEAM_CARD_H, TEAM_CARD_W, TEAM_PREVIEW_H, TEAM_PREVIEW_W, TEAM_PREVIEW_X, TEAM_PREVIEW_Y,
   VICTORY_FIGURE_Y, VICTORY_HINT_Y, VICTORY_TEAM_Y, VICTORY_TITLE_Y,
-  bracketRowY, drawColX, drawRowY, modeCardY, teamCardX, teamCardY,
+  bracketButtonX, bracketColX, bracketRowY, drawColX, drawRowY, formationLabelX, lineupReserveY, modeCardY,
+  teamCardX, teamCardY,
 } from './football-screen/flow-layout';
+import { previewGkX, previewGkY, previewSlotX, previewSlotY } from './football-screen/formation-preview';
 import { PAD_KEYS, routeGamepadStrategy, routeGamepadToPad } from './football-screen/gamepad-input';
 import { GESTURE_IDLE, beginGkCatchGestures, createGestureTimers, gestureProgress, resetGestures } from './football-screen/gestures';
 import { GOAL_MOUTH_DEPTH, NET_CELL, netLineCount } from './football-screen/goal-net';
@@ -56,6 +65,10 @@ import {
   createPadState, isPauseKey, loadKeyScheme, overlayPadToTeamInput, padAdvance, padBlur, padChoice, padClear, padDown,
   padFormationChoice, padKeyFor, padToTeamInput, padUp, saveKeyScheme, type KeyTable, type PadKey, type PadState,
 } from './football-screen/keyboard';
+import {
+  GK_POSITION, applySwap, canSwap, createLineup, lineupBackspace, lineupEndEdit, lineupName, lineupTypeChar,
+  loadLineup, saveLineup, type Lineup,
+} from './football-screen/lineup';
 import { SPECTATE_SPEED, createStepBudget } from './football-screen/loop';
 import { createFramePlan, planFrame, planHalfAmbience } from './football-screen/match-loop';
 import { createMatchRun, finishMatchRun, stepMatchRun, type MatchRun } from './football-screen/match-run';
@@ -187,6 +200,8 @@ const MINIMAP_Y = VIEW_H - MINIMAP_H - MINIMAP_PAD;
 const MINIMAP_DOT_GK = 3;
 const MINIMAP_DOT_PLAYER = 2;
 const MINIMAP_DOT_BALL = 2;
+// G15-9: the mini pitch's dot radius, shared by the goalkeeper and the outfield.
+const PREVIEW_DOT_R = 4;
 const SPOT_RADIUS = 4;
 const BALL_RADIUS = 6;
 // How far off screen the ball is still drawn: its own radius plus the height it can
@@ -211,6 +226,19 @@ const MODE_TITLE = 'ELIGE MODO';
 const TEAM_TITLE_SOLO = 'ELIGE TU SELECCIÓN';
 const TEAM_TITLES_TWO: readonly [string, string] = ['JUGADOR 1 (WASD): ELIGE TU SELECCIÓN', 'JUGADOR 2 (FLECHAS): ELIGE TU SELECCIÓN'];
 const TEAM_HINTS_TWO: readonly [string, string] = ['WASD · C CONFIRMA · 1/2/3 ALINEACIÓN', 'FLECHAS · J CONFIRMA · 7/8/9 ALINEACIÓN'];
+// Fix round 1 (Important #2): ALINEACIÓN is reachable from the two-player friendly
+// (LINEUP_BY_MODE['friendly-2p'], flow.ts) too, and J1's buttons there are C/V/B
+// (TWO_PLAYER_P1), not either solo scheme's -- CONTROL_HINTS[flow.keyScheme] was
+// naming J2's or a solo scheme's keys to a player who does not have them. Mirrors
+// TEAM_HINTS_TWO above: literal per-picker strings, no per-frame build.
+const LINEUP_HINTS_TWO_BROWSE: readonly [string, string] = [
+  'WASD · C CAMBIAR · B NOMBRE · V VOLVER',
+  'FLECHAS · J CAMBIAR · L NOMBRE · K VOLVER',
+];
+const LINEUP_HINTS_TWO_SWAP: readonly [string, string] = [
+  'WASD: ELIGE RESERVA · C CONFIRMA · V CANCELA',
+  'FLECHAS: ELIGE RESERVA · J CONFIRMA · K CANCELA',
+];
 const TAKEN_TAG = 'J1';
 const FORMATION_ROW_LABEL = 'ALINEACIÓN:';
 // '1 NORMAL', '2 OFENSIVA', '3 DEFENSIVA' for the solo/J1 keys and '7 …' for J2's, built once.
@@ -228,10 +256,9 @@ const BRACKET_VS = ' VS ';
 const BRACKET_SCORE_SEP = ' - ';
 const BRACKET_NEXT_PREFIX = 'PRÓXIMO: ';
 const BRACKET_YOURS_PREFIX = 'TU PARTIDO: ';
-const BRACKET_ELIMINATED_PREFIX = 'ELIMINADOS: ';
-const BRACKET_LIST_SEP = ' · ';
 const BRACKET_VER = 'VER';
 const BRACKET_SALTAR = 'SALTAR';
+const BRACKET_SALTAR_TODOS = 'SALTAR TODOS';
 const TRAINING_HINT = 'R PARA SALIR';
 const STATUS_SELECTOR = 'SELECTOR';
 const STATUS_VICTORY = 'VICTORIA';
@@ -255,6 +282,21 @@ const FONT_COUNTDOWN = 'bold 40px monospace';
 const FONT_CAPTION = 'bold 48px monospace';
 const FONT_BLOCKED_TITLE = 'bold 26px monospace';
 const FONT_BLOCKED_HINT = 'bold 16px monospace';
+
+// Eighteen shirt numbers as text, built once at module load: not even a String(n)
+// runs on an event (criterion 20).
+const SHIRT_LABELS: readonly string[] = [
+  '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16', '17', '18',
+];
+const LINEUP_TITLE_PREFIX = 'ALINEACIÓN · ';
+const LINEUP_STATUS_SWAP = 'ELIGE QUIÉN ENTRA POR ';
+const LINEUP_STATUS_EDIT = 'ESCRIBIENDO: ';
+// With the squad of eighteen this line should never appear (every role keeps someone
+// on the bench, keeper included -- that is what checkSquadCoversFormations enforces).
+// It stays as the honest answer if a future formation ever empties a line: an empty
+// list with no explanation would look like a bug. Do NOT delete it as dead code.
+const LINEUP_NO_RESERVE = 'SIN RESERVA PARA ESE PUESTO';
+const LINEUP_CURSOR_RING = 6;
 
 // Bakes grass.ts's tile into a canvas ONCE per mount (criterion 20: never per frame).
 function bakeGrassTile(): HTMLCanvasElement {
@@ -359,6 +401,23 @@ function VaultWorldCupGame({
       window.localStorage.setItem(KEY_SCHEME_STORAGE_KEY, value);
     };
     flowSetKeyScheme(flow, loadKeyScheme(readStoredScheme));
+    // G15-17: one Lineup per human, created ONCE (criterion 20); the names and the
+    // starters of a selection are loaded on entering ALINEACIÓN and saved on leaving
+    // it. Two closures over localStorage, like the key scheme's: loadLineup and
+    // saveLineup wrap them in try/catch, so a private window simply starts on the
+    // default lineup and forgets.
+    const lineups: readonly [Lineup, Lineup] = [createLineup(), createLineup()];
+    const readLineup = (key: string): string | null => window.localStorage.getItem(key);
+    const writeLineup = (key: string, value: string): void => {
+      window.localStorage.setItem(key, value);
+    };
+    // Built on an event (refreshLineupView), never per frame. Eighteen, one per squad
+    // member (SQUAD_SIZE), written with literals -- no new Array, no .fill.
+    const lineupLabels: string[] = ['', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''];
+    const lineupChoices: number[] = [];
+    let lineupChoiceCount = 0;
+    let lineupTitle = '';
+    let lineupStatus = '';
     // Placeholders so nothing below is nullable: replaced by flowBuildMode / startMatch
     // the first time the player confirms. Neither is ever stepped or drawn as such.
     let mode: GameMode = createFriendlyMode('friendly-cpu', TEAMS[0].id, TEAMS[1].id);
@@ -445,13 +504,23 @@ function VaultWorldCupGame({
     // The bracket and draw views, resolved ONCE per screen entry (Vault Fighter's
     // refreshBracketView), never per frame. Strings are built here, on the event.
     let bracketTitle = '';
-    const bracketRowText: string[] = ['', '', '', ''];
-    const bracketRowIsHuman: boolean[] = [false, false, false, false];
+    // Eight rows: the round of 16 is the widest the screen ever gets (G15-8). Created
+    // once, with literals -- refreshBracketView writes into them on an event.
+    // The row is drawn in THREE pieces (home, score, away) so the loser of a resolved
+    // cross can be dimmed in place -- Paco's (b): no ELIMINADOS line, no counter.
+    const bracketRowHome: string[] = ['', '', '', '', '', '', '', ''];
+    const bracketRowMid: string[] = ['', '', '', '', '', '', '', ''];
+    const bracketRowAway: string[] = ['', '', '', '', '', '', '', ''];
+    // Offsets from the column centre, measured ONCE per refresh, never per frame.
+    const bracketRowHomeDx: number[] = [0, 0, 0, 0, 0, 0, 0, 0];
+    const bracketRowAwayDx: number[] = [0, 0, 0, 0, 0, 0, 0, 0];
+    // 0 = the home side lost, 1 = the away side lost, -1 = the cross is not resolved.
+    const bracketRowLoser: number[] = [-1, -1, -1, -1, -1, -1, -1, -1];
+    const bracketRowIsHuman: boolean[] = [false, false, false, false, false, false, false, false];
     let bracketRows = 0;
     let bracketPrompt = '';
-    let bracketEliminated = '';
     let bracketHasChoice = false;
-    const drawNames: string[] = ['', '', '', '', '', '', '', ''];
+    const drawNames: string[] = ['', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''];
     let drawHumanIndex = -1;
 
     let accumulatorMs = 0;
@@ -620,6 +689,18 @@ function VaultWorldCupGame({
       refreshBracketView();
     }
 
+    // G15-8: SALTAR TODOS. The same skipCpuPair as one-by-one, for every CPU pair
+    // left of the round -- same seed per pair (cpuMatchSeed), so the bracket ends up
+    // exactly as it would resolving them one at a time. Bounded by WORLD_CUP_SIZE
+    // instead of `while (true)`: if nextCpuPair ever stopped advancing, this returns
+    // rather than hanging the tab.
+    function skipAllCpuPairs(): void {
+      for (let i = 0; i < WORLD_CUP_SIZE; i++) {
+        if (flowCpuPair(mode) === -1) return;
+        skipCpuPair();
+      }
+    }
+
     // A during a spectated pair (or the viewport guard, S-FL5): finish it headless,
     // record it, back to the bracket. finishMatchRun continues the SAME run from where
     // the screen left it, so the winner is the one SALTAR would have produced.
@@ -678,17 +759,105 @@ function VaultWorldCupGame({
       reportStatus(STATUS_SELECTOR);
     }
 
-    // A on the team selector: J1 (and J2 in the two-player mode), then the mode is
-    // built -- the one place, once per run (Vault Fighter's confirmSelection).
+    // A on the team selector: J1 (and J2 in the two-player mode), then either the
+    // ALINEACIÓN screen (G15-17) or, in the training, straight to the mode.
     function confirmTeam(): void {
       const result = flowConfirmTeam(flow, BANK_IDS.length);
+      if (result === 'lineup') {
+        openLineup();
+        return;
+      }
       if (result !== 'done') return;
+      buildModeAndGo();
+    }
+
+    // The mode is built HERE, the one place, once per run (Vault Fighter's
+    // confirmSelection). Reached from the training's team selector or from the last
+    // ALINEACIÓN screen.
+    function buildModeAndGo(): void {
       runSeed = fixedSeed ?? Date.now();          // the one Date.now() of the whole game (G9-7)
       mode = flowBuildMode(flow, BANK_IDS, runSeed);
       fxRng = createRng(fxSeedFor(runSeed));      // the fourth stream, never the match's
       flowAfterModeBuilt(flow, mode);
       if (modeBracket(mode) === null) startHumanMatch();
       else refreshDrawView();
+    }
+
+    function lineupHuman(): 0 | 1 {
+      return flowPickingHuman(flow);
+    }
+
+    function lineupTeam(): TeamDef {
+      return TEAMS[flow.picked[lineupHuman()]];
+    }
+
+    function lineupFormation(): Formation {
+      return FORMATIONS[flow.formation[lineupHuman()]];
+    }
+
+    // Entering ALINEACIÓN (from the team selector, or from J1's screen to J2's).
+    function openLineup(): void {
+      const who = lineupHuman();
+      loadLineup(readLineup, lineupTeam().id, lineupFormation(), lineups[who]);
+      refreshLineupView();
+      reportStatus(lineupTitle);
+    }
+
+    function saveLineupOf(who: 0 | 1): void {
+      saveLineup(writeLineup, TEAMS[flow.picked[who]].id, FORMATIONS[flow.formation[who]], lineups[who]);
+    }
+
+    // Every string of the screen, on an event: entering, a swap, a typed letter.
+    // Also the list of legal reserves for the position being substituted, which is
+    // what the cursor walks while flow.lineupChoosing !== -1.
+    function refreshLineupView(): void {
+      const f = lineupFormation();
+      const l = lineups[lineupHuman()];
+      const teamId = lineupTeam().id;
+      lineupTitle = LINEUP_TITLE_PREFIX + lineupTeam().name;
+      for (let i = 0; i < SQUAD_SIZE; i++) {
+        lineupLabels[i] = SHIRT_LABELS[i] + ' ' + lineupName(l, teamId, i);
+      }
+      lineupChoiceCount = 0;
+      lineupChoices.length = SQUAD_SIZE;
+      if (flow.lineupChoosing !== -1) {
+        for (let i = 0; i < SQUAD_SIZE; i++) {
+          if (!canSwap(f, l, flow.lineupChoosing, i)) continue;
+          lineupChoices[lineupChoiceCount] = i;
+          lineupChoiceCount++;
+        }
+        lineupStatus = lineupChoiceCount === 0
+          ? LINEUP_NO_RESERVE
+          : LINEUP_STATUS_SWAP + lineupLabels[l.starters[flow.lineupChoosing]];
+      } else if (flow.lineupEditing !== -1) {
+        lineupStatus = LINEUP_STATUS_EDIT + lineupLabels[flow.lineupEditing];
+      } else {
+        lineupStatus = '';
+      }
+    }
+
+    // The squad index the cursor is on: a starter while browsing, a legal reserve
+    // while choosing. -1 when there is nothing to point at.
+    function lineupCursorIndex(): number {
+      const l = lineups[lineupHuman()];
+      if (flow.lineupChoosing === -1) {
+        return flow.lineupCursor < l.starters.length ? l.starters[flow.lineupCursor] : -1;
+      }
+      return flow.lineupCursor < lineupChoiceCount ? lineupChoices[flow.lineupCursor] : -1;
+    }
+
+    // B on ALINEACIÓN while browsing (Paco's (d)). flowConfirmLineup refuses ('none')
+    // mid-swap or mid-edit, so a half finished change never starts a match.
+    function confirmLineup(): void {
+      const who = lineupHuman();
+      const result = flowConfirmLineup(flow);
+      if (result === 'none') return;
+      saveLineupOf(who);
+      if (result === 'next') {
+        openLineup();
+        return;
+      }
+      buildModeAndGo();
     }
 
     function refreshDrawView(): void {
@@ -699,33 +868,38 @@ function VaultWorldCupGame({
     }
 
     // Resolved once per entry to the bracket screen and once per VER/SALTAR resolution,
-    // never per frame (Vault Fighter 973-1000). The strings are built HERE.
+    // never per frame (Vault Fighter 973-1000). The strings AND their offsets are
+    // built HERE -- ctx.measureText runs on the event, not on the frame.
+    // G15-8: only the CURRENT round is shown, so there is no ELIMINADOS line any more
+    // -- with sixteen teams it would be fourteen names by the final and would not fit.
+    // Paco's (b): the loser of a resolved cross is DIMMED in its own row instead.
     function refreshBracketView(): void {
       const wc = modeBracket(mode);
       if (wc === null) return;
       bracketTitle = BRACKET_TITLE_PREFIX + roundLabel(wc);
       bracketRows = pairCount(wc);
       const human = humanPairIndex(wc);
+      ctx.font = FONT_TEAM;
       for (let p = 0; p < bracketRows; p++) {
         const homeName = teamOf(pairHomeId(wc, p)).name;
         const awayName = teamOf(pairAwayId(wc, p)).name;
         bracketRowIsHuman[p] = p === human;
-        if (!wc.resolved[p]) {
-          bracketRowText[p] = homeName + BRACKET_VS + awayName;
-          continue;
+        bracketRowHome[p] = homeName;
+        bracketRowAway[p] = awayName;
+        const res = wc.resolved[p] ? pairResult(wc, p) : null;
+        if (res === null) {
+          bracketRowMid[p] = BRACKET_VS;
+          bracketRowLoser[p] = -1;
+        } else {
+          bracketRowMid[p] = ' ' + smallNumber(res.homeGoals) + BRACKET_SCORE_SEP + smallNumber(res.awayGoals) + ' ';
+          bracketRowLoser[p] = res.winner === 0 ? 1 : 0;
         }
-        // The result of this pair: the latest of this round with this home.
-        const res = pairResult(wc, p);
-        bracketRowText[p] = res === null
-          ? homeName + BRACKET_VS + awayName
-          : homeName + ' ' + smallNumber(res.homeGoals) + BRACKET_SCORE_SEP + smallNumber(res.awayGoals) + ' ' + awayName;
+        // The three pieces are laid out around the column centre: home ends where the
+        // middle starts, away starts where it ends. Measured here, ONCE.
+        const midW = ctx.measureText(bracketRowMid[p]).width;
+        bracketRowHomeDx[p] = -midW / 2;
+        bracketRowAwayDx[p] = midW / 2;
       }
-      let fallen = '';
-      for (let i = 0; i < wc.bracket.length; i++) {
-        if (isStillIn(wc, wc.bracket[i])) continue;
-        fallen += (fallen === '' ? '' : BRACKET_LIST_SEP) + teamOf(wc.bracket[i]).name;
-      }
-      bracketEliminated = fallen === '' ? '' : BRACKET_ELIMINATED_PREFIX + fallen;
       const pair = flowCpuPair(mode);
       bracketHasChoice = pair !== -1;
       bracketPrompt = pair === -1
@@ -734,11 +908,12 @@ function VaultWorldCupGame({
       reportStatus(roundLabel(wc));
     }
 
-    // A on the bracket: VER, SALTAR or the human's match.
+    // A on the bracket: VER, SALTAR, SALTAR TODOS or the human's match.
     function confirmBracket(): void {
       const action = flowConfirmBracket(flow, mode);
       if (action === 'spectate') startCpuPair();
       else if (action === 'skip') skipCpuPair();
+      else if (action === 'skip-all') skipAllCpuPairs();
       else if (action === 'play') startHumanMatch();
     }
 
@@ -1483,19 +1658,21 @@ function VaultWorldCupGame({
         ctx.strokeStyle = selected ? HUD_ACCENT : CARD_BORDER;
         ctx.lineWidth = selected ? 3 : 1;
         ctx.strokeRect(x, y, TEAM_CARD_W, TEAM_CARD_H);
-        // The kit: a shirt block in the primary with a collar band in the secondary.
+        // G15-9: the card is 140 wide now, so the kit block narrows to 22 and the
+        // name starts at x + 36 -- 98 px, enough for ESTADOS UNIDOS (14 chars of
+        // bold 11px monospace is about 92 px).
         ctx.fillStyle = def.kit.primary;
-        ctx.fillRect(x + 10, y + 12, 30, 40);
+        ctx.fillRect(x + 8, y + 12, 22, 34);
         ctx.fillStyle = def.kit.secondary;
-        ctx.fillRect(x + 10, y + 12, 30, 7);
+        ctx.fillRect(x + 8, y + 12, 22, 6);
         ctx.font = FONT_HALF;
         ctx.textAlign = 'left';
         ctx.fillStyle = taken ? DIM_TEXT : selected ? HUD_ACCENT : HUD_TEXT;
-        ctx.fillText(def.name, x + 50, y + TEAM_CARD_H / 2);
+        ctx.fillText(def.name, x + 36, y + TEAM_CARD_H / 2);
         if (taken) {
           ctx.textAlign = 'right';
           ctx.fillStyle = DIM_TEXT;
-          ctx.fillText(TAKEN_TAG, x + TEAM_CARD_W - 8, y + 14);
+          ctx.fillText(TAKEN_TAG, x + TEAM_CARD_W - 6, y + 12);
         }
       }
       // G9-5: the formation, one per human, on the human's own number row.
@@ -1506,14 +1683,124 @@ function VaultWorldCupGame({
       ctx.fillText(FORMATION_ROW_LABEL, 32, FORMATION_ROW_Y);
       for (let i = 0; i < labels.length; i++) {
         ctx.fillStyle = i === flow.formation[picking] ? HUD_ACCENT : HUD_TEXT;
-        ctx.fillText(labels[i], 150 + i * 200, FORMATION_ROW_Y);
+        ctx.fillText(labels[i], formationLabelX(i), FORMATION_ROW_Y);
       }
+      drawFormationPreview(
+        FORMATIONS[flow.formation[picking]], TEAMS[flow.cursor],
+        TEAM_PREVIEW_X, TEAM_PREVIEW_Y, TEAM_PREVIEW_W, TEAM_PREVIEW_H,
+      );
       drawHint(two ? TEAM_HINTS_TWO[picking] : CONTROL_HINTS[flow.keyScheme].teamSolo, SELECT_HINT_Y);
+    }
+
+    // G15-9: the mini pitch. Frame, halfway line, centre circle and one dot per
+    // position -- goalkeeper in the fluor green every keeper wears (G12-1), outfield
+    // in the selection's own primary with a ring of its secondary so a white kit does
+    // not vanish on the grass. No attack arrows (G15-9). Reused by the ALINEACIÓN
+    // screen in V15-3-9, which is why it takes its rectangle as arguments.
+    function drawFormationPreview(f: Formation, def: TeamDef, x: number, y: number, w: number, h: number): void {
+      ctx.fillStyle = GRASS_DARK;
+      ctx.fillRect(x, y, w, h);
+      ctx.strokeStyle = LINE;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x, y, w, h);
+      ctx.beginPath();
+      ctx.moveTo(x + w / 2, y);
+      ctx.lineTo(x + w / 2, y + h);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(x + w / 2, y + h / 2, h / 6, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = GK_KIT_PRIMARY;
+      ctx.beginPath();
+      ctx.arc(previewGkX(x, w), previewGkY(y, h), PREVIEW_DOT_R, 0, Math.PI * 2);
+      ctx.fill();
+      for (let s = 0; s < f.slots.length; s++) {
+        const dx = previewSlotX(f, s, x, w);
+        const dy = previewSlotY(f, s, y, h);
+        ctx.fillStyle = def.kit.primary;
+        ctx.beginPath();
+        ctx.arc(dx, dy, PREVIEW_DOT_R, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = def.kit.secondary;
+        ctx.beginPath();
+        ctx.arc(dx, dy, PREVIEW_DOT_R, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+
+    // G15-17: the starters on a mini pitch with shirt number and name, the reserves
+    // on the right, and the cursor ring on whichever list is live. Only YOUR team:
+    // the rival is drawn from V15-5 on (the draw has not happened yet at this point).
+    function drawLineup(): void {
+      drawMenuBackground(lineupTitle);
+      const f = lineupFormation();
+      const def = lineupTeam();
+      const l = lineups[lineupHuman()];
+      drawFormationPreview(f, def, LINEUP_PITCH_X, LINEUP_PITCH_Y, LINEUP_PITCH_W, LINEUP_PITCH_H);
+      ctx.font = FONT_HALF;
+      ctx.textAlign = 'center';
+      for (let p = 0; p < l.starters.length; p++) {
+        const px = p === GK_POSITION
+          ? previewGkX(LINEUP_PITCH_X, LINEUP_PITCH_W)
+          : previewSlotX(f, p - 1, LINEUP_PITCH_X, LINEUP_PITCH_W);
+        const py = p === GK_POSITION
+          ? previewGkY(LINEUP_PITCH_Y, LINEUP_PITCH_H)
+          : previewSlotY(f, p - 1, LINEUP_PITCH_Y, LINEUP_PITCH_H);
+        const live = flow.lineupChoosing === -1 ? p === flow.lineupCursor : p === flow.lineupChoosing;
+        if (live) {
+          ctx.strokeStyle = HUD_ACCENT;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(px, py, LINEUP_CURSOR_RING, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        ctx.fillStyle = live ? HUD_ACCENT : HUD_TEXT;
+        // H13: the keeper sits at PREVIEW_GK_X (49 px) and the centre back of the
+        // 3-3-2 and the 3-2-3 at x = 0.22 (125 px) on the SAME line (y = 0.5). A
+        // 12-13 character label is 79-86 px wide, so both under the dot would overlap
+        // by ~7 px and the keeper's would run off the left of the pitch. His label
+        // goes ABOVE his dot instead; nobody shares that spot.
+        ctx.fillText(
+          lineupLabels[l.starters[p]], px,
+          p === GK_POSITION ? py - LINEUP_LABEL_DY : py + LINEUP_LABEL_DY,
+        );
+      }
+      // The bench: every reserve while browsing, only the legal ones while choosing.
+      ctx.textAlign = 'left';
+      ctx.font = FONT_SMALL;
+      const choosing = flow.lineupChoosing !== -1;
+      const count = choosing ? lineupChoiceCount : l.reserves.length;
+      for (let i = 0; i < count; i++) {
+        const index = choosing ? lineupChoices[i] : l.reserves[i];
+        const live = choosing && i === flow.lineupCursor;
+        ctx.fillStyle = live ? HUD_ACCENT : choosing ? HUD_TEXT : HUD_DIM;
+        ctx.fillText(lineupLabels[index], LINEUP_RESERVE_X, lineupReserveY(i));
+      }
+      if (lineupStatus !== '') {
+        ctx.textAlign = 'center';
+        ctx.fillStyle = HUD_ACCENT;
+        ctx.fillText(lineupStatus, VIEW_W / 2, LINEUP_STATUS_Y);
+      }
+      // Fix round 1 (Important #2): the two-player friendly reaches this screen too,
+      // where the scheme-keyed hints would name the WRONG player's keys (J2's or a
+      // solo scheme's, never J1's C/V/B). lineupEdit has no key letters in it, so it
+      // is identical in both CONTROL_HINTS entries and safe to keep reading by scheme
+      // even in two-player -- only browse/swap need the per-picker literals.
+      const hints = CONTROL_HINTS[flow.keyScheme];
+      const two = flowHumanCount(flow) === 2;
+      const who = lineupHuman();
+      const browse = two ? LINEUP_HINTS_TWO_BROWSE[who] : hints.lineupBrowse;
+      const swap = two ? LINEUP_HINTS_TWO_SWAP[who] : hints.lineupSwap;
+      drawHint(
+        flow.lineupEditing !== -1 ? hints.lineupEdit : flow.lineupChoosing !== -1 ? swap : browse,
+        LINEUP_HINT_Y,
+      );
     }
 
     function drawDraw(): void {
       drawMenuBackground(DRAW_TITLE);
-      ctx.font = FONT_MENU_ITEM;
+      // FONT_TEAM, not FONT_MENU_ITEM: sixteen names in four columns of 200 px.
+      ctx.font = FONT_TEAM;
       for (let i = 0; i < drawNames.length; i++) {
         const you = i === drawHumanIndex;
         ctx.textAlign = 'center';
@@ -1521,8 +1808,8 @@ function VaultWorldCupGame({
         ctx.fillText(drawNames[i], drawColX(i), drawRowY(i) + DRAW_ROW_H / 2);
         if (you) {
           ctx.font = FONT_SMALL;
-          ctx.fillText(YOU_TAG, drawColX(i) + 130, drawRowY(i) + DRAW_ROW_H / 2);
-          ctx.font = FONT_MENU_ITEM;
+          ctx.fillText(YOU_TAG, drawColX(i), drawRowY(i) + DRAW_ROW_H / 2 + 14);
+          ctx.font = FONT_TEAM;
         }
       }
       drawHint(CONTROL_HINTS[flow.keyScheme].draw, VIEW_H - 24);
@@ -1530,17 +1817,36 @@ function VaultWorldCupGame({
 
     function drawBracket(): void {
       drawMenuBackground(bracketTitle);
-      ctx.font = FONT_MENU_ITEM;
+      // FONT_TEAM: the longest possible cross is 33 chars, ~356 px at 18 px monospace,
+      // which fits a 400 px column; at FONT_MENU_ITEM it would be ~435 and spill over.
+      ctx.font = FONT_TEAM;
       for (let p = 0; p < bracketRows; p++) {
-        const y = bracketRowY(p) + BRACKET_ROW_H / 2;
+        const cx = bracketColX(p, bracketRows);
+        const y = bracketRowY(p, bracketRows) + BRACKET_ROW_H / 2;
+        const live = bracketRowIsHuman[p] ? HUD_ACCENT : HUD_TEXT;
+        // Paco's (b): once a cross is resolved, the side that went out stays in its
+        // own row, dimmed. No ELIMINADOS line, no "QUEDAN N" counter.
+        ctx.textAlign = 'right';
+        ctx.fillStyle = bracketRowLoser[p] === 0 ? DIM_TEXT : live;
+        ctx.fillText(bracketRowHome[p], cx + bracketRowHomeDx[p], y);
         ctx.textAlign = 'center';
-        ctx.fillStyle = bracketRowIsHuman[p] ? HUD_ACCENT : HUD_TEXT;
-        ctx.fillText(bracketRowText[p], VIEW_W / 2, y);
+        ctx.fillStyle = live;
+        ctx.fillText(bracketRowMid[p], cx, y);
+        ctx.textAlign = 'left';
+        ctx.fillStyle = bracketRowLoser[p] === 1 ? DIM_TEXT : live;
+        ctx.fillText(bracketRowAway[p], cx + bracketRowAwayDx[p], y);
         if (bracketRowIsHuman[p]) {
+          // To the LEFT of the row, left-aligned from cx - 190: at cx + 190 on the
+          // right-hand column (600) the tag would start at 790 and run past the 800 px
+          // canvas; right-aligning at cx - 190 on the left-hand column (200) anchors at
+          // x = 10 and the glyphs run backwards past x = 0 (review-5 Important #1).
+          // Left-aligning keeps the same anchor but grows the tag rightwards, into the
+          // row, which stays inside the canvas in all three cases (see report).
           ctx.font = FONT_SMALL;
           ctx.textAlign = 'left';
-          ctx.fillText(YOU_TAG, VIEW_W - 80, y);
-          ctx.font = FONT_MENU_ITEM;
+          ctx.fillStyle = HUD_ACCENT;
+          ctx.fillText(YOU_TAG, cx - 190, y);
+          ctx.font = FONT_TEAM;
         }
       }
       ctx.font = FONT_TEAM;
@@ -1548,26 +1854,21 @@ function VaultWorldCupGame({
       ctx.fillStyle = HUD_TEXT;
       ctx.fillText(bracketPrompt, VIEW_W / 2, BRACKET_PROMPT_Y);
       if (bracketHasChoice) {
-        // VER | SALTAR, the selected one boxed (G9-3).
-        const w = 120;
-        const h = 34;
-        const y = BRACKET_PROMPT_Y + 26;
-        for (let i = 0; i < 2; i++) {
-          const x = VIEW_W / 2 + (i === 0 ? -w - 10 : 10);
+        // VER | SALTAR | SALTAR TODOS, the selected one boxed (G9-3, G15-8).
+        for (let i = 0; i < BRACKET_CHOICE_COUNT; i++) {
+          const x = bracketButtonX(i);
           const selected = flow.bracketChoice === i;
           ctx.fillStyle = CARD_BG;
-          ctx.fillRect(x, y, w, h);
+          ctx.fillRect(x, BRACKET_BUTTON_Y, BRACKET_BUTTON_W, BRACKET_BUTTON_H);
           ctx.strokeStyle = selected ? HUD_ACCENT : CARD_BORDER;
           ctx.lineWidth = selected ? 3 : 1;
-          ctx.strokeRect(x, y, w, h);
+          ctx.strokeRect(x, BRACKET_BUTTON_Y, BRACKET_BUTTON_W, BRACKET_BUTTON_H);
           ctx.fillStyle = selected ? HUD_ACCENT : HUD_TEXT;
-          ctx.fillText(i === 0 ? BRACKET_VER : BRACKET_SALTAR, x + w / 2, y + h / 2);
+          ctx.fillText(
+            i === 0 ? BRACKET_VER : i === 1 ? BRACKET_SALTAR : BRACKET_SALTAR_TODOS,
+            x + BRACKET_BUTTON_W / 2, BRACKET_BUTTON_Y + BRACKET_BUTTON_H / 2,
+          );
         }
-      }
-      if (bracketEliminated !== '') {
-        ctx.font = FONT_SMALL;
-        ctx.fillStyle = DIM_TEXT;
-        ctx.fillText(bracketEliminated, VIEW_W / 2, BRACKET_ELIMINATED_Y);
       }
       drawHint(bracketHasChoice ? CONTROL_HINTS[flow.keyScheme].bracketChoice : CONTROL_HINTS[flow.keyScheme].bracketPlay, BRACKET_HINT_Y);
     }
@@ -1632,6 +1933,7 @@ function VaultWorldCupGame({
       switch (flow.phase) {
         case 'mode-select': drawModeSelect(); break;
         case 'team-select': drawTeamSelect(); break;
+        case 'lineup': drawLineup(); break;
         case 'draw': drawDraw(); break;
         case 'bracket': drawBracket(); break;
         case 'victory': drawVictory(); break;
@@ -1688,7 +1990,7 @@ function VaultWorldCupGame({
     function pauseTables(): readonly [KeyTable, KeyTable] {
       const phase = flow.phase;
       if (phase === 'match' || phase === 'over' || phase === 'spectate') return tables;
-      if (phase === 'team-select' && flowHumanCount(flow) === 2) return TWO_PLAYER_TABLES;
+      if ((phase === 'team-select' || phase === 'lineup') && flowHumanCount(flow) === 2) return TWO_PLAYER_TABLES;
       return SOLO_TABLES_BY_SCHEME[flow.keyScheme];
     }
 
@@ -1723,6 +2025,37 @@ function VaultWorldCupGame({
           else if (k === 'a') confirmTeam();
           else return false;
           return true;
+        case 'lineup': {
+          const f2 = lineupFormation();
+          const l = lineups[lineupHuman()];
+          if (k === 'up' || k === 'left') flowLineupMove(flow, -1, flow.lineupChoosing === -1 ? l.starters.length : lineupChoiceCount);
+          else if (k === 'down' || k === 'right') flowLineupMove(flow, 1, flow.lineupChoosing === -1 ? l.starters.length : lineupChoiceCount);
+          else if (k === 'a') {
+            if (flow.lineupChoosing === -1) flowLineupChoose(flow, flow.lineupCursor);
+            else {
+              const incoming = lineupCursorIndex();
+              if (incoming !== -1) applySwap(f2, l, flow.lineupChoosing, incoming);
+              flowLineupCancelChoice(flow);
+            }
+          } else if (k === 'b') {
+            // Paco's (d): B is the back/cancel button. Mid-substitution it cancels;
+            // browsing, it leaves ALINEACIÓN (J2's turn, or build the mode).
+            if (flow.lineupChoosing !== -1) flowLineupCancelChoice(flow);
+            else {
+              confirmLineup();
+              // The screen may be gone; refreshing a dead one would read the next team.
+              if (flow.phase !== 'lineup') return true;
+            }
+          } else if (k === 'c') {
+            // Paco's (d): C opens the name editor. It does nothing mid-substitution.
+            if (flow.lineupChoosing === -1) {
+              const target = lineupCursorIndex();
+              if (target !== -1) flowLineupBeginEdit(flow, target);
+            }
+          } else return false;
+          refreshLineupView();
+          return true;
+        }
         case 'draw':
           if (k !== 'a') return false;
           flowConfirmDraw(flow);
@@ -1771,11 +2104,12 @@ function VaultWorldCupGame({
       // Fix round 1, finding 2: a menu is a single-input screen, like the keyboard's
       // own menuTable() (one table, not two) -- so only mando 1 drives it, or two
       // pads both pressing the same frame would fire menuAction twice (double
-      // confirm, cursor jumping two rows). The two-player team selector is the one
-      // screen with two real pickers, and routeMenuGamepad already restricts each
-      // slot to its own player there.
+      // confirm, cursor jumping two rows). The two-player team selector and, since
+      // fix round 1 of Task 9 (Minor #3), the two-player ALINEACIÓN are the screens
+      // with two real pickers, and routeMenuGamepad already restricts each slot to
+      // its own player there -- matching pauseTables' own '|| lineup'.
       routeMenuGamepad(0);
-      if (flow.phase === 'team-select' && flowHumanCount(flow) === 2) routeMenuGamepad(1);
+      if ((flow.phase === 'team-select' || flow.phase === 'lineup') && flowHumanCount(flow) === 2) routeMenuGamepad(1);
     }
 
     // Mando 1 = J1 (team 0) and mando 2 = J2 (team 1) in the two-player friendly; alone,
@@ -1796,14 +2130,14 @@ function VaultWorldCupGame({
       routeGamepadStrategy(gp, pads[team]);
     }
 
-    // On the two-player team selector each pad picks for its own player (mando 1 = J1).
-    // Every other menu is only ever called with slot 0 (fix round 1, finding 2): this
-    // guard is what makes mando 2 a no-op there, matching the keyboard's own single
-    // menuTable().
+    // On the two-player team selector AND, since fix round 1 of Task 9, the two-player
+    // ALINEACIÓN, each pad picks/edits for its own player (mando 1 = J1). Every other
+    // menu is only ever called with slot 0 (fix round 1, finding 2): this guard is
+    // what makes mando 2 a no-op there, matching the keyboard's own single menuTable().
     function routeMenuGamepad(slot: 0 | 1): void {
       const gp = gamepads[slot];
       if (!gp.connected) return;
-      if (flow.phase === 'team-select' && flowHumanCount(flow) === 2 && flowPickingHuman(flow) !== slot) return;
+      if ((flow.phase === 'team-select' || flow.phase === 'lineup') && flowHumanCount(flow) === 2 && flowPickingHuman(flow) !== slot) return;
       for (let i = 0; i < PAD_KEYS.length; i++) {
         const k = PAD_KEYS[i];
         if (gp.edge[k] !== 'pressed') continue;
@@ -1835,12 +2169,38 @@ function VaultWorldCupGame({
       const key = e.key.toLowerCase();
       // G15-6: Esc always; P only while no active table reads it. BEFORE the paused
       // guard, or the key could never lift the pause it set.
-      if (isPauseKey(key, pauseTables())) {
+      // Fix round 1 (Important #1): while a lineup name is being typed, 'p' is a
+      // LETTER, not the pause key -- ARROWS_SOLO and both two-player tables don't map
+      // it, so isPauseKey would treat it as Esc's understudy and swallow it before the
+      // editing interceptor below ever runs, making any name with a P untypable under
+      // the default FLECHAS scheme and in the two-player friendly. Esc itself keeps
+      // priority over editing, exactly as the brief says ("lo único que sigue
+      // teniendo prioridad sobre la edición es isPauseKey (Esc)").
+      const editingLineupName = flow.phase === 'lineup' && flow.lineupEditing !== -1;
+      if (isPauseKey(key, pauseTables()) && !(editingLineupName && key === 'p')) {
         e.preventDefault();
         if (!e.repeat) requestPause();
         return;
       }
       if (pausedRef.current || blocked) return;
+      // G15-17: while a name is being typed, the letters ARE the input -- they must
+      // not reach padKeyFor, or CLÁSICO's Q/A/O/P would move the cursor instead of
+      // writing. Esc (the pause) is the only thing above this, and it already ran.
+      if (editingLineupName) {
+        const editing = flow.lineupEditing;
+        const l = lineups[lineupHuman()];
+        if (e.key === 'Enter') {
+          lineupEndEdit(l, editing);
+          flowLineupEndEdit(flow);
+        } else if (e.key === 'Backspace') {
+          lineupBackspace(l, editing);
+        } else if ([...e.key].length !== 1 || !lineupTypeChar(l, editing, e.key)) {
+          return;
+        }
+        e.preventDefault();
+        refreshLineupView();
+        return;
+      }
       if (e.repeat) return;   // auto-repeat is not a new press: the pad edges are ours
       const phase = flow.phase;
       if (phase === 'over') return;
@@ -1877,7 +2237,7 @@ function VaultWorldCupGame({
         }
         return;
       }
-      const table = phase === 'team-select' ? tableForPicker() : menuTable();
+      const table = phase === 'team-select' || phase === 'lineup' ? tableForPicker() : menuTable();
       const k = padKeyFor(table, key);
       if (k !== null && menuAction(k)) {
         e.preventDefault();

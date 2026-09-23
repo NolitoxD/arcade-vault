@@ -25,6 +25,9 @@ export type ControlHints = {
   readonly bracketPlay: string;
   readonly spectate: string;
   readonly victory: string;
+  readonly lineupBrowse: string;   // ALINEACIÓN: moving over the eleven (nine today)
+  readonly lineupSwap: string;     // ALINEACIÓN: picking the reserve who comes on
+  readonly lineupEdit: string;     // ALINEACIÓN: typing a name
 };
 
 const SCHEME_NAMES: Readonly<Record<KeyScheme, string>> = { arrows: 'FLECHAS', classic: 'CLÁSICO' };
@@ -35,18 +38,27 @@ const SCHEME_DETAILS: Readonly<Record<KeyScheme, string>> = {
   classic: 'Q/A/O/P + Z/X/C · ESC PAUSA (LA P ES DERECHA)',
 };
 
+// No key letters: while editing, the letters ARE the input (G15-17).
+const LINEUP_EDIT_HINT = 'ESCRIBE EL NOMBRE · MÁX. 12 · ENTER CONFIRMA';
+
 function buildHints(scheme: KeyScheme, table: KeyTable): ControlHints {
   const a = keyLabel(table, 'a');
+  const b = keyLabel(table, 'b');
+  const c = keyLabel(table, 'c');
   return {
     schemeRow: `TECLADO: < ${SCHEME_NAMES[scheme]} >`,
     schemeDetail: SCHEME_DETAILS[scheme],
     mode: `ARRIBA / ABAJO: MODO · IZQ / DER: TECLADO · A (${a}) CONFIRMA`,
     teamSolo: `CRUCETA · A (${a}) CONFIRMA · 1/2/3 ALINEACIÓN`,
     draw: `A (${a}) PARA CONTINUAR`,
-    bracketChoice: `IZQ / DER · A (${a}) CONFIRMA`,
+    bracketChoice: `IZQ / DER: VER · SALTAR · TODOS · A (${a}) CONFIRMA`,
     bracketPlay: `A (${a}) PARA JUGAR`,
     spectate: `PARTIDO DE LA CPU · X4 · A (${a}) SALTA AL RESULTADO`,
     victory: `A (${a}) · CONTINUAR`,
+    // Paco's (d): A confirms/chooses, B goes back or cancels, C edits the name.
+    lineupBrowse: `CRUCETA · A (${a}) CAMBIAR · C (${c}) NOMBRE · B (${b}) VOLVER`,
+    lineupSwap: `CRUCETA: ELIGE RESERVA · A (${a}) CONFIRMA · B (${b}) CANCELA`,
+    lineupEdit: LINEUP_EDIT_HINT,
   };
 }
 

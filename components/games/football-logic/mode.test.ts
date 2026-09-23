@@ -178,30 +178,30 @@ describe('the World Cup mode', () => {
     expect(modeHomeId(m)).toBe(pairHomeId(direct, humanPairIndex(direct)));
     expect(modeAwayId(m)).toBe(pairAwayId(direct, humanPairIndex(direct)));
     expect(modeMatchSeed(m, 999)).toBe(humanMatchSeed(direct));   // NOT the run seed: the derived one
-    expect(modeDifficulty(m)).toBe(4);
+    expect(modeDifficulty(m)).toBe(3);
     expect(modeRules(m)).toBe(NORMAL_RULES);
     expect(modeScores(m)).toBe(true);
     expect(modeVictoryScreen(m)).toBe(false);                       // only the final has one
-    expect(modeMatchLabel(m)).toBe('CUARTOS DE FINAL');
+    expect(modeMatchLabel(m)).toBe('OCTAVOS DE FINAL');
     expect(modeFxKind(m)).toBe('fireworks');
     expect(modeVictoryTitle(m)).toBe('CAMPEONES DEL MUNDO');
   });
 
-  it('three wins through modeEndMatch make the champion: difficulty 4 -> 6 -> 8, victory screen only in the final, for EVERY team', () => {
+  it('four wins through modeEndMatch make the champion: difficulty 3 -> 4 -> 6 -> 8, victory screen only in the final, for EVERY team', () => {
     for (const humanId of BANK_IDS) {
       const m = createWorldCupMode(BANK_IDS, humanId, 5);
       const difficulties: number[] = [];
       const screens: boolean[] = [];
-      for (let i = 0; i < 3; i++) {
+      for (let i = 0; i < 4; i++) {
         difficulties.push(modeDifficulty(m));
         screens.push(modeVictoryScreen(m));
         resolveCpuPairs(m);
         modeEndMatch(m, humanWorldCupMatch(m, 2, 0, true));
       }
-      expect(difficulties).toEqual([4, 6, 8]);
-      expect(screens).toEqual([false, false, true]);
+      expect(difficulties).toEqual([3, 4, 6, 8]);
+      expect(screens).toEqual([false, false, false, true]);
       expect(modeStatus(m)).toBe('champion');
-      expect(modeScore(m)).toBe(61_000 + 6_000);
+      expect(modeScore(m)).toBe(70_500 + 8_000);
       expect(modeVictoryTeamId(m, humanWorldCupMatch(m, 2, 0, true))).toBe(humanId);
     }
   });

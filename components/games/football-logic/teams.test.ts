@@ -20,11 +20,11 @@ const STAGE_A_332: Formation = {
   ],
 };
 
-describe('the bank of sixteen selections (spec step 7): the net closes on the real content, first time', () => {
-  it('checkBank accepts TEAMS: sixteen, unique ids, unique kits, every one legal', () => {
+describe('the bank of twenty selections (spec step 7 + G15-9): the net closes on the real content, first time', () => {
+  it('checkBank accepts TEAMS: twenty, unique ids, unique kits, every one legal', () => {
     expect(checkBank(TEAMS)).toEqual([]);
     expect(TEAMS).toHaveLength(BANK_SIZE);
-    expect(BANK_SIZE).toBe(16);
+    expect(BANK_SIZE).toBe(20);
   });
   it('every team individually passes checkTeam (so a failure names the offender)', () => {
     for (const t of TEAMS) expect({ id: t.id, problems: checkTeam(t) }).toEqual({ id: t.id, problems: [] });
@@ -43,6 +43,16 @@ describe('the bank of sixteen selections (spec step 7): the net closes on the re
   it('the two stage-A teams keep their index, id, name and kit', () => {
     expect(TEAMS[0]).toEqual({ id: 'espana', name: 'ESPAÑA', kit: { primary: '#d40000', secondary: '#ffcc00' } });
     expect(TEAMS[1]).toEqual({ id: 'italia', name: 'ITALIA', kit: { primary: '#0044aa', secondary: '#ffffff' } });
+  });
+  it('G15-9: the four v1.5 selections are LAST, in Paco\'s order, and the first sixteen keep their index', () => {
+    expect(TEAMS.slice(16).map((t) => t.id)).toEqual(['colombia', 'corea-del-sur', 'noruega', 'egipto']);
+    expect(TEAMS[16]).toEqual({ id: 'colombia', name: 'COLOMBIA', kit: { primary: '#fcd116', secondary: '#003893' } });
+    expect(TEAMS[17]).toEqual({ id: 'corea-del-sur', name: 'COREA DEL SUR', kit: { primary: '#c60c30', secondary: '#ffffff' } });
+    expect(TEAMS[18]).toEqual({ id: 'noruega', name: 'NORUEGA', kit: { primary: '#ba0c2f', secondary: '#00205b' } });
+    expect(TEAMS[19]).toEqual({ id: 'egipto', name: 'EGIPTO', kit: { primary: '#ce1126', secondary: '#ffffff' } });
+    // The v1 sixteen are byte for byte where they were: TEAMS index is an identity
+    // (the selector cursor, flow.picked, the baked kit atlases) and must not shift.
+    expect(TEAMS[15]).toEqual({ id: 'estados-unidos', name: 'ESTADOS UNIDOS', kit: { primary: '#ffffff', secondary: '#0a3161' } });
   });
   it('selections are identical on the pitch in v1: a TeamDef carries only id, name and kit', () => {
     for (const t of TEAMS) expect(Object.keys(t).sort()).toEqual(['id', 'kit', 'name']);

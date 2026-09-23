@@ -49,9 +49,9 @@
 - **IA rival**: colocación por formación y estrategia, persecución del balón, portero, y cambio de
   estrategia según el marcador.
 - **Dos modos**: **Amistoso** (un partido: contra la CPU, o **dos jugadores en el mismo teclado**)
-  y **Mundial** (8 selecciones sorteadas de un banco mayor, eliminatoria directa, eliminado sin
+  y **Mundial** (8 (v1.5, G15-7: 16 de 20) selecciones sorteadas de un banco mayor, eliminatoria directa, eliminado sin
   CONTINUE, con pantalla de cuadro). El Mundial es siempre contra la CPU.
-- **Banco de selecciones** de dieciséis, iguales en el campo, distintas en nombre y colores de
+- **Banco de selecciones** de dieciséis (v1.5, G15-9: veinte), iguales en el campo, distintas en nombre y colores de
   equipación.
 - Selector de modo, selector de selección, HUD con marcador, tiempo y parte.
 - **Pantalla de CAMPEONES DEL MUNDO** al ganar la final y **de GANADOR** al ganar un amistoso:
@@ -328,7 +328,7 @@ enviado. La tabla de `vault-world-cup` solo tiene Mundiales, comparables entre s
 | Pasar cuartos / semifinal | 5 000 / 10 000 |
 | Campeón del mundo | 25 000 |
 
-Un Mundial perfecto vale **61 000 sin contar goles** (3 × 5 000 + 3 × 2 000 + 40 000) más 1 000
+Un Mundial perfecto vale **61 000 sin contar goles** (3 × 5 000 + 3 × 2 000 + 40 000) (v1.5, G15-8: 70 500 = 4 × 5 000 + 4 × 2 000 + 42 500) más 1 000
 por gol: con 2-3 goles por partido **ronda los 70 000**. Los goles son lo único sin techo y donde
 se expresa la habilidad; no hay tope.
 
@@ -339,7 +339,7 @@ equipo alternando y, si el empate sigue, muerte súbita alternando en la que **e
 pierde**. La regla es del partido, no del modo: el motor no sabe si es un amistoso o una
 eliminatoria, y por eso también un amistoso empatado acaba en penaltis.
 
-**Banco de dieciséis selecciones**, ocho por Mundial, sorteadas. Todas iguales en el campo,
+**Banco de dieciséis selecciones**, ocho por Mundial (v1.5: veinte, dieciséis por Mundial), sorteadas. Todas iguales en el campo,
 distintas en nombre y equipación (Italia azul, España roja, Brasil amarilla — las inconfundibles).
 
 **Dificultad de la CPU**: 4 en cuartos, 6 en semifinal, 8 en la final; 5 en el amistoso. Sobre una
@@ -535,7 +535,7 @@ amistoso a dos sea justo, y que el Mundial dé ganas de otro.
 **Modos y flujo**
 14. **Amistoso contra la CPU y amistoso a dos en el mismo teclado**, y en el de dos ningún equipo
     tiene ventaja de entrada — mismo motor, mismas velocidades.
-15. **El Mundial sortea ocho de un banco de dieciséis**, eliminatoria directa de tres partidos, con
+15. **El Mundial sortea ocho de un banco de dieciséis** (v1.5, G15-7: dieciséis de veinte, cuatro partidos), eliminatoria directa de tres partidos, con
     pantalla de cuadro al inicio de cada uno.
 16. **Perder en el Mundial es ELIMINADO** sobre la pantalla del partido, sin CONTINUE.
 17. **Ganar el amistoso da la pantalla de GANADOR con confeti; ganar la final, la de CAMPEONES DEL
@@ -619,7 +619,7 @@ amistoso a dos sea justo, y que el Mundial dé ganas de otro.
 - **Sí: selecciones idénticas en la v1 con `profileFor(teamDef, difficulty)` ya preparado.**
   Descartadas las pequeñas variaciones por equipo en la v1: en el primer QA no se sabría si una
   selección es más dura por la fórmula de dificultad o por la variación. (Paco, 2026-09-04)
-- **Sí: la cuenta del Mundial perfecto es ~70 000, no 80 000** (61 000 base + goles). La tabla no
+- **Sí: la cuenta del Mundial perfecto es ~70 000, no 80 000** (61 000 base + goles) (v1.5, G15-8: 70 500 base). La tabla no
   cambia. (2026-09-04)
 - **Etapa A ejecutada (2026-09-04), rulings que tocan el spec:** R7 `stepMatch` en `match.ts`; R10
   pases asistidos por cono de 45°; R11 la entrada al suelo hace falta al tocar a cualquier rival y el
@@ -934,3 +934,19 @@ La v1 es el MVP; la v1.5 es el producto fino. Lo apuntado en el grill del 04-sep
   - **G15-21 · Celebración de victoria**: reutiliza particles.ts existente (confeti amistoso / fuegos Mundial). Amistoso ganado: confeti empieza sobre el campo al pitido final, más denso y con colores del kit propio. Mundial ganado: fuegos + confeti a la vez, más densos, confeti dorado + kit, destello dorado en la copa. Solo pantalla, en V15-5.
   - **G15-22 · Calendario revisado**: V15-1 Aspecto HECHO (`90dc114`) → V15-2 Mandos (cambio L, teclados, Esc, localStorage, mando físico; 1,5-2 días) → V15-3 Contenido (20 selecciones, 5×4, minicampo, Mundial 16, plantilla 14 + pantalla ALINEACIÓN; 2 días) → V15-4 Motor (11v11, atributos, postes/larguero, tarjetas, lesiones, pausa gol 4 s; UN regrabado + sonda 40; 2-3 días) → V15-5 Espectáculo (celebración abrazo, red ondula, nombres/dorsales en eventos, pantalla previa, celebración de victoria). Objetivo de Paco: la semana que viene; calidad antes que calendario.
   - **G15-23 · Online**: el online (amistoso 1v1 y Mundial a dos por Supabase Realtime, lockstep de TeamInput) NO entra antes de producción: va como **V15-6 tras la subida**, durante la beta. Prod sale con multijugador local.
+  - **QA jugado de V15-2 (Paco, 2026-09-23): «con mando perfecto».** Dos ajustes nuevos:
+    - **G15-24 · Entradas y faltas** (V15-4, mismo regrabado): `TACKLE_BALL_REACH` 20 → 28 (por encima de `TACKLE_FOUL_RADIUS` 24)
+      y falta solo si el contacto llega por detrás o de lado; de frente sin tocar balón = choque. Sonda de 40 partidos
+      (entradas/robos/faltas, objetivo ≈ 50 % limpias), ajuste fino en QA.
+    - **G15-19 matizada (Paco, 23-sep):** la pantalla previa va justo al pulsar JUGAR, con el rival ya sorteado, y **SIN NOMBRES**:
+      solo las dos formaciones de pie con sus equipaciones, para dar ambiente. Los nombres se ven en ALINEACIÓN (G15-17) y en los eventos.
+    - **G15-25 · Entrada visible** (V15-5, solo pantalla): sprite «tirándose» (tumbado de lado, pierna estirada) durante la
+      entrada y luego levantarse; el robo normal solo amaga (cuerpo inclinado y más bajo, sin tocar el suelo).
+    - **G15-26 · Porteros con atributos (Paco, 23-sep, CONFIRMADO)** (V15-4, mismo regrabado): cada portero de la plantilla lleva tres niveles 1-5
+      — **reflejos** (probabilidad de atajar), **salidas** (alcance y rapidez al salir dentro del área, sobre `keeperStep` de G12-3) y
+      **saque** (fuerza y precisión del saque de puerta y de mano). Los dos porteros de cada selección son distintos, así el suplente
+      se nota al entrar por lesión (G15-18). Extiende G15-10 (atributos recortados) al puesto de portero.
+    - **G15-17 matizada (Paco, 23-sep): plantilla de 18**, no de 14: 2 porteros + 6 defensas + 6 medios + 4 delanteros, dorsales 1-18
+      (porteros primero), 360 nombres. Garantiza un recambio por línea en las tres formaciones y cubre la lesión del portero.
+      *Implementado en V15-3 (2026-09-23) con los titulares derivados de la formación (`slots.length + 1`: hoy 9 = 8 de campo + portero; 11 cuando V15-4 aplique G15-16) y las reservas como `SQUAD_SIZE` menos eso (hoy 9, luego 7): la plantilla y los dorsales son fijos, el reparto titulares/reservas no. **La plantilla sube de 14 a 18 (2 porteros + 6 defensas + 6 medios + 4 delanteros, dorsales 1-18), decisión de Paco del 23-sep**: con 14 y once titulares, la 4-4-2 se quedaba sin reserva de medio y la 5-3-2 sin reserva de defensa, así que el «reserva DEF/MED/DEL» de este bullet no se cumplía, y el segundo portero es el que cubre G15-18. Botones de la pantalla: A confirma o elige, B vuelve o cancela, C edita el nombre. Quedan para V15-4 que la alineación elegida llegue al partido (`PlayerState` no tiene nombre ni dorsal) y los cambios por lesión (G15-18), y para V15-5 los nombres en los eventos y el dorsal sobre el controlado (G15-11) y la pantalla previa con los dos equipos sin nombres (G15-19).*
+

@@ -5,15 +5,16 @@ import { PITCH } from './pitch';
 import { createRng } from './rng';
 import { FORMATIONS, TEAMS, teamById } from './teams';
 import {
-  PERFECT_BASE_SCORE, ROUND_BONUS, ROUND_DIFFICULTY, ROUND_LABELS, SCORE_CLEAN_SHEET, SCORE_GOAL, SCORE_WIN, WORLD_CUP_SIZE,
-  abandonHumanMatch, checkWorldCupBracket, cpuMatchSeed, createWorldCup, currentDifficulty, humanMatchSeed, humanOpponentId,
-  humanPairIndex, humanSideInPair, isFinal, isStillIn, loseHumanMatch, matchPoints, matchSeedFor, nextCpuPair,
+  PERFECT_BASE_SCORE, ROUND_BONUS, ROUND_DIFFICULTY, ROUND_LABELS, SCORE_CLEAN_SHEET, SCORE_GOAL, SCORE_PASS_ROUND16, SCORE_WIN,
+  WORLD_CUP_SIZE, abandonHumanMatch, checkWorldCupBracket, cpuMatchSeed, createWorldCup, currentDifficulty, humanMatchSeed,
+  humanOpponentId, humanPairIndex, humanSideInPair, isFinal, isStillIn, loseHumanMatch, matchPoints, matchSeedFor, nextCpuPair,
   pairAwayId, pairCount, pairHomeId, pairResult, resolveCpuMatch, roundLabel, winHumanMatch,
   type WorldCupRound, type WorldCupState,
 } from './world-cup';
 
 const BANK_IDS: readonly string[] = TEAMS.map((t) => t.id);
-const ROUNDS: readonly WorldCupRound[] = ['quarters', 'semis', 'final'];
+const ROUNDS: readonly WorldCupRound[] = ['round-16', 'quarters', 'semis', 'final'];
+const PAIRS_BY_ROUND: readonly number[] = [8, 4, 2, 1];
 
 function team(id: string) {
   const def = teamById(TEAMS, id);
@@ -55,14 +56,14 @@ function playRound(wc: WorldCupState, goalsFor: number, goalsAgainst: number, hu
 }
 
 describe('createWorldCup', () => {
-  it('draws exactly eight distinct teams of the bank with the human inside, for EVERY team of the bank and three seeds', () => {
+  it('draws exactly sixteen distinct teams of the bank with the human inside, for EVERY team of the bank and three seeds', () => {
     for (const humanId of BANK_IDS) {
       for (const seed of [1, 42, 1234567]) {
         const wc = createWorldCup(BANK_IDS, humanId, seed, createRng(seed));
         expect(checkWorldCupBracket(wc, BANK_IDS)).toEqual([]);
         expect(wc.bracket).toHaveLength(WORLD_CUP_SIZE);
         expect(wc.entrants).toHaveLength(WORLD_CUP_SIZE);
-        expect(wc.round).toBe('quarters');
+        expect(wc.round).toBe('round-16');
         expect(wc.status).toBe('playing');
         expect(wc.score).toBe(0);
         expect(isStillIn(wc, humanId)).toBe(true);
@@ -71,13 +72,13 @@ describe('createWorldCup', () => {
     }
   });
 
-  it('same seed -> same bracket and the same three match seeds; a different seed -> a different bracket', () => {
+  it('same seed -> same bracket and the same four match seeds; a different seed -> a different bracket', () => {
     const a = createWorldCup(BANK_IDS, 'espana', 7, createRng(7));
     const b = createWorldCup(BANK_IDS, 'espana', 7, createRng(7));
     expect(a.bracket).toEqual(b.bracket);
     expect(humanMatchSeed(a)).toBe(humanMatchSeed(b));
     for (const round of ROUNDS) {
-      for (let pair = 0; pair < 4; pair++) expect(matchSeedFor(7, round, pair)).toBe(matchSeedFor(7, round, pair));
+      for (let pair = 0; pair < 8; pair++) expect(matchSeedFor(7, round, pair)).toBe(matchSeedFor(7, round, pair));
     }
     const c = createWorldCup(BANK_IDS, 'espana', 8, createRng(8));
     expect(c.bracket).not.toEqual(a.bracket);
@@ -107,11 +108,11 @@ describe('createWorldCup', () => {
 });
 
 describe('matchSeedFor', () => {
-  it('gives twelve distinct 32-bit seeds for the twelve (round, pair) slots of one tournament seed, for several seeds', () => {
+  it('gives thirty-two distinct 32-bit seeds for the (round, pair) slots of one tournament seed, for several seeds', () => {
     for (const seed of [0, 1, 7, 42, 999_999, 0x7fffffff, 1_757_000_000_000]) {
       const seen = new Set<number>();
       for (const round of ROUNDS) {
-        for (let pair = 0; pair < 4; pair++) {
+        for (let pair = 0; pair < 8; pair++) {
           const s = matchSeedFor(seed, round, pair);
           expect(Number.isInteger(s)).toBe(true);
           expect(s).toBeGreaterThanOrEqual(0);
@@ -119,14 +120,14 @@ describe('matchSeedFor', () => {
           seen.add(s);
         }
       }
-      expect(seen.size).toBe(12);
+      expect(seen.size).toBe(32);
     }
   });
 
   it('two tournament seeds one apart do not share a match seed', () => {
     const a = new Set<number>();
-    for (const round of ROUNDS) for (let p = 0; p < 4; p++) a.add(matchSeedFor(100, round, p));
-    for (const round of ROUNDS) for (let p = 0; p < 4; p++) expect(a.has(matchSeedFor(101, round, p))).toBe(false);
+    for (const round of ROUNDS) for (let p = 0; p < 8; p++) a.add(matchSeedFor(100, round, p));
+    for (const round of ROUNDS) for (let p = 0; p < 8; p++) expect(a.has(matchSeedFor(101, round, p))).toBe(false);
   });
 });
 
@@ -137,7 +138,7 @@ describe('cpuMatchSeed and pairResult (final fix wave: bracket rules the screen 
       expect(cpuMatchSeed(wc, pair)).toBe(matchSeedFor(wc.seed, wc.round, pair));
     }
     playRound(wc, 2, 0, true);
-    expect(wc.round).toBe('semis');
+    expect(wc.round).toBe('quarters');
     for (let pair = 0; pair < pairCount(wc); pair++) {
       expect(cpuMatchSeed(wc, pair)).toBe(matchSeedFor(wc.seed, wc.round, pair));
     }
@@ -154,42 +155,57 @@ describe('cpuMatchSeed and pairResult (final fix wave: bracket rules the screen 
     expect(res?.homeGoals).toBe(3);
     expect(res?.awayGoals).toBe(2);
     expect(res?.winner).toBe(1);
-    expect(res?.round).toBe('quarters');
+    expect(res?.round).toBe('round-16');
     expect(pairResult(wc, human)).toBeNull(); // the human's own pair is still unresolved
   });
 
   it('after advancing a round, pairResult sees no result yet for any pair of the new round', () => {
     const wc = createWorldCup(BANK_IDS, 'argentina', 23, createRng(23));
     playRound(wc, 2, 0, true);
-    expect(wc.round).toBe('semis');
+    expect(wc.round).toBe('quarters');
     for (let pair = 0; pair < pairCount(wc); pair++) expect(pairResult(wc, pair)).toBeNull();
   });
 });
 
-describe('round tables', () => {
-  it('difficulty 4/6/8 and the three Spanish labels', () => {
-    expect(ROUND_DIFFICULTY).toEqual({ quarters: 4, semis: 6, final: 8 });
+describe('round tables (G15-7 / G15-8: sixteen teams, four rounds)', () => {
+  it('four rounds, difficulty 3/4/6/8 and the four Spanish labels', () => {
+    expect(WORLD_CUP_SIZE).toBe(16);
+    expect(ROUND_DIFFICULTY).toEqual({ 'round-16': 3, quarters: 4, semis: 6, final: 8 });
+    expect(ROUND_LABELS['round-16']).toBe('OCTAVOS DE FINAL');
     expect(ROUND_LABELS.quarters).toBe('CUARTOS DE FINAL');
     expect(ROUND_LABELS.semis).toBe('SEMIFINAL');
     expect(ROUND_LABELS.final).toBe('FINAL');
     const wc = createWorldCup(BANK_IDS, 'japon', 2, createRng(2));
-    expect(currentDifficulty(wc)).toBe(4);
-    expect(roundLabel(wc)).toBe('CUARTOS DE FINAL');
+    expect(currentDifficulty(wc)).toBe(3);
+    expect(roundLabel(wc)).toBe('OCTAVOS DE FINAL');
     expect(isFinal(wc)).toBe(false);
+    expect(pairCount(wc)).toBe(8);
   });
 
-  it('the scoring table of the spec, and the perfect base of 61 000', () => {
+  it('the scoring table of G15-8, and the perfect base of 70 500', () => {
     expect(matchPoints(0, 0, false)).toBe(SCORE_CLEAN_SHEET);
     expect(matchPoints(2, 1, true)).toBe(2 * SCORE_GOAL + SCORE_WIN);
     expect(matchPoints(3, 0, true)).toBe(3 * SCORE_GOAL + SCORE_WIN + SCORE_CLEAN_SHEET);
     expect(matchPoints(1, 2, false)).toBe(SCORE_GOAL);
-    expect(ROUND_BONUS).toEqual({ quarters: 5_000, semis: 10_000, final: 25_000 });
-    expect(PERFECT_BASE_SCORE).toBe(61_000);
+    expect(SCORE_PASS_ROUND16).toBe(2_500);
+    expect(ROUND_BONUS).toEqual({ 'round-16': 2_500, quarters: 5_000, semis: 10_000, final: 25_000 });
+    expect(PERFECT_BASE_SCORE).toBe(4 * SCORE_WIN + 4 * SCORE_CLEAN_SHEET + 2_500 + 5_000 + 10_000 + 25_000);
+    expect(PERFECT_BASE_SCORE).toBe(70_500);
+  });
+
+  it('every round has half the pairs of the previous one, 8 -> 4 -> 2 -> 1', () => {
+    const wc = createWorldCup(BANK_IDS, 'noruega', 31, createRng(31));
+    const seen: number[] = [];
+    for (let i = 0; i < 4; i++) {
+      seen.push(pairCount(wc));
+      if (i < 3) playRound(wc, 1, 0, true);
+    }
+    expect(seen).toEqual(PAIRS_BY_ROUND);
   });
 });
 
 describe('the CPU pairs of a round', () => {
-  it('nextCpuPair walks the three pairs without the human; resolveCpuMatch marks each, and refuses the human pair and a repeat', () => {
+  it('nextCpuPair walks the seven pairs without the human; resolveCpuMatch marks each, and refuses the human pair and a repeat', () => {
     const wc = createWorldCup(BANK_IDS, 'francia', 5, createRng(5));
     const human = humanPairIndex(wc);
     const visited: number[] = [];
@@ -199,14 +215,14 @@ describe('the CPU pairs of a round', () => {
       expect(wc.resolved[p]).toBe(true);
       expect(wc.pairWinner[p]).toBe(pairAwayId(wc, p));
     }
-    expect(visited).toHaveLength(3);
+    expect(visited).toHaveLength(7);
     expect(visited).not.toContain(human);
-    expect(wc.resultCount).toBe(3);
+    expect(wc.resultCount).toBe(7);
     resolveCpuMatch(wc, human, 0, 1, 0);        // the human's pair: refused
     expect(wc.resolved[human]).toBe(false);
     resolveCpuMatch(wc, visited[0], 0, 5, 5);   // already resolved: refused
     expect(wc.pairWinner[visited[0]]).toBe(pairAwayId(wc, visited[0]));
-    expect(wc.resultCount).toBe(3);
+    expect(wc.resultCount).toBe(7);
     expect(checkWorldCupBracket(wc, BANK_IDS)).toEqual([]);
   });
 
@@ -232,22 +248,22 @@ describe('the CPU pairs of a round', () => {
 });
 
 describe('winning the World Cup', () => {
-  it('three exact wins make the champion, for EVERY team of the bank, with 61 000 + goals', () => {
+  it('four exact wins make the champion, for EVERY team of the bank, with 70 500 + goals', () => {
     for (const humanId of BANK_IDS) {
       const wc = createWorldCup(BANK_IDS, humanId, 5, createRng(5));
       const sizes: number[] = [];
-      for (let i = 0; i < 3; i++) {
+      for (let i = 0; i < 4; i++) {
         expect(wc.status).toBe('playing');
         sizes.push(wc.entrants.length);
         expect(checkWorldCupBracket(wc, BANK_IDS)).toEqual([]);
         playRound(wc, 2, 0, true);
         expect(checkWorldCupBracket(wc, BANK_IDS)).toEqual([]);
       }
-      expect(sizes).toEqual([8, 4, 2]);
+      expect(sizes).toEqual([16, 8, 4, 2]);
       expect(wc.status).toBe('champion');
       expect(wc.round).toBe('final');
-      expect(wc.score).toBe(PERFECT_BASE_SCORE + 6 * SCORE_GOAL);
-      expect(wc.resultCount).toBe(7);
+      expect(wc.score).toBe(PERFECT_BASE_SCORE + 8 * SCORE_GOAL);
+      expect(wc.resultCount).toBe(15);
     }
   });
 
@@ -257,8 +273,8 @@ describe('winning the World Cup', () => {
     for (let p = 0; p < pairCount(wc); p++) expected.push(p === humanPairIndex(wc) ? 'uruguay' : pairHomeId(wc, p));
     playRound(wc, 1, 0, true);
     expect(wc.entrants).toEqual(expected);
-    expect(wc.round).toBe('semis');
-    expect(currentDifficulty(wc)).toBe(6);
+    expect(wc.round).toBe('quarters');
+    expect(currentDifficulty(wc)).toBe(4);
     expect(isStillIn(wc, expected[0])).toBe(true);
     expect(wc.resolved.every((r) => !r)).toBe(true);
   });
@@ -266,12 +282,12 @@ describe('winning the World Cup', () => {
   it('a level match decided on penalties still scores a clean sheet for the human (S-PK12 read through match.score)', () => {
     const wc = createWorldCup(BANK_IDS, 'mexico', 4, createRng(4));
     playRound(wc, 0, 0, true);
-    expect(wc.score).toBe(SCORE_WIN + SCORE_CLEAN_SHEET + ROUND_BONUS.quarters);
+    expect(wc.score).toBe(SCORE_WIN + SCORE_CLEAN_SHEET + ROUND_BONUS['round-16']);
   });
 
   it('every transition is a no-op on a champion', () => {
     const wc = createWorldCup(BANK_IDS, 'croacia', 6, createRng(6));
-    for (let i = 0; i < 3; i++) playRound(wc, 1, 0, true);
+    for (let i = 0; i < 4; i++) playRound(wc, 1, 0, true);
     const score = wc.score;
     const snapshot = JSON.stringify(wc);
     expect(nextCpuPair(wc)).toBe(-1);
@@ -294,18 +310,18 @@ describe('losing and abandoning', () => {
     const c = createWorldCup(BANK_IDS, 'belgica', 12, createRng(12));
     playRound(c, 0, 0, false);   // lost on penalties at 0-0: the clean sheet counts for both
     expect(c.score).toBe(SCORE_CLEAN_SHEET);
-    expect(c.resultCount).toBe(4);
-    expect(c.results[3].winner).toBe(humanSideInPair(c) === 0 ? 1 : 0);
+    expect(c.resultCount).toBe(8);
+    expect(c.results[7].winner).toBe(humanSideInPair(c) === 0 ? 1 : 0);
   });
 
   it('points from earlier rounds survive an elimination', () => {
     const wc = createWorldCup(BANK_IDS, 'portugal', 13, createRng(13));
     playRound(wc, 2, 0, true);
-    const afterQuarters = wc.score;
+    const afterRoundOf16 = wc.score;
     playRound(wc, 1, 3, false);
-    expect(wc.score).toBe(afterQuarters + SCORE_GOAL);
+    expect(wc.score).toBe(afterRoundOf16 + SCORE_GOAL);
     expect(wc.status).toBe('eliminated');
-    expect(wc.round).toBe('semis');
+    expect(wc.round).toBe('quarters');
   });
 
   it('abandonHumanMatch (G9-8, viewport guard): eliminated, the points so far are kept, nothing from the abandoned match', () => {
@@ -315,7 +331,7 @@ describe('losing and abandoning', () => {
     abandonHumanMatch(wc);
     expect(wc.status).toBe('eliminated');
     expect(wc.score).toBe(kept);
-    expect(wc.resultCount).toBe(4);
+    expect(wc.resultCount).toBe(8);
     expect(checkWorldCupBracket(wc, BANK_IDS)).toEqual([]);
   });
 
@@ -356,7 +372,7 @@ describe('checkWorldCupBracket', () => {
 
   it('rejects entrants of the wrong size for the round, an entrant outside the bracket, and a missing human', () => {
     const wrongSize = valid();
-    wrongSize.round = 'semis';
+    wrongSize.round = 'quarters';
     expect(checkWorldCupBracket(wrongSize, BANK_IDS)).not.toEqual([]);
     const outside = valid();
     outside.entrants[3] = 'atlantida';

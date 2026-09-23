@@ -442,12 +442,13 @@ export const GAMES: Record<GameId, GameMeta> = {
       touch: { keyMap: {} },
     },
     instructions: {
-      goal: 'Elige uno de los cuatro modos y llévate el balón: en AMISTOSO ganas un partido a la CPU o a otro jugador en tu mismo teclado, en ENTRENAMIENTO practicas sin reloj ni marcador contra un rival congelado, y en MUNDIAL disputas cuartos, semifinal y final en un cuadro de ocho selecciones sorteadas de dieciséis, la tuya entre ellas, sin CONTINUE. Solo el Mundial apunta en la tabla.',
+      goal: 'Elige uno de los cuatro modos y llévate el balón: en AMISTOSO ganas un partido a la CPU o a otro jugador en tu mismo teclado, en ENTRENAMIENTO practicas sin reloj ni marcador contra un rival congelado, y en MUNDIAL disputas octavos, cuartos, semifinal y final en un cuadro de dieciséis selecciones sorteadas de veinte, la tuya entre ellas, sin CONTINUE. Solo el Mundial apunta en la tabla.',
       tips: [
         'A chuta o entra al suelo; mantén pulsado para un chut más fuerte',
         'B pasa corto al pulsar o roba de pie; mantenlo pulsado para un pase largo',
         'C sprinta en ráfaga con recuperación; defendiendo (balón rival o suelto), púlsala para pasar el control al siguiente compañero más cercano al balón (repite para rotar entre los tres más cercanos) y mantenla para esprintar',
         '1, 2 y 3 cambian tu alineación (3-3-2 / 3-2-3 / 4-3-1); 4, 5 y 6 tu estrategia (ataque / neutral / defensa), en pleno partido',
+        'Antes de un amistoso o del Mundial pasas por ALINEACIÓN: cruceta para moverte, A cambia un titular por una reserva de su misma posición (el portero solo por el otro portero), C edita su nombre (máximo 12 letras, Enter confirma) y B sale y empieza; tu alineación y tus nombres se guardan por selección',
         'Esc pausa siempre (y la P con el teclado FLECHAS y a dos) · R sale del ENTRENAMIENTO y reinicia tras el Mundial; el juego solo se juega en escritorio, con ventana suficiente',
         'Elige teclado en ELIGE MODO con IZQ/DER: FLECHAS (flechas + J/K/L) o CLÁSICO (Q/A/O/P + Z/X/C); también se juega con mando USB o Bluetooth, a la vez que el teclado',
         'AMISTOSO a dos en el mismo teclado: J1 con WASD + C/V/B, J2 con flechas + J/K/L; alineación y estrategia en 1-6 (J1) y 7-9 / 0 \' ¡ (J2)',

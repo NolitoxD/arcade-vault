@@ -125,4 +125,12 @@ describe('games registry', () => {
     // G15-6: WASD is only J1's in the two-player friendly now.
     for (const r of rows) if (r.keys.includes('W')) expect(r.action.startsWith('A dos')).toBe(true);
   });
+
+  it('the VAULT WORLD CUP catalogue describes the v1.5 content: twenty selections, a World Cup of sixteen and ALINEACIÓN', () => {
+    const game = GAMES['vault-world-cup'];
+    expect(game.instructions.goal).toContain('dieciséis selecciones sorteadas de veinte');
+    expect(game.instructions.goal).toContain('octavos');
+    expect(game.instructions.goal).not.toContain('ocho selecciones');
+    expect(game.instructions.tips.some((t) => t.includes('ALINEACIÓN'))).toBe(true);
+  });
 });

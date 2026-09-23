@@ -45,6 +45,10 @@ describe('kitsClash: below KIT_CLASH_DISTANCE reads as the same colour', () => {
     ['argentina', 'uruguay'],
     ['francia', 'japon'],
     ['italia', 'francia'],
+    ['corea-del-sur', 'espana'],
+    ['noruega', 'portugal'],
+    ['egipto', 'croacia'],
+    ['corea-del-sur', 'noruega'],
   ];
   it.each(clashingPairs)('%s vs %s clashes', (a, b) => {
     expect(kitsClash(primaryOf(a), primaryOf(b))).toBe(true);
@@ -56,6 +60,10 @@ describe('kitsClash: below KIT_CLASH_DISTANCE reads as the same colour', () => {
     ['alemania', 'belgica'],
     ['argentina', 'italia'],
     ['mexico', 'brasil'],
+    ['colombia', 'espana'],
+    ['corea-del-sur', 'italia'],
+    ['noruega', 'alemania'],
+    ['egipto', 'brasil'],
   ];
   it.each(distinctPairs)('%s vs %s does not clash', (a, b) => {
     expect(kitsClash(primaryOf(a), primaryOf(b))).toBe(false);
@@ -107,17 +115,20 @@ describe('resolveMatchKits: the away side inverts when the primaries clash', () 
     expect(kitsClash(rHome.primary, rAway.primary)).toBe(true);
   });
 
-  it('bank-wide: after resolution, no ordered pair of the 16 teams still clashes', () => {
+  it('bank-wide: after resolution, no ordered pair of the 20 teams still clashes (380 pairs)', () => {
     const failures: string[] = [];
+    let pairs = 0;
     for (const home of TEAMS) {
       for (const away of TEAMS) {
         if (home.id === away.id) continue;
+        pairs++;
         const [rHome, rAway] = resolveMatchKits(home.kit, away.kit);
         if (kitsClash(rHome.primary, rAway.primary)) {
           failures.push(`${home.id} (home) vs ${away.id} (away): ${kitDistance(rHome.primary, rAway.primary).toFixed(2)}`);
         }
       }
     }
+    expect(pairs).toBe(380);
     expect(failures).toEqual([]);
   });
 });

@@ -1,8 +1,26 @@
-# HANDOFF — VAULT WORLD CUP · v1.5: V15-2 «Mandos» CERRADO EN CÓDIGO (sin commit, QA jugado pendiente) · actualizado 2026-09-22
+# HANDOFF — VAULT WORLD CUP · v1.5: V15-3 «Contenido» CERRADO EN CÓDIGO (sin commit, QA jugado pendiente) · actualizado 2026-09-23
 
-Prompt para retomar: `/retomar tasks/vault-world-cup/HANDOFF-next-session.md` → QA jugado V15-2 (qa-paco.md, 16 puntos) → ola de fixes si la hay → commit Paco → plan V15-3 «Contenido».
+Prompt para retomar: `/retomar tasks/vault-world-cup/HANDOFF-next-session.md` → QA jugado V15-3 (qa-paco.md, 15 puntos) → commit Paco (`git add -A`) → plan V15-4 «Motor» (11v11, atributos + porteros, postes, tarjetas, lesiones, entradas/faltas, pausa 4 s; UN regrabado).
 
-## -15. 22-sep: V15-2 «Mandos» EJECUTADO y CERRADO EN CÓDIGO (sin commitear)
+## -16. 23-sep: QA de V15-2 «con mando perfecto» + V15-3 «Contenido» EJECUTADO y CERRADO EN CÓDIGO
+
+**QA de V15-2 (Paco):** el mando va perfecto, sin fallos. Dos ajustes nuevos al spec: **G15-24** entradas y faltas (`TACKLE_BALL_REACH` 20 → 28 y
+falta solo por detrás o de lado; hoy casi toda entrada que no roba es falta) en V15-4, y **G15-25** entrada visible (sprite «tirándose» + amago en
+el robo normal) en V15-5. Además **G15-26**: porteros con tres niveles (reflejos / salidas / saque) en V15-4, y **G15-19 matizada**: la pantalla
+previa va al pulsar JUGAR, con rival sorteado y SIN nombres.
+**V15-3:** pre-vuelo NO LISTO → H1-H13 aplicados (entre ellos la plantilla de **18** en vez de 14, decisión de Paco: 2 POR + 6 DEF + 6 MED + 4 DEL).
+SDD en serie 1→10 sobre main sin commits. Cinco rondas de arreglo: etiqueta TÚ fuera del lienzo, 4 nombres demasiado cercanos a futbolistas reales,
+3 Important de `lineup.ts` (nombres que se cruzaban entre selecciones, test que no discriminaba, alfabeto duplicado), guardas de elegir/editar sin
+test, y la letra P que pausaba al escribir un nombre. Revisión final opus: **Ready for Paco's commit**, 0 Critical/Important.
+**Estado:** 1385 tests / 83 ficheros, tsc limpio, motor acotado a `teams.ts`, `world-cup.ts` y el nuevo `squads.ts` (+tests), SIN regrabado.
+Nuevos: `football-logic/squads.ts`, `football-screen/{formation-preview,lineup}.ts` + tests. Modificados: `VaultWorldCupGame.tsx`, `flow.ts`,
+`flow-layout.ts`, `control-hints.ts`, `keyboard`-adyacentes, `lib/games-registry.ts`, `specs/31` y sus tests.
+**QA de Paco:** `.superpowers/sdd/2026-09-23-vault-world-cup-v15-3/qa-paco.md` (15 puntos: rejilla de 20, minicampo, Mundial de 16 con octavos,
+SALTAR TODOS, cuadro con perdedores atenuados, ALINEACIÓN con cambios y edición de nombres, los 360 nombres, la letra P, a dos con dos mandos).
+⚠️ **El índice está partido** (ficheros nuevos staged, modificados sin stagear) por un `git stash/pop` de un implementador: **`git add -A` antes de commitear**. Nada se perdió (verificado).
+**Commit propuesto:** `feat(world-cup): v1.5 content — 20 selections in a 5x4 grid, 16-team World Cup with round of 16, and 18-man squads with a lineup screen (V15-3, G15-7/G15-8/G15-9/G15-17)`
+
+## -15. 22-sep: V15-2 «Mandos» EJECUTADO, COMMITEADO (`ef61be7`) y subido — QA jugado pendiente
 
 Pre-vuelo LISTO CON RESERVAS (H1-H10 aplicados; rulings H7 y H8 del controlador). SDD en serie V15-2-1→8 sobre main sin commits
 (snapshots de árbol, `.superpowers/sdd/2026-09-22-vault-world-cup-v15-2/sdd.sh`). Tres rondas de arreglo: test poco discriminante de fases

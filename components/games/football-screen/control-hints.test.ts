@@ -5,7 +5,10 @@ import {
 import { ARROWS_SOLO, CLASSIC_SOLO, KEY_SCHEMES, TWO_PLAYER_P1, TWO_PLAYER_P2, type KeyTable } from './keyboard';
 
 function allTexts(h: ControlHints): string[] {
-  return [h.schemeRow, h.schemeDetail, h.mode, h.teamSolo, h.draw, h.bracketChoice, h.bracketPlay, h.spectate, h.victory];
+  return [
+    h.schemeRow, h.schemeDetail, h.mode, h.teamSolo, h.draw, h.bracketChoice, h.bracketPlay, h.spectate, h.victory,
+    h.lineupBrowse, h.lineupSwap, h.lineupEdit,
+  ];
 }
 
 describe('control hints per key scheme (G15-6)', () => {
@@ -13,7 +16,7 @@ describe('control hints per key scheme (G15-6)', () => {
     const h = CONTROL_HINTS.arrows;
     expect(h.teamSolo).toBe('CRUCETA · A (J) CONFIRMA · 1/2/3 ALINEACIÓN');
     expect(h.draw).toBe('A (J) PARA CONTINUAR');
-    expect(h.bracketChoice).toBe('IZQ / DER · A (J) CONFIRMA');
+    expect(h.bracketChoice).toBe('IZQ / DER: VER · SALTAR · TODOS · A (J) CONFIRMA');
     expect(h.bracketPlay).toBe('A (J) PARA JUGAR');
     expect(h.spectate).toBe('PARTIDO DE LA CPU · X4 · A (J) SALTA AL RESULTADO');
     expect(h.victory).toBe('A (J) · CONTINUAR');
@@ -55,5 +58,30 @@ describe('control hints per key scheme (G15-6)', () => {
     expect(CONTROL_HINTS.classic.schemeDetail).toContain('Z/X/C');
     expect(CONTROL_HINTS.classic.schemeDetail).toContain('ESC');
     expect(TWO_PLAYER_SCHEME_NOTE).toContain('WASD');
+  });
+
+  it('the bracket hint names the three choices of G15-8, in the order they are drawn', () => {
+    for (const scheme of KEY_SCHEMES) {
+      const text = CONTROL_HINTS[scheme].bracketChoice;
+      expect(text.indexOf('VER')).toBeGreaterThanOrEqual(0);
+      expect(text.indexOf('SALTAR')).toBeGreaterThan(text.indexOf('VER'));
+      expect(text.indexOf('TODOS')).toBeGreaterThan(text.indexOf('SALTAR'));
+    }
+    expect(CONTROL_HINTS.classic.bracketChoice).toContain('(Z)');
+  });
+
+  it('the ALINEACIÓN hints name the three actions of G15-17 with Paco\'s own A/B/C split', () => {
+    // A confirms or chooses, B goes back or cancels, C edits the name -- the same
+    // split as every other screen (resolución (d), 23-sep).
+    expect(CONTROL_HINTS.arrows.lineupBrowse).toBe('CRUCETA · A (J) CAMBIAR · C (L) NOMBRE · B (K) VOLVER');
+    expect(CONTROL_HINTS.arrows.lineupSwap).toBe('CRUCETA: ELIGE RESERVA · A (J) CONFIRMA · B (K) CANCELA');
+    expect(CONTROL_HINTS.classic.lineupBrowse).toBe('CRUCETA · A (Z) CAMBIAR · C (C) NOMBRE · B (X) VOLVER');
+    expect(CONTROL_HINTS.classic.lineupSwap).toContain('(Z)');
+  });
+
+  it('the name editor hint names no key of any scheme: it is the letters themselves plus Enter', () => {
+    for (const scheme of KEY_SCHEMES) {
+      expect(CONTROL_HINTS[scheme].lineupEdit).toBe('ESCRIBE EL NOMBRE · MÁX. 12 · ENTER CONFIRMA');
+    }
   });
 });

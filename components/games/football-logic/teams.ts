@@ -13,7 +13,7 @@ export type Formation = { id: string; name: string; slots: readonly FormationSlo
 
 export const TEAM_SIZE = 9;
 export const OUTFIELD = 8;
-export const BANK_SIZE = 16;
+export const BANK_SIZE = 20;
 export const FORMATION_COUNT = 3;
 
 // The strategy shifts every slot this fraction of the pitch towards the rival goal (attack) or away (defend).
@@ -56,7 +56,9 @@ export const FORMATIONS: readonly Formation[] = [
   },
 ];
 
-// The bank of sixteen: identical on the pitch in v1, different in name and kit.
+// The bank of twenty: identical on the pitch in v1, different in name and kit. G15-9
+// (v1.5) added the last four AT THE END on purpose -- a TEAMS index is an identity
+// (selector cursor, flow.picked, the baked kit atlases), so nothing may shift.
 export const TEAMS: readonly TeamDef[] = [
   { id: 'espana', name: 'ESPAÑA', kit: { primary: '#d40000', secondary: '#ffcc00' } },
   { id: 'italia', name: 'ITALIA', kit: { primary: '#0044aa', secondary: '#ffffff' } },
@@ -74,6 +76,10 @@ export const TEAMS: readonly TeamDef[] = [
   { id: 'japon', name: 'JAPÓN', kit: { primary: '#1b2f7a', secondary: '#ffffff' } },
   { id: 'marruecos', name: 'MARRUECOS', kit: { primary: '#c1272d', secondary: '#006233' } },
   { id: 'estados-unidos', name: 'ESTADOS UNIDOS', kit: { primary: '#ffffff', secondary: '#0a3161' } },
+  { id: 'colombia', name: 'COLOMBIA', kit: { primary: '#fcd116', secondary: '#003893' } },
+  { id: 'corea-del-sur', name: 'COREA DEL SUR', kit: { primary: '#c60c30', secondary: '#ffffff' } },
+  { id: 'noruega', name: 'NORUEGA', kit: { primary: '#ba0c2f', secondary: '#00205b' } },
+  { id: 'egipto', name: 'EGIPTO', kit: { primary: '#ce1126', secondary: '#ffffff' } },
 ];
 
 export function teamById(teams: readonly TeamDef[], id: string): TeamDef | undefined {

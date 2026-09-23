@@ -14,8 +14,9 @@ import { DEFAULT_KEY_SCHEME, type KeyScheme } from './keyboard';
 // the keyboard, the clock or the DOM, and nothing allocates after createFlowState.
 export type FlowPhase =
   | 'mode-select'   // the four modes
-  | 'team-select'   // the sixteen, with the formation selector (G9-4, G9-5)
-  | 'draw'          // the World Cup's eight, drawn
+  | 'team-select'   // the twenty, with the formation selector (G9-4, G9-5, G15-9)
+  | 'lineup'        // G15-17: starters, reserves and names, before a friendly or the World Cup
+  | 'draw'          // the World Cup's sixteen, drawn
   | 'bracket'       // the round's pairs; VER / SALTAR per CPU pair, then the human's match
   | 'match'         // a match with at least one human
   | 'spectate'      // a CPU pair watched at x4 (G9-3)
@@ -39,6 +40,7 @@ export function phaseGroup(phase: FlowPhase): PhaseGroup {
       return 'match';
     case 'mode-select':
     case 'team-select':
+    case 'lineup':
     case 'draw':
     case 'bracket':
     case 'victory':
@@ -47,7 +49,9 @@ export function phaseGroup(phase: FlowPhase): PhaseGroup {
   }
 }
 
-export type BracketAction = 'spectate' | 'skip' | 'play';
+// G15-8 adds SALTAR TODOS: the same resolution as SALTAR, for every CPU pair left.
+export type BracketAction = 'spectate' | 'skip' | 'skip-all' | 'play';
+export const BRACKET_CHOICE_COUNT = 3;
 
 export const MODE_LIST: readonly GameModeKind[] = ['friendly-cpu', 'friendly-2p', 'training', 'world-cup'];
 
@@ -62,7 +66,7 @@ export const MODE_BLURBS: Readonly<Record<GameModeKind, string>> = {
   'friendly-cpu': 'UN PARTIDO CONTRA LA CPU · RIVAL SORTEADO',
   'friendly-2p': 'DOS EN EL MISMO TECLADO · J1 WASD + C/V/B · J2 FLECHAS + J/K/L',
   training: 'SIN RELOJ · EL RIVAL NO SE MUEVE, SOLO SU PORTERO · R PARA SALIR',
-  'world-cup': '8 SELECCIONES SORTEADAS · 3 PARTIDOS · SIN CONTINUE · PUNTÚA',
+  'world-cup': '16 SELECCIONES SORTEADAS · 4 PARTIDOS · SIN CONTINUE · PUNTÚA',
 };
 
 export const HUMANS_BY_MODE: Readonly<Record<GameModeKind, 1 | 2>> = {
@@ -72,6 +76,15 @@ export const HUMANS_BY_MODE: Readonly<Record<GameModeKind, 1 | 2>> = {
   'world-cup': 1,
 };
 
+// G15-17: only a friendly (either one) and the World Cup show ALINEACIÓN; the training
+// is a practice screen and goes straight to the pitch.
+export const LINEUP_BY_MODE: Readonly<Record<GameModeKind, boolean>> = {
+  'friendly-cpu': true,
+  'friendly-2p': true,
+  training: false,
+  'world-cup': true,
+};
+
 export type FlowState = {
   phase: FlowPhase;
   modeIndex: number;            // cursor on MODE_LIST; survives a reset (the last mode played)
@@ -79,7 +92,10 @@ export type FlowState = {
   cursor: number;               // team index under the cursor
   picked: [number, number];     // team indices chosen, -1 = none
   formation: [number, number];  // per human; 0 = 3-3-2 (G9-5)
-  bracketChoice: 0 | 1;         // 0 = VER, 1 = SALTAR
+  bracketChoice: 0 | 1 | 2;     // 0 = VER, 1 = SALTAR, 2 = SALTAR TODOS (G15-8)
+  lineupCursor: number;         // G15-17: the position, or the reserve while choosing
+  lineupChoosing: number;       // the position being substituted, -1 = browsing
+  lineupEditing: number;        // the squad index whose name is being typed, -1 = none
   after: FlowPhase;             // where 'over' goes once the captions drain
   keyScheme: KeyScheme;         // G15-6: Flechas or Clásico; a preference, so it survives a reset
 };
@@ -87,6 +103,7 @@ export type FlowState = {
 export function createFlowState(): FlowState {
   return {
     phase: 'mode-select', modeIndex: 0, picking: 0, cursor: 0, picked: [-1, -1], formation: [0, 0], bracketChoice: 0,
+    lineupCursor: 0, lineupChoosing: -1, lineupEditing: -1,
     after: 'mode-select', keyScheme: DEFAULT_KEY_SCHEME,
   };
 }
@@ -102,6 +119,9 @@ export function flowReset(f: FlowState): void {
   f.formation[0] = 0;
   f.formation[1] = 0;
   f.bracketChoice = 0;
+  f.lineupCursor = 0;
+  f.lineupChoosing = -1;
+  f.lineupEditing = -1;
   f.after = 'mode-select';
 }
 
@@ -111,6 +131,16 @@ export function flowModeKind(f: FlowState): GameModeKind {
 
 export function flowHumanCount(f: FlowState): 1 | 2 {
   return HUMANS_BY_MODE[flowModeKind(f)];
+}
+
+export function flowHasLineup(f: FlowState): boolean {
+  return LINEUP_BY_MODE[flowModeKind(f)];
+}
+
+function resetLineupCursor(f: FlowState): void {
+  f.lineupCursor = 0;
+  f.lineupChoosing = -1;
+  f.lineupEditing = -1;
 }
 
 export function flowPickingHuman(f: FlowState): 0 | 1 {
@@ -149,8 +179,9 @@ export function flowSetKeyScheme(f: FlowState, scheme: KeyScheme): void {
 
 // ── team-select ─────────────────────────────────────────────────────────────────
 
-// A 4-column grid over the bank, wrapping on both axes; a wrap that lands past the
-// bank (a bank that is not a multiple of four) leaves the cursor where it was.
+// A TEAM_GRID_COLS-wide grid over the bank (five since G15-9), wrapping on both axes;
+// a wrap that lands past the bank (a bank that is not a multiple of the column count)
+// leaves the cursor where it was.
 export function flowMoveTeam(f: FlowState, dx: number, dy: number, bankSize: number): void {
   if (f.phase !== 'team-select') return;
   const cols = TEAM_GRID_COLS;
@@ -169,8 +200,9 @@ export function flowSetFormation(f: FlowState, human: 0 | 1, formation: number):
 }
 
 // G9-4: solo modes pick one team; the two-player friendly picks J1 and then J2, and
-// J2 may not repeat J1's team.
-export function flowConfirmTeam(f: FlowState, bankSize: number): 'next' | 'done' | 'refused' {
+// J2 may not repeat J1's team. G15-17: once every team is picked, a mode with a
+// lineup screen goes there (J1's first, then J2's) instead of straight to the mode.
+export function flowConfirmTeam(f: FlowState, bankSize: number): 'next' | 'lineup' | 'done' | 'refused' {
   if (f.phase !== 'team-select') return 'refused';
   if (f.cursor < 0 || f.cursor >= bankSize) return 'refused';
   if (f.picking === 1 && f.cursor === f.picked[0]) return 'refused';
@@ -179,7 +211,11 @@ export function flowConfirmTeam(f: FlowState, bankSize: number): 'next' | 'done'
     f.picking = 1;
     return 'next';
   }
-  return 'done';
+  if (!flowHasLineup(f)) return 'done';
+  f.phase = 'lineup';
+  f.picking = 0;
+  resetLineupCursor(f);
+  return 'lineup';
 }
 
 // The ONE place a mode is built (Vault Fighter's confirmSelection). G9-4: the CPU
@@ -196,8 +232,55 @@ export function flowBuildMode(f: FlowState, bankIds: readonly string[], seed: nu
 // A mode with a bracket shows the draw first; one without goes straight to the match.
 // The question is "does this mode have a bracket", never "which mode is it".
 export function flowAfterModeBuilt(f: FlowState, m: GameMode): void {
-  if (f.phase !== 'team-select') return;
+  if (f.phase !== 'team-select' && f.phase !== 'lineup') return;
   f.phase = modeBracket(m) === null ? 'match' : 'draw';
+}
+
+// ── lineup (G15-17) ─────────────────────────────────────────────────────────────
+
+// The cursor wraps over whatever list the screen is showing -- the positions while
+// browsing, the legal reserves while choosing. The COUNT comes from the component,
+// which is the one holding the Lineup: the flow never hard-codes a team size.
+export function flowLineupMove(f: FlowState, delta: number, count: number): void {
+  if (f.phase !== 'lineup' || f.lineupEditing !== -1 || count <= 0) return;
+  f.lineupCursor = (((f.lineupCursor + delta) % count) + count) % count;
+}
+
+export function flowLineupChoose(f: FlowState, position: number): void {
+  if (f.phase !== 'lineup' || f.lineupEditing !== -1) return;
+  f.lineupChoosing = position;
+  f.lineupCursor = 0;
+}
+
+export function flowLineupCancelChoice(f: FlowState): void {
+  if (f.phase !== 'lineup' || f.lineupChoosing === -1) return;
+  f.lineupCursor = f.lineupChoosing;
+  f.lineupChoosing = -1;
+}
+
+export function flowLineupBeginEdit(f: FlowState, squadIndex: number): void {
+  if (f.phase !== 'lineup' || f.lineupChoosing !== -1) return;
+  f.lineupEditing = squadIndex;
+}
+
+export function flowLineupEndEdit(f: FlowState): void {
+  if (f.phase !== 'lineup') return;
+  f.lineupEditing = -1;
+}
+
+// B on ALINEACIÓN (Paco's (d): B is the back/leave button of every screen): J2's turn
+// in the two-player friendly, or "the component may build the mode now". Refused
+// ('none') while a substitution or an edit is open -- there B cancels instead, so a
+// half finished change never starts a match.
+export function flowConfirmLineup(f: FlowState): 'next' | 'done' | 'none' {
+  if (f.phase !== 'lineup') return 'none';
+  if (f.lineupChoosing !== -1 || f.lineupEditing !== -1) return 'none';
+  if (f.picking === 0 && flowHumanCount(f) === 2) {
+    f.picking = 1;
+    resetLineupCursor(f);
+    return 'next';
+  }
+  return 'done';
 }
 
 // ── draw ────────────────────────────────────────────────────────────────────────
@@ -218,25 +301,35 @@ export function flowCpuPair(m: GameMode): number {
 
 export function flowBracketAction(f: FlowState, m: GameMode): BracketAction {
   if (flowCpuPair(m) === -1) return 'play';
-  return f.bracketChoice === 0 ? 'spectate' : 'skip';
+  if (f.bracketChoice === 0) return 'spectate';
+  return f.bracketChoice === 1 ? 'skip' : 'skip-all';
 }
 
-// Directional, not a toggle (final fix wave): left picks VER (0), right picks
-// SALTAR (1), matching the brief's copy -- a repeated press in the same direction
-// leaves the choice where it is instead of flipping it back and forth.
+// Directional with a stop at each end (the decision of the v1 fix wave, extended by
+// G15-8 to three): a repeated press in the same direction leaves the choice where it
+// is instead of wrapping round to VER.
 export function flowMoveBracketChoice(f: FlowState, delta: number): void {
   if (f.phase !== 'bracket' || delta === 0) return;
-  f.bracketChoice = delta < 0 ? 0 : 1;
+  if (delta < 0) {
+    if (f.bracketChoice === 2) f.bracketChoice = 1;
+    else if (f.bracketChoice === 1) f.bracketChoice = 0;
+    return;
+  }
+  if (f.bracketChoice === 0) f.bracketChoice = 1;
+  else if (f.bracketChoice === 1) f.bracketChoice = 2;
 }
 
 // A on the bracket. 'spectate' moves to the spectate phase (the component starts the
-// CPU run on screen); 'skip' stays here (the component finishes the run headless and
-// records it); 'play' moves to the match. 'none' outside the bracket phase.
+// CPU run on screen); 'skip' and 'skip-all' stay here (the component resolves the pair,
+// or every pair left, headless and refreshes the screen); 'play' moves to the match.
+// 'none' outside the bracket phase.
 export function flowConfirmBracket(f: FlowState, m: GameMode): BracketAction | 'none' {
   if (f.phase !== 'bracket') return 'none';
   const action = flowBracketAction(f, m);
   if (action === 'spectate') f.phase = 'spectate';
   else if (action === 'play') f.phase = 'match';
+  // 'skip' and 'skip-all' stay on the bracket: the component resolves the pair (or
+  // every pair left) headless and refreshes the screen.
   return action;
 }
 

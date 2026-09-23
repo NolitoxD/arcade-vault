@@ -2,12 +2,15 @@ import { winnerOf, type MatchState } from './match';
 import type { Rng } from './rng';
 
 // The World Cup as pure functions over a state mutated in place: the same pattern as
-// fighter-logic/tournament.ts, not the same code (spec, data model). Eight drawn from
-// the bank, straight knockout, three matches, eliminated with no CONTINUE. The engine
-// never sees this module: it produces matches, and this module reads winnerOf().
-export const WORLD_CUP_SIZE = 8;
+// fighter-logic/tournament.ts, not the same code (spec, data model). G15-7 (v1.5):
+// SIXTEEN drawn from the bank of twenty, straight knockout, FOUR matches, eliminated
+// with no CONTINUE. The engine never sees this module: it produces matches, and this
+// module reads winnerOf(). Everything that depends on the round lives in a
+// Record<WorldCupRound, …> below, so adding a round is adding a row to each table --
+// and tsc refuses a table that forgets one.
+export const WORLD_CUP_SIZE = 16;
 
-export type WorldCupRound = 'quarters' | 'semis' | 'final';
+export type WorldCupRound = 'round-16' | 'quarters' | 'semis' | 'final';
 export type WorldCupStatus = 'playing' | 'champion' | 'eliminated';
 
 export type WorldCupResult = {
@@ -27,64 +30,72 @@ export type WorldCupState = {
   round: WorldCupRound;
   status: WorldCupStatus;
   score: number;
-  // The eight in draw order, fixed for the whole run: `entrants` forgets who fell,
+  // The sixteen in draw order, fixed for the whole run: `entrants` forgets who fell,
   // and the bracket screen exists to say it (tournament.ts has the same field for
   // the same reason).
   bracket: string[];
-  // This round's participants, 8 -> 4 -> 2, paired as consecutive slots 0-1, 2-3…
+  // This round's participants, 16 -> 8 -> 4 -> 2, paired as consecutive slots 0-1, 2-3…
   // Shrunk in place on advanceRound (length assignment), never reallocated.
   entrants: string[];
   // Per pair of the CURRENT round: the winner's id ('' while unresolved) and the flag.
-  // Four slots created once; reset on advanceRound.
+  // Eight slots created once; reset on advanceRound.
   pairWinner: string[];
   resolved: boolean[];
-  // Every result of the run, in resolution order: 4 + 2 + 1 slots created once.
+  // Every result of the run, in resolution order: 8 + 4 + 2 + 1 slots created once.
   results: WorldCupResult[];
   resultCount: number;
 };
 
 export const ROUND_LABELS: Readonly<Record<WorldCupRound, string>> = {
+  'round-16': 'OCTAVOS DE FINAL',
   quarters: 'CUARTOS DE FINAL',
   semis: 'SEMIFINAL',
   final: 'FINAL',
 };
 
-// G9-6 / spec: 4 in the quarters, 6 in the semis, 8 in the final. Numbers, not branches.
+// G9-6 / spec, extended by G15-7: 3 in the round of 16, then 4, 6 and 8. The friendly
+// sits at 5 (FRIENDLY_DIFFICULTY), above the World Cup's first round on purpose.
+// Numbers, not branches.
 export const ROUND_DIFFICULTY: Readonly<Record<WorldCupRound, number>> = {
+  'round-16': 3,
   quarters: 4,
   semis: 6,
   final: 8,
 };
 
 const NEXT_ROUND: Readonly<Record<WorldCupRound, WorldCupRound>> = {
+  'round-16': 'quarters',
   quarters: 'semis',
   semis: 'final',
   final: 'final',   // unreachable: winHumanMatch returns before consulting it in the final
 };
 
-const ROUND_INDEX: Readonly<Record<WorldCupRound, number>> = { quarters: 0, semis: 1, final: 2 };
-const ROUND_ENTRANTS: Readonly<Record<WorldCupRound, number>> = { quarters: 8, semis: 4, final: 2 };
+const ROUND_INDEX: Readonly<Record<WorldCupRound, number>> = { 'round-16': 0, quarters: 1, semis: 2, final: 3 };
+const ROUND_ENTRANTS: Readonly<Record<WorldCupRound, number>> = { 'round-16': 16, quarters: 8, semis: 4, final: 2 };
 
-// The scoring table of the spec (§Decisiones estructurales). Only the World Cup
-// scores: the friendlies never call anything here.
+// The scoring table of the spec (§Decisiones estructurales), extended by G15-8 with
+// the round of 16. Only the World Cup scores: the friendlies never call anything here.
 export const SCORE_GOAL = 1_000;
 export const SCORE_WIN = 5_000;
 export const SCORE_CLEAN_SHEET = 2_000;
+export const SCORE_PASS_ROUND16 = 2_500;
 const SCORE_PASS_QUARTERS = 5_000;
 const SCORE_PASS_SEMIS = 10_000;
 const SCORE_CHAMPION = 25_000;
 export const ROUND_BONUS: Readonly<Record<WorldCupRound, number>> = {
+  'round-16': SCORE_PASS_ROUND16,
   quarters: SCORE_PASS_QUARTERS,
   semis: SCORE_PASS_SEMIS,
   final: SCORE_CHAMPION,
 };
-// 3 × 5 000 + 3 × 2 000 + 5 000 + 10 000 + 25 000 = 61 000 (spec: "~70 000 con goles").
-export const PERFECT_BASE_SCORE = 3 * SCORE_WIN + 3 * SCORE_CLEAN_SHEET + SCORE_PASS_QUARTERS + SCORE_PASS_SEMIS + SCORE_CHAMPION;
+// 4 × 5 000 + 4 × 2 000 + 2 500 + 5 000 + 10 000 + 25 000 = 70 500 (G15-8).
+export const PERFECT_BASE_SCORE =
+  4 * SCORE_WIN + 4 * SCORE_CLEAN_SHEET + SCORE_PASS_ROUND16 + SCORE_PASS_QUARTERS + SCORE_PASS_SEMIS + SCORE_CHAMPION;
 
 // G9-7: one match seed per (round, pair), derived from the tournament seed with 32-bit
 // integer arithmetic only (same discipline as CPU_SEED_SALT and ambienceSeedFor), so
 // a replay of the whole tournament needs the one seed and nothing else. The three
-// salts are the usual odd 32-bit mixing constants; the test asserts the twelve slots
+// salts are the usual odd 32-bit mixing constants; the test asserts the thirty-two slots
 // of one seed are distinct for several seeds.
 const MATCH_SEED_SALT = 0x9e3779b1;
 const ROUND_SEED_SALT = 0x85ebca6b;
@@ -104,11 +115,12 @@ function shuffled(items: readonly string[], rng: Rng): string[] {
   return result;
 }
 
-// G9-4: the human chose; seven of the remaining fifteen are drawn, and the eight are
-// shuffled AGAIN so the human's slot -- and with it who is team 0 of his pair, who
-// kicks first in a shootout (S-PK3) -- is drawn too. Called once per run, never per
-// frame: the two copies it makes are the price of a Fisher-Yates over a readonly bank.
-function drawEight(bankIds: readonly string[], humanId: string, rng: Rng): string[] {
+// G9-4 / G15-7: the human chose; fifteen of the remaining nineteen are drawn, and the
+// sixteen are shuffled AGAIN so the human's slot -- and with it who is team 0 of his
+// pair, who kicks first in a shootout (S-PK3) -- is drawn too. Called once per run,
+// never per frame: the two copies it makes are the price of a Fisher-Yates over a
+// readonly bank.
+function drawEntrants(bankIds: readonly string[], humanId: string, rng: Rng): string[] {
   const others: string[] = [];
   for (const id of bankIds) if (id !== humanId) others.push(id);
   if (others.length !== bankIds.length - 1) throw new Error(`human team not in bank: ${humanId}`);
@@ -118,7 +130,7 @@ function drawEight(bankIds: readonly string[], humanId: string, rng: Rng): strin
 }
 
 export function createWorldCup(bankIds: readonly string[], humanId: string, seed: number, rng: Rng): WorldCupState {
-  const bracket = drawEight(bankIds, humanId, rng);
+  const bracket = drawEntrants(bankIds, humanId, rng);
   const entrants = [...bracket];
   const pairWinner: string[] = [];
   const resolved: boolean[] = [];
@@ -128,9 +140,9 @@ export function createWorldCup(bankIds: readonly string[], humanId: string, seed
   }
   const results: WorldCupResult[] = [];
   for (let i = 0; i < WORLD_CUP_SIZE - 1; i++) {
-    results.push({ round: 'quarters', homeId: '', awayId: '', homeGoals: 0, awayGoals: 0, winner: 0 });
+    results.push({ round: 'round-16', homeId: '', awayId: '', homeGoals: 0, awayGoals: 0, winner: 0 });
   }
-  return { humanId, seed, round: 'quarters', status: 'playing', score: 0, bracket, entrants, pairWinner, resolved, results, resultCount: 0 };
+  return { humanId, seed, round: 'round-16', status: 'playing', score: 0, bracket, entrants, pairWinner, resolved, results, resultCount: 0 };
 }
 
 // ── Reads ──────────────────────────────────────────────────────────────────────
@@ -206,8 +218,9 @@ export function pairResult(wc: WorldCupState, pair: number): WorldCupResult | nu
 }
 
 // G9-3: the pairs the human does not play, resolved one by one before his match --
-// the bracket screen asks VER or SALTAR for each. -1 once they are all resolved (or
-// the tournament is over), which is the screen's cue to offer the human's match.
+// the bracket screen asks VER, SALTAR o SALTAR TODOS (G15-8) for each. -1 once they
+// are all resolved (or the tournament is over), which is the screen's cue to offer
+// the human's match.
 export function nextCpuPair(wc: WorldCupState): number {
   if (wc.status !== 'playing') return -1;
   const human = humanPairIndex(wc);
@@ -301,7 +314,7 @@ export function abandonHumanMatch(wc: WorldCupState): void {
   wc.status = 'eliminated';
 }
 
-// The invariant net of the bracket: eight distinct seeds of the bank with the human
+// The invariant net of the bracket: sixteen distinct seeds of the bank with the human
 // inside; entrants sized by the round, all seeded, no repeats, the human among them
 // unless eliminated; every resolved pair won by one of its two. [] when it all holds.
 export function checkWorldCupBracket(wc: WorldCupState, bankIds: readonly string[]): string[] {

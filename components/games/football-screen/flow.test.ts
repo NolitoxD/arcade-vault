@@ -7,11 +7,13 @@ import {
 import { PITCH } from '../football-logic/pitch';
 import { FORMATIONS, TEAMS, teamById } from '../football-logic/teams';
 import {
-  HUMANS_BY_MODE, MODE_BLURBS, MODE_LIST, MODE_NAMES,
+  BRACKET_CHOICE_COUNT, HUMANS_BY_MODE, LINEUP_BY_MODE, MODE_BLURBS, MODE_LIST, MODE_NAMES,
   createFlowState, flowAfterModeBuilt, flowBracketAction, flowBuildMode, flowCaptionsDrained, flowConfirmBracket,
-  flowConfirmDraw, flowConfirmMode, flowConfirmTeam, flowContinue, flowCpuPair, flowExitMatch, flowHumanCount,
-  flowMatchOver, flowModeKind, flowMoveBracketChoice, flowMoveMode, flowMoveTeam, flowPickingHuman, flowRecordCpuResult,
-  flowReset, flowSetFormation, flowSetKeyScheme, flowSkipSpectate, flowSpectateOver, flowToggleKeyScheme, phaseGroup,
+  flowConfirmDraw, flowConfirmLineup, flowConfirmMode, flowConfirmTeam, flowContinue, flowCpuPair, flowExitMatch,
+  flowHasLineup, flowHumanCount, flowLineupBeginEdit, flowLineupCancelChoice, flowLineupChoose, flowLineupEndEdit,
+  flowLineupMove, flowMatchOver, flowModeKind, flowMoveBracketChoice, flowMoveMode, flowMoveTeam, flowPickingHuman,
+  flowRecordCpuResult, flowReset, flowSetFormation, flowSetKeyScheme, flowSkipSpectate, flowSpectateOver,
+  flowToggleKeyScheme, phaseGroup,
   type FlowPhase, type FlowState,
 } from './flow';
 
@@ -58,8 +60,9 @@ function start(kind: string, teamIndex: number, secondIndex = -1): { f: FlowStat
   const first = flowConfirmTeam(f, BANK);
   if (first === 'next') {
     f.cursor = secondIndex;
-    expect(flowConfirmTeam(f, BANK)).toBe('done');
-  } else expect(first).toBe('done');
+    flowConfirmTeam(f, BANK);
+  }
+  if (f.phase === 'lineup') flowConfirmLineup(f);
   const m = flowBuildMode(f, BANK_IDS, SEED);
   flowAfterModeBuilt(f, m);
   return { f, m };
@@ -67,17 +70,17 @@ function start(kind: string, teamIndex: number, secondIndex = -1): { f: FlowStat
 
 // Resolves the CPU pairs of the round by SALTAR, the way the component does.
 function skipCpuPairs(f: FlowState, m: GameMode): void {
+  // One press of right, from VER: the three-choice cursor of G15-8 would walk on to
+  // SALTAR TODOS on a second press, so this helper only presses once and the choice
+  // then stays on SALTAR for every pair of the round, same as a real single press.
+  flowMoveBracketChoice(f, 1);
   while (flowBracketAction(f, m) !== 'play') {
-    flowMoveBracketChoice(f, 1);
     expect(flowBracketAction(f, m)).toBe('skip');
     expect(flowConfirmBracket(f, m)).toBe('skip');
     const pair = flowCpuPair(m);
     const wc = modeBracket(m);
     if (wc === null) throw new Error('no bracket');
     flowRecordCpuResult(m, pair, finished(wc.entrants[pair * 2], wc.entrants[pair * 2 + 1], 1, 0));
-    // Directional (final fix wave): the choice stays on SALTAR for the next pair
-    // until the player presses left, same as a real repeated right-arrow press.
-    flowMoveBracketChoice(f, 1);
   }
 }
 
@@ -89,6 +92,7 @@ describe('the mode selector', () => {
     expect(MODE_NAMES.training).toBe('ENTRENAMIENTO');
     expect(MODE_NAMES['world-cup']).toBe('MUNDIAL');
     for (const kind of MODE_LIST) expect(MODE_BLURBS[kind].length).toBeGreaterThan(0);
+    expect(MODE_BLURBS['world-cup']).toBe('16 SELECCIONES SORTEADAS · 4 PARTIDOS · SIN CONTINUE · PUNTÚA');
     expect(HUMANS_BY_MODE).toEqual({ 'friendly-cpu': 1, 'friendly-2p': 2, training: 1, 'world-cup': 1 });
   });
 
@@ -142,50 +146,124 @@ describe('the mode selector', () => {
 });
 
 describe('the team selector', () => {
-  it('moves the cursor on a 4 x 4 grid, wrapping rows and columns, and refuses a slot past the bank', () => {
+  it('moves the cursor on a 5 x 4 grid, wrapping rows and columns, and refuses a slot past the bank', () => {
     const f = createFlowState();
     flowConfirmMode(f);
     flowMoveTeam(f, 1, 0, BANK);
     expect(f.cursor).toBe(1);
     flowMoveTeam(f, -1, 0, BANK);
     flowMoveTeam(f, -1, 0, BANK);
-    expect(f.cursor).toBe(3);
+    expect(f.cursor).toBe(4);            // wraps within the row
     flowMoveTeam(f, 0, 1, BANK);
-    expect(f.cursor).toBe(7);
+    expect(f.cursor).toBe(9);
     flowMoveTeam(f, 0, -1, BANK);
     flowMoveTeam(f, 0, -1, BANK);
-    expect(f.cursor).toBe(15);
-    // A bank of 14: from 10 (column 2, row 2), down would land on 14, which does not
-    // exist -- stay. From 9 the same move lands on 13, which does.
-    f.cursor = 10;
-    flowMoveTeam(f, 0, 1, 14);
-    expect(f.cursor).toBe(10);
-    f.cursor = 9;
-    flowMoveTeam(f, 0, 1, 14);
+    expect(f.cursor).toBe(19);           // wraps to the last row
+    // A bank of 18: from 13 (column 3, row 2), down would land on 18 -- stay.
+    f.cursor = 13;
+    flowMoveTeam(f, 0, 1, 18);
     expect(f.cursor).toBe(13);
-    // And the cursor does nothing outside team-select.
+    f.cursor = 12;
+    flowMoveTeam(f, 0, 1, 18);
+    expect(f.cursor).toBe(17);
     const idle = createFlowState();
     flowMoveTeam(idle, 1, 0, BANK);
     expect(idle.cursor).toBe(0);
   });
 
-  it('solo modes pick one team and are done; the two-player friendly picks J1 then J2, never the same', () => {
+  it('a friendly and the World Cup go on to ALINEACIÓN; the training is done there and then (G15-17)', () => {
     const solo = createFlowState();
-    flowConfirmMode(solo);
+    flowConfirmMode(solo);                                   // AMISTOSO
     solo.cursor = 4;
-    expect(flowConfirmTeam(solo, BANK)).toBe('done');
+    expect(flowConfirmTeam(solo, BANK)).toBe('lineup');
+    expect(solo.phase).toBe('lineup');
     expect(solo.picked).toEqual([4, -1]);
+    expect(flowConfirmLineup(solo)).toBe('done');
+
+    const training = createFlowState();
+    flowMoveMode(training, 2);                               // ENTRENAMIENTO
+    flowConfirmMode(training);
+    training.cursor = 1;
+    expect(flowHasLineup(training)).toBe(false);
+    expect(flowConfirmTeam(training, BANK)).toBe('done');
+    expect(training.phase).toBe('team-select');
+    expect(LINEUP_BY_MODE).toEqual({ 'friendly-cpu': true, 'friendly-2p': true, training: false, 'world-cup': true });
 
     const two = createFlowState();
-    flowMoveMode(two, 1);
+    flowMoveMode(two, 1);                                    // AMISTOSO A DOS
     flowConfirmMode(two);
     two.cursor = 2;
     expect(flowConfirmTeam(two, BANK)).toBe('next');
     expect(flowPickingHuman(two)).toBe(1);
-    expect(flowConfirmTeam(two, BANK)).toBe('refused');   // the same team, G9-4: "sin repetir"
+    expect(flowConfirmTeam(two, BANK)).toBe('refused');      // the same team, G9-4: "sin repetir"
     two.cursor = 9;
-    expect(flowConfirmTeam(two, BANK)).toBe('done');
+    expect(flowConfirmTeam(two, BANK)).toBe('lineup');
     expect(two.picked).toEqual([2, 9]);
+    expect(flowPickingHuman(two)).toBe(0);                   // J1's lineup first
+    expect(flowConfirmLineup(two)).toBe('next');
+    expect(flowPickingHuman(two)).toBe(1);
+    expect(flowConfirmLineup(two)).toBe('done');
+  });
+
+  it('the ALINEACIÓN cursor wraps, and the two sub-modes open and close (G15-17)', () => {
+    const f = createFlowState();
+    flowConfirmMode(f);
+    f.cursor = 0;
+    flowConfirmTeam(f, BANK);
+    expect(f.phase).toBe('lineup');
+    expect(f.lineupCursor).toBe(0);
+    expect(f.lineupChoosing).toBe(-1);
+    expect(f.lineupEditing).toBe(-1);
+    flowLineupMove(f, 1, 9);
+    expect(f.lineupCursor).toBe(1);
+    flowLineupMove(f, -1, 9);
+    flowLineupMove(f, -1, 9);
+    expect(f.lineupCursor).toBe(8);                 // wraps backwards
+    flowLineupMove(f, 1, 9);
+    expect(f.lineupCursor).toBe(0);                 // and forwards
+    flowLineupMove(f, 1, 0);
+    expect(f.lineupCursor).toBe(0);                 // an empty list never moves the cursor
+
+    flowLineupChoose(f, 3);
+    expect(f.lineupChoosing).toBe(3);
+    expect(f.lineupCursor).toBe(0);                 // the cursor restarts over the reserves
+    expect(flowConfirmLineup(f)).toBe('none');      // B does not leave mid-substitution
+    flowLineupCancelChoice(f);
+    expect(f.lineupChoosing).toBe(-1);
+    expect(f.lineupCursor).toBe(3);                 // back on the position it came from
+
+    flowLineupBeginEdit(f, 7);
+    expect(f.lineupEditing).toBe(7);
+    expect(flowConfirmLineup(f)).toBe('none');      // nor mid-edit
+    flowLineupEndEdit(f);
+    expect(f.lineupEditing).toBe(-1);
+    expect(flowConfirmLineup(f)).toBe('done');
+  });
+
+  it('browsing, choosing a reserve and editing a name refuse to interleave (G15-17)', () => {
+    const f = createFlowState();
+    flowConfirmMode(f);
+    f.cursor = 0;
+    flowConfirmTeam(f, BANK);
+
+    flowLineupChoose(f, 2);
+    expect(f.lineupChoosing).toBe(2);
+    flowLineupMove(f, 1, 5);
+    expect(f.lineupCursor).toBe(1);                 // the cruceta DOES move over the reserve list
+    flowLineupBeginEdit(f, 9);
+    expect(f.lineupEditing).toBe(-1);                // C does nothing while choosing a reserve
+    flowLineupCancelChoice(f);
+    expect(f.lineupChoosing).toBe(-1);
+
+    flowLineupBeginEdit(f, 4);
+    expect(f.lineupEditing).toBe(4);
+    const cursorWhileEditing = f.lineupCursor;
+    flowLineupMove(f, 1, 5);
+    expect(f.lineupCursor).toBe(cursorWhileEditing); // the cruceta does nothing while typing a name
+    flowLineupChoose(f, 6);
+    expect(f.lineupChoosing).toBe(-1);               // A does not open a substitution mid-edit
+    flowLineupEndEdit(f);
+    expect(f.lineupEditing).toBe(-1);
   });
 
   it('keeps one formation per human, 3-3-2 by default (G9-5)', () => {
@@ -240,11 +318,15 @@ describe('flowBuildMode -- the one place a mode is built', () => {
 });
 
 describe('the bracket screen (G9-3: VER / SALTAR, then the human match)', () => {
-  it('offers VER by default, SALTAR to the right and back to VER on the left, and PLAY once the three CPU pairs are resolved', () => {
+  it('offers VER by default, walks to SALTAR and SALTAR TODOS to the right, and PLAY once the seven CPU pairs are resolved', () => {
     const { f, m } = start('world-cup', 1);
     flowConfirmDraw(f);
     expect(flowBracketAction(f, m)).toBe('spectate');
     flowMoveBracketChoice(f, 1);
+    expect(flowBracketAction(f, m)).toBe('skip');
+    flowMoveBracketChoice(f, 1);
+    expect(flowBracketAction(f, m)).toBe('skip-all');
+    flowMoveBracketChoice(f, -1);
     expect(flowBracketAction(f, m)).toBe('skip');
     flowMoveBracketChoice(f, -1);
     expect(flowBracketAction(f, m)).toBe('spectate');
@@ -257,21 +339,37 @@ describe('the bracket screen (G9-3: VER / SALTAR, then the human match)', () => 
       flowRecordCpuResult(m, pair, finished(wc.entrants[pair * 2], wc.entrants[pair * 2 + 1], 2, 2, 1));
       pairs++;
     }
-    expect(pairs).toBe(3);
+    expect(pairs).toBe(7);
     expect(flowCpuPair(m)).toBe(-1);
     expect(flowConfirmBracket(f, m)).toBe('play');
     expect(f.phase).toBe('match');
   });
 
-  it('is directional, not a toggle: repeating the same direction leaves the choice where it is', () => {
+  it('is directional with a stop at each end: repeating a direction never wraps round', () => {
     const { f, m } = start('world-cup', 1);
     flowConfirmDraw(f);
-    expect(flowBracketAction(f, m)).toBe('spectate'); // VER by default
+    expect(BRACKET_CHOICE_COUNT).toBe(3);
     flowMoveBracketChoice(f, -1);
-    expect(flowBracketAction(f, m)).toBe('spectate'); // left on VER stays VER
+    flowMoveBracketChoice(f, -1);
+    expect(flowBracketAction(f, m)).toBe('spectate');   // left on VER stays VER
     flowMoveBracketChoice(f, 1);
     flowMoveBracketChoice(f, 1);
-    expect(flowBracketAction(f, m)).toBe('skip');      // right, right stays SALTAR
+    flowMoveBracketChoice(f, 1);
+    flowMoveBracketChoice(f, 1);
+    expect(flowBracketAction(f, m)).toBe('skip-all');   // and it never comes back round to VER
+    flowMoveBracketChoice(f, 0);
+    expect(flowBracketAction(f, m)).toBe('skip-all');   // a zero delta does nothing
+  });
+
+  it('SALTAR TODOS is an action of the bracket and leaves the flow ON the bracket (the component resolves the rest)', () => {
+    const { f, m } = start('world-cup', 1);
+    flowConfirmDraw(f);
+    flowMoveBracketChoice(f, 1);
+    flowMoveBracketChoice(f, 1);
+    expect(flowConfirmBracket(f, m)).toBe('skip-all');
+    expect(f.phase).toBe('bracket');
+    // And the choice survives: the player asked for all of them, not for one.
+    expect(flowBracketAction(f, m)).toBe('skip-all');
   });
 
   it('VER moves to spectate; the end of the spectated match drains through over back to the bracket; A skips straight to it', () => {
@@ -335,7 +433,7 @@ describe('the end of a match', () => {
     const { f, m } = start('world-cup', 2);
     flowConfirmDraw(f);
     const difficulties: number[] = [];
-    for (let round = 0; round < 3; round++) {
+    for (let round = 0; round < 4; round++) {
       skipCpuPairs(f, m);
       difficulties.push(modeDifficulty(m));
       expect(flowConfirmBracket(f, m)).toBe('play');
@@ -343,10 +441,10 @@ describe('the end of a match', () => {
       expect(f.phase).toBe('over');
       flowCaptionsDrained(f);
     }
-    expect(difficulties).toEqual([4, 6, 8]);
+    expect(difficulties).toEqual([3, 4, 6, 8]);
     expect(f.phase).toBe('victory');
     expect(modeStatus(m)).toBe('champion');
-    expect(modeScore(m)).toBe(67_000);
+    expect(modeScore(m)).toBe(78_500);   // 70 500 + 8 goles
   });
 
   it('a World Cup match lost, or abandoned with a lead (G9-8), is eliminated and returns to mode-select', () => {
@@ -391,15 +489,15 @@ describe('the end of a match', () => {
   });
 });
 
-// ── Task 10-2 (G10-4): which music track a phase belongs to. All EIGHT phases of
+// ── Task 10-2 (G10-4): which music track a phase belongs to. All NINE phases of
 // FlowPhase, not a sample -- risk 7 inherited from step 9. ───────────────────────
 describe('phaseGroup', () => {
-  it('match and spectate are "match"; the other six phases are "menu"', () => {
+  it('match and spectate are "match"; the other seven phases are "menu"', () => {
     const phases: FlowPhase[] = [
-      'mode-select', 'team-select', 'draw', 'bracket', 'match', 'spectate', 'victory', 'over',
+      'mode-select', 'team-select', 'lineup', 'draw', 'bracket', 'match', 'spectate', 'victory', 'over',
     ];
     expect(phases.map(phaseGroup)).toEqual([
-      'menu', 'menu', 'menu', 'menu', 'match', 'match', 'menu', 'menu',
+      'menu', 'menu', 'menu', 'menu', 'menu', 'match', 'match', 'menu', 'menu',
     ]);
   });
 });

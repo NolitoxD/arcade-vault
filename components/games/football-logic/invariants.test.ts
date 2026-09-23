@@ -26,7 +26,10 @@ function team(over: Partial<TeamDef> = {}): TeamDef {
 function legalBank(): TeamDef[] {
   const list: TeamDef[] = [];
   for (let i = 0; i < BANK_SIZE; i++) {
-    const hex = (i * 16).toString(16).padStart(2, '0');
+    // * 12, not * 16: with a bank of twenty, i * 16 reaches 256 at i = 16 and the hex
+    // would be three digits ('100'), giving #10000ff -- eight characters, which
+    // isKitColor rejects. * 12 runs 00..e4: two digits, all different.
+    const hex = (i * 12).toString(16).padStart(2, '0');
     list.push(team({ id: `team-${i}`, name: `EQUIPO ${i}`, kit: { primary: `#${hex}00ff`, secondary: `#ff${hex}00` } }));
   }
   return list;
@@ -191,10 +194,10 @@ describe('checkTeams / checkBank', () => {
     bank[4] = { ...bank[4], name: 'minusculas' };
     expect(checkTeams(bank).join(' ')).toContain('team-4: bad name');
   });
-  it('checkBank rejects fifteen teams while checkTeams does not count', () => {
+  it('checkBank rejects a bank one short while checkTeams does not count', () => {
     const bank = legalBank().slice(0, BANK_SIZE - 1);
     expect(checkTeams(bank)).toEqual([]);
-    expect(checkBank(bank).join(' ')).toContain('bank size 15');
+    expect(checkBank(bank).join(' ')).toContain('bank size 19');
   });
 });
 
