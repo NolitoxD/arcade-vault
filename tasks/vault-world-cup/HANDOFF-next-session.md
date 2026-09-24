@@ -1,6 +1,23 @@
-# HANDOFF — VAULT WORLD CUP · v1.5: V15-3 «Contenido» CERRADO EN CÓDIGO (sin commit, QA jugado pendiente) · actualizado 2026-09-23
+# HANDOFF — VAULT WORLD CUP · v1.5: V15-3 COMMITEADO (`f1d7d2a`); PLAN V15-4 «Motor» LISTO para ejecutar (3 días) · actualizado 2026-09-24
 
-Prompt para retomar: `/retomar tasks/vault-world-cup/HANDOFF-next-session.md` → QA jugado V15-3 (qa-paco.md, 15 puntos) → commit Paco (`git add -A`) → plan V15-4 «Motor» (11v11, atributos + porteros, postes, tarjetas, lesiones, entradas/faltas, pausa 4 s; UN regrabado).
+Prompt para retomar: `/retomar tasks/vault-world-cup/HANDOFF-next-session.md` → SDD del plan V15-4 (día 1: Task 1a red + 1b once contra once) → día 2 Tasks 2-4 → día 3 Tasks 5-9 (regrabado único) + 10-11.
+
+## -17. 24-sep: V15-3 commiteado (`f1d7d2a`) + PLAN V15-4 «Motor» ESCRITO, PRE-VUELO APLICADO (sin código)
+
+Decisión de Paco: **hoy solo planificación, mañana solo ejecución.**
+Plan `docs/superpowers/plans/2026-09-24-vault-world-cup-v15-4-engine.md`; ledger `.superpowers/sdd/2026-09-24-vault-world-cup-v15-4/`.
+Pre-vuelo: **NO LISTO** (6 Críticos) → 17 hallazgos aplicados y re-medidos. Hallazgos clave: el salto a 11 rompe **89 tests en 13 ficheros**
+(no 11); el «153» de `keeperLeftLineWithoutPressReason` lo causaba el fixture `players[t*9]`, no el motor (vuelve a 0 al reanclar) — sin verlo
+se habría regrabado un error como correcto. Red nueva `engine-invariants.test.ts` (verde en 9v9 y en 11v11). Task 1 partida en 1a (red) + 1b
+(el golpe); Tasks 5 y 6 intercambiadas (lesiones antes que tarjetas, porque la roja al portero usa `substitute`).
+**Resoluciones de Paco (24-sep)**, al final del plan: entrenamiento = solo reglas, adopta el tamaño vigente; campo **2200 × 1430 (+10 %)**
+con áreas, círculo central y **punto de penalti (210 → 231)** escalados y **portería SIN escalar**; portero expulsado o lesionado → entra el
+**segundo portero** (equipo con un jugador de campo menos), y sin portero disponible la roja es solo rótulo (NO se toca `keeperOf`);
+`ai.ts:612` no se toca (CPU entra de frente; medido: faltas −24 %, entradas limpias 23,6 % → 42,1 %); la ventana LESIONADO **para el reloj**
+y entra sola la reserva de la posición si el humano no elige.
+**Corte: TRES días.** Día 1 = 1a + 1b. Día 2 = Tasks 2-4 (atributos con porteros, postes/larguero, entradas+pausa 4 s). Día 3 = Tasks 5-9
+(lesiones, tarjetas, pantalla, comentarios, **REGRABADO ÚNICO**) + 10 (dos sondas de 40) + 11 (cierre, qa-paco, commit propuesto).
+Objetivo: 1385/83 → **≈1461/88**. La Task 9 no puede regrabar invariantes: lista blanca de 5 asertos + regla «un aserto que vale 0 se investiga, no se regraba».
 
 ## -16. 23-sep: QA de V15-2 «con mando perfecto» + V15-3 «Contenido» EJECUTADO y CERRADO EN CÓDIGO
 
