@@ -115,22 +115,28 @@ export function placeByFormation(players: PlayerState[], team: 0 | 1, formation:
   }
 }
 
-// Stage B2, S-PK4: the fifteen outfield players who are not taking the kick stand
-// still around the centre spot and the live positioning AI does not run for them.
-// The grid is 4 x 4 = 2 * OUTFIELD slots, laid out by ascending id with integer
-// arithmetic -- spreading them on a circle would need trigonometry, which the engine
-// bans (risk 3). Its far corner sits at sqrt(105^2 + 120^2) = 159.45 u from the centre
-// spot, inside the 175 u circle.
+// Stage B2, S-PK4: the outfield players who are not taking the kick stand still around
+// the centre spot and the live positioning AI does not run for them. The grid is laid
+// out by ascending id with integer arithmetic -- spreading them on a circle would need
+// trigonometry, which the engine bans (risk 3).
 // Stage B2 finding H4: this used to be a 5 x 3 grid (2 * OUTFIELD - 1 slots, exactly
-// the fifteen needed), but its middle column and row are both exact integers
+// the fifteen then needed), but its middle column and row are both exact integers
 // ((5-1)/2 = 2, (3-1)/2 = 1), so slot k = 7 landed at offset (0, 0) -- one player
 // parked exactly on the centre spot itself, which is where the ball of the shootout's
-// NEXT kick sits. A 4 x 4 grid has no middle column or row (both (4-1)/2 = 1.5), so no
-// slot's offset is ever (0, 0) regardless of which one is used -- that is what actually
-// fixes the coincidence, not the choice of which slot to drop. One slot has to be
-// dropped anyway, since 16 slots is one more than the fifteen players parked here;
-// slot 7 is it, kept only because it is the smallest possible diff from the old
-// layout's dropped centre and carries no geometric meaning of its own now.
+// NEXT kick sits. What fixes the coincidence is an EVEN number of rows and columns, not
+// the choice of which slot to drop.
+//
+// G15-16 (V15-4): with ten outfield players a side there are 2 * OUTFIELD - 1 = 19 to
+// park, so the 4 x 4 grid of stage B2 is one row short. 5 x 4 = 20 = 2 * OUTFIELD keeps
+// the old shape of the property (one slot more than the players) and, with an EVEN
+// number of ROWS, no slot's offset from the centre is ever (0, 0) -- which is the whole
+// point of finding H4: nobody parks on the centre spot where the NEXT kick's ball sits.
+// (The old layout needed the `k === 7` skip to drop its extra slot; with 19 players and
+// 20 slots the last one is simply never used, so the skip is gone.)
+// Spacing 60 x 80 puts the far corner at sqrt(120^2 + 120^2) = 169.7 u from the centre
+// spot, inside the centre circle, which is now 192.5 u (Paco 24-sep: the circle scales
+// with the pitch). 169.7 < 192.5 with 23 u to spare -- the old 175 u circle already fit
+// it, so the spacing is not what the scaling changed.
 // Stage B2 assumption S-PK7, not in the spec -- review in QA: the goalkeepers are NOT
 // parked. The spec's "the sixteen remaining" would put the attacking keeper on the
 // centre circle, and criterion 9b (checkGoalkeepersInBox) forbids a keeper outside its
@@ -138,9 +144,9 @@ export function placeByFormation(players: PlayerState[], team: 0 | 1, formation:
 // Stage B2 assumption S-PK10, not in the spec -- review in QA: an extra time that ended
 // mid-slide would otherwise leave a parked player frozen in the air for the whole
 // shootout, so the slide, the floor and the charge are cleared here as well.
-export const SHOOTOUT_GRID_COLUMNS = 4;
+export const SHOOTOUT_GRID_COLUMNS = 5;
 export const SHOOTOUT_GRID_ROWS = 4;
-export const SHOOTOUT_GRID_SPACING_X = 70;
+export const SHOOTOUT_GRID_SPACING_X = 60;
 export const SHOOTOUT_GRID_SPACING_Y = 80;
 
 export function placeAroundCentreSpot(players: PlayerState[], takerId: number, pitch: PitchDef): void {
@@ -150,7 +156,6 @@ export function placeAroundCentreSpot(players: PlayerState[], takerId: number, p
   for (let i = 0; i < players.length; i++) {
     const p = players[i];
     if (p.role === 'gk' || p.id === takerId) continue;
-    if (k === 7) k++;   // Stage B2 (H4): the sixteenth slot is dropped so fifteen fit
     const col = k % SHOOTOUT_GRID_COLUMNS;
     const row = (k - col) / SHOOTOUT_GRID_COLUMNS;
     p.x = cx + (col - (SHOOTOUT_GRID_COLUMNS - 1) / 2) * SHOOTOUT_GRID_SPACING_X;

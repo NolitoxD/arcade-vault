@@ -1,22 +1,24 @@
 import { describe, expect, it } from 'vitest';
 import { checkBank, checkFormation, checkFormations, checkGoalkeepersInBox, checkPitch, checkTeam, checkTeams } from './invariants';
-import { PITCH, type PitchDef } from './pitch';
-import { BANK_SIZE, FORMATION_COUNT, FORMATIONS, OUTFIELD, type Formation, type FormationSlot, type TeamDef } from './teams';
+import { PITCH, centerX, type PitchDef } from './pitch';
+import { BANK_SIZE, FORMATION_COUNT, FORMATIONS, OUTFIELD, TEAM_SIZE, type Formation, type FormationSlot, type TeamDef } from './teams';
 import { createPlayers } from './players';
 
 function pitch(over: Partial<PitchDef> = {}): PitchDef {
   return { ...PITCH, ...over };
 }
 
-// A legal 8-slot formation built by hand — NOT the published one — so the
-// negative tests mutate a fixture and never the content.
+// A legal OUTFIELD-slot formation built by hand — NOT the published one (its y values
+// are deliberately different) — so the negative tests mutate a fixture and never the
+// content. G15-16 grew it from eight slots to ten; the slot count is the only thing
+// checkFormation reads about the size, and the id has to keep describing the shape.
 function legalFormation(over: Partial<Formation> = {}): Formation {
   const slots: FormationSlot[] = [
-    { role: 'def', x: 0.2, y: 0.25 }, { role: 'def', x: 0.2, y: 0.5 }, { role: 'def', x: 0.2, y: 0.75 },
-    { role: 'mid', x: 0.45, y: 0.25 }, { role: 'mid', x: 0.45, y: 0.5 }, { role: 'mid', x: 0.45, y: 0.75 },
+    { role: 'def', x: 0.2, y: 0.2 }, { role: 'def', x: 0.2, y: 0.4 }, { role: 'def', x: 0.2, y: 0.6 }, { role: 'def', x: 0.2, y: 0.8 },
+    { role: 'mid', x: 0.45, y: 0.2 }, { role: 'mid', x: 0.45, y: 0.4 }, { role: 'mid', x: 0.45, y: 0.6 }, { role: 'mid', x: 0.45, y: 0.8 },
     { role: 'fwd', x: 0.7, y: 0.35 }, { role: 'fwd', x: 0.7, y: 0.65 },
   ];
-  return { id: '3-3-2', name: 'NORMAL', slots, ...over };
+  return { id: '4-4-2', name: 'NORMAL', slots, ...over };
 }
 
 function team(over: Partial<TeamDef> = {}): TeamDef {
@@ -46,28 +48,34 @@ describe('checkPitch accepts the published pitch and rejects incoherent geometry
     // below targets only the 'bad size' message produced by the height>0 clause.
     expect(checkPitch(pitch({ height: 0 })).join(' ')).toContain('bad size');
   });
+  // Every "illegal" value below is derived from PITCH itself (one unit past the legal
+  // boundary). They used to be literals calibrated against the 2000 x 1300 pitch, and
+  // G15-16's x1.1 areas made three of them LEGAL again -- a rejection test that goes
+  // green without rejecting anything. Anchored like this they cannot rot again.
   it('rejects a goal wider than the small area', () => {
-    expect(checkPitch(pitch({ goalWidth: 360 })).join(' ')).toContain('goal wider than small area');
+    expect(checkPitch(pitch({ goalWidth: PITCH.smallAreaWidth + 1 })).join(' ')).toContain('goal wider than small area');
   });
   it('rejects a small area wider than the big area', () => {
-    expect(checkPitch(pitch({ smallAreaWidth: 800 })).join(' ')).toContain('small area wider than big area');
+    expect(checkPitch(pitch({ smallAreaWidth: PITCH.bigAreaWidth + 1 })).join(' ')).toContain('small area wider than big area');
   });
   it('rejects a big area wider than the pitch', () => {
-    expect(checkPitch(pitch({ bigAreaWidth: 1400 })).join(' ')).toContain('big area wider than pitch');
+    expect(checkPitch(pitch({ bigAreaWidth: PITCH.height + 1 })).join(' ')).toContain('big area wider than pitch');
   });
   it('rejects a small area deeper than the big area', () => {
-    expect(checkPitch(pitch({ smallAreaDepth: 330 })).join(' ')).toContain('small area deeper than big area');
+    expect(checkPitch(pitch({ smallAreaDepth: PITCH.bigAreaDepth + 1 })).join(' ')).toContain('small area deeper than big area');
   });
   it('rejects a non-positive small area depth', () => {
     // smallAreaDepth only appears in this check and in the penalty-spot check
-    // (210 <= 0 is false), so no neighbouring check is coincidentally tripped.
+    // (penaltySpotDist <= 0 is false), so no neighbouring check is coincidentally tripped.
     expect(checkPitch(pitch({ smallAreaDepth: 0 })).join(' ')).toContain('small area deeper than big area');
   });
   it('rejects a big area past the halfway line', () => {
-    expect(checkPitch(pitch({ bigAreaDepth: 1010, penaltySpotDist: 500 })).join(' ')).toContain('big area past halfway');
+    // penaltySpotDist stays at 500: still inside the (now huge) big area and outside the
+    // small one, so only the halfway clause fires.
+    expect(checkPitch(pitch({ bigAreaDepth: PITCH.width / 2 + 1, penaltySpotDist: 500 })).join(' ')).toContain('big area past halfway');
   });
   it('rejects a penalty spot outside the big area', () => {
-    expect(checkPitch(pitch({ penaltySpotDist: 340 })).join(' ')).toContain('penalty spot outside big area');
+    expect(checkPitch(pitch({ penaltySpotDist: PITCH.bigAreaDepth + 1 })).join(' ')).toContain('penalty spot outside big area');
   });
   it('rejects a penalty spot inside the small area', () => {
     expect(checkPitch(pitch({ penaltySpotDist: 90 })).join(' ')).toContain('penalty spot inside small area');
@@ -76,7 +84,7 @@ describe('checkPitch accepts the published pitch and rejects incoherent geometry
     expect(checkPitch(pitch({ crossbarHeight: 0 })).join(' ')).toContain('bad crossbar');
   });
   it('rejects a center circle that crosses the touch lines', () => {
-    expect(checkPitch(pitch({ centerCircleRadius: 700 })).join(' ')).toContain('bad center circle');
+    expect(checkPitch(pitch({ centerCircleRadius: PITCH.height / 2 + 1 })).join(' ')).toContain('bad center circle');
   });
   it('rejects a non-positive center circle radius', () => {
     // centerCircleRadius appears in no other check, so this cannot coincide with another failure.
@@ -86,13 +94,13 @@ describe('checkPitch accepts the published pitch and rejects incoherent geometry
 
 describe('checkFormation', () => {
   it('accepts the legal fixture', () => expect(checkFormation(legalFormation())).toEqual([]));
-  it('rejects seven slots', () => {
-    const f = legalFormation();
-    expect(checkFormation({ ...f, id: '3-3-1', slots: f.slots.slice(0, OUTFIELD - 1) }).join(' ')).toContain('slot count 7');
-  });
   it('rejects nine slots', () => {
     const f = legalFormation();
-    expect(checkFormation({ ...f, id: '3-3-3', slots: [...f.slots, { role: 'fwd', x: 0.7, y: 0.5 }] }).join(' ')).toContain('slot count 9');
+    expect(checkFormation({ ...f, id: '4-4-1', slots: f.slots.slice(0, OUTFIELD - 1) }).join(' ')).toContain('slot count 9');
+  });
+  it('rejects eleven slots', () => {
+    const f = legalFormation();
+    expect(checkFormation({ ...f, id: '4-4-3', slots: [...f.slots, { role: 'fwd', x: 0.7, y: 0.5 }] }).join(' ')).toContain('slot count 11');
   });
   it('rejects a goalkeeper smuggled into the slots', () => {
     const f = legalFormation();
@@ -109,7 +117,7 @@ describe('checkFormation', () => {
   it('rejects a slot that leaves the pitch once the attack strategy shifts it', () => {
     const f = legalFormation();
     const slots = [...f.slots];
-    slots[7] = { role: 'fwd', x: 0.93, y: 0.65 };   // 0.93 + 0.12 > 1
+    slots[7] = { role: 'mid', x: 0.93, y: 0.65 };   // 0.93 + 0.12 > 1; same role, so only this problem fires
     expect(checkFormation({ ...f, slots }).join(' ')).toContain('slot 7 leaves pitch under strategy');
   });
   it('rejects a slot that leaves the pitch once the defend strategy shifts it', () => {
@@ -121,19 +129,19 @@ describe('checkFormation', () => {
   it('rejects two slots on the same point', () => {
     const f = legalFormation();
     const slots = [...f.slots];
-    slots[3] = { ...slots[4] };
+    slots[4] = { ...slots[5] };   // both midfielders, so the slot counts still match the id
     expect(checkFormation({ ...f, slots }).join(' ')).toContain('duplicate slot position');
   });
   it('rejects an id that does not describe the slots', () => {
-    expect(checkFormation(legalFormation({ id: '4-3-1' })).join(' ')).toContain('id does not match slots');
+    expect(checkFormation(legalFormation({ id: '5-3-2' })).join(' ')).toContain('id does not match slots');
   });
 });
 
 describe('checkFormations', () => {
   function three(): Formation[] {
     const a = legalFormation();
-    const b = legalFormation({ id: '3-2-3', slots: a.slots.map((s, i) => (i === 5 ? { ...s, role: 'fwd', x: 0.7, y: 0.5 } : s)) });
-    const c = legalFormation({ id: '4-3-1', slots: a.slots.map((s, i) => (i === 7 ? { ...s, role: 'def', x: 0.2, y: 0.9 } : s)) });
+    const b = legalFormation({ id: '4-3-3', slots: a.slots.map((s, i) => (i === 5 ? { ...s, role: 'fwd', x: 0.7, y: 0.5 } : s)) });
+    const c = legalFormation({ id: '5-3-2', slots: a.slots.map((s, i) => (i === 7 ? { ...s, role: 'def', x: 0.2, y: 0.9 } : s)) });
     return [a, b, c];
   }
   it('accepts three distinct legal formations', () => expect(checkFormations(three())).toEqual([]));
@@ -143,12 +151,12 @@ describe('checkFormations', () => {
   it('rejects a duplicated id', () => {
     const fs = three();
     fs[2] = { ...fs[2], id: fs[0].id, slots: fs[0].slots };
-    expect(checkFormations(fs).join(' ')).toContain('duplicate formation id 3-3-2');
+    expect(checkFormations(fs).join(' ')).toContain('duplicate formation id 4-4-2');
   });
   it('propagates a per-formation problem with the offender id', () => {
     const fs = three();
     fs[1] = { ...fs[1], slots: fs[1].slots.slice(0, 6) };
-    expect(checkFormations(fs).join(' ')).toContain('3-2-3: slot count 6');
+    expect(checkFormations(fs).join(' ')).toContain('4-3-3: slot count 6');
   });
   it('FORMATION_COUNT is the three of the spec', () => expect(FORMATION_COUNT).toBe(3));
 });
@@ -207,8 +215,8 @@ describe('checkGoalkeepersInBox (criterion 9b)', () => {
   });
   it('rejects a goalkeeper wandering to midfield', () => {
     const ps = createPlayers([FORMATIONS[0], FORMATIONS[0]], PITCH);
-    ps[9].x = 900;
-    expect(checkGoalkeepersInBox(ps, [1, -1], PITCH).join(' ')).toContain('goalkeeper 9 outside big area');
+    ps[TEAM_SIZE].x = centerX(PITCH);
+    expect(checkGoalkeepersInBox(ps, [1, -1], PITCH).join(' ')).toContain(`goalkeeper ${TEAM_SIZE} outside big area`);
   });
   it('rejects a goalkeeper inside the WRONG box (its own box moves with attackDir)', () => {
     const ps = createPlayers([FORMATIONS[0], FORMATIONS[0]], PITCH);

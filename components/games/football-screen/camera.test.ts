@@ -113,8 +113,9 @@ describe('cameraTargetX/Y (shootout cut, S-SC8)', () => {
     const m = createMatch(TEAM_PAIR, FORMATIONS, PITCH, PROFILES);
     m.phase = 'play';
     m.setPiece = null;
-    // 333/444 is off-centre and far from both shootout answers below (1790 and 210),
-    // so a bug that returned a goal x/y here could not be mistaken for the ball's.
+    // 333/444 is off-centre and far from both shootout answers below (penaltySpotX on
+    // either side), so a bug that returned a goal x/y here could not be mistaken for the
+    // ball's.
     m.ball.x = 333;
     m.ball.y = 444;
     expect(cameraTargetX(m)).toBe(333);
@@ -141,10 +142,12 @@ describe('cameraTargetX/Y (shootout cut, S-SC8)', () => {
     // Hand-derived from beginShootoutKick (set-pieces.ts:293-295):
     //   defending = sh.team === 0 ? 1 : 0  = 1
     //   side      = ownGoalSide(attackDir[1]) = ownGoalSide(-1) = 1   (players.ts:56-58)
-    //   sp.x      = penaltySpotX(PITCH, 1) = 2000 - 210 = 1790        (pitch.ts)
-    //   sp.y      = centerY(PITCH)         = 1300 / 2   = 650
-    expect(cameraTargetX(m)).toBe(1790);
-    expect(cameraTargetY(m)).toBe(650);
+    //   sp.x      = penaltySpotX(PITCH, 1) = 2200 - 231 = 1969        (pitch.ts)
+    //   sp.y      = centerY(PITCH)         = 1430 / 2   = 715
+    // Asserted as the FORMULA, not as those numbers: G15-16 moved the pitch once and
+    // this trace has no business moving with it a second time.
+    expect(cameraTargetX(m)).toBe(PITCH.width - PITCH.penaltySpotDist);
+    expect(cameraTargetY(m)).toBe(centerY(PITCH));
   });
 
   it('(c) shootout, team 1 kicking: cuts to the OTHER goal, each on its own half of the pitch', () => {
@@ -163,29 +166,30 @@ describe('cameraTargetX/Y (shootout cut, S-SC8)', () => {
 
     // defending = sh.team === 0 ? 1 : 0  = 0  (team 1 is kicking now)
     // side      = ownGoalSide(attackDir[0]) = ownGoalSide(1) = 0
-    // sp.x      = penaltySpotX(PITCH, 0) = 210
+    // sp.x      = penaltySpotX(PITCH, 0) = 231
     const targetX = cameraTargetX(m);
-    expect(targetX).toBe(210);
-    // 1000 is centerX(PITCH) = 2000 / 2: the pitch midline that separates the two
-    // goals. Team 0's target (b) sits on the right half, team 1's on the left --
-    // never the same number, and never on the same side.
-    expect(targetX).not.toBe(1790);
+    expect(targetX).toBe(PITCH.penaltySpotDist);
+    // centerX(PITCH) = 2200 / 2 is the pitch midline that separates the two goals.
+    // Team 0's target (b) sits on the right half, team 1's on the left -- never the
+    // same number, and never on the same side.
+    const otherGoal = PITCH.width - PITCH.penaltySpotDist;
+    expect(targetX).not.toBe(otherGoal);
     expect(targetX).toBeLessThan(centerX(PITCH));
-    expect(1790).toBeGreaterThan(centerX(PITCH));
+    expect(otherGoal).toBeGreaterThan(centerX(PITCH));
   });
 
   it('(d) the clamp still applies after the cut: centring on the goal line cannot show past the pitch edge', () => {
     const m = createMatch(TEAM_PAIR, FORMATIONS, PITCH, PROFILES);
     const sp = createSetPieceState();
-    sp.x = PITCH.width; // the goal line itself (x=2000): the worst case for the right clamp
+    sp.x = PITCH.width; // the goal line itself (x=2200): the worst case for the right clamp
     sp.y = centerY(PITCH);
     m.setPiece = sp;
     m.phase = 'shootout';
 
     const cam = createCamera();
     centreCamera(cam, cameraTargetX(m), cameraTargetY(m), PITCH);
-    // Unclamped this would centre at x = 2000 - VIEW_W / 2 = 1600, well past the
-    // pitch edge. cameraMaxX(PITCH) = 2000 + 60 - 800 = 1260 is what clamping gives.
+    // Unclamped this would centre at x = 2200 - VIEW_W / 2 = 1800, well past the
+    // pitch edge. cameraMaxX(PITCH) = 2200 + 60 - 800 = 1460 is what clamping gives.
     expect(cam.x).toBe(cameraMaxX(PITCH));
     expect(cam.y).toBe(centerY(PITCH) - VIEW_H / 2);
   });

@@ -11,8 +11,8 @@ export type TeamDef = { id: string; name: string; kit: Kit };
 export type FormationSlot = { role: OutfieldRole; x: number; y: number };
 export type Formation = { id: string; name: string; slots: readonly FormationSlot[] };
 
-export const TEAM_SIZE = 9;
-export const OUTFIELD = 8;
+export const TEAM_SIZE = 11;
+export const OUTFIELD = 10;
 export const BANK_SIZE = 20;
 export const FORMATION_COUNT = 3;
 
@@ -24,34 +24,36 @@ export const STRATEGIES: Readonly<Record<Strategy, number>> = {
   defend: -STRATEGY_SHIFT,
 };
 
-// The three line-ups of the spec. 3-3-2 is the stage-A one, untouched: several
-// tests are coupled to its exact geometry (see the final review of stage A).
+// G15-16 (v1.5, V15-4): eleven a side. The three line-ups keep their keys (1/2/3) and
+// their names; only the shapes changed. Every slot keeps x within (STRATEGY_SHIFT,
+// 1 - STRATEGY_SHIFT) so checkFormation's "leaves pitch under strategy" never fires,
+// and no two slots share a position.
 export const FORMATIONS: readonly Formation[] = [
   {
-    id: '3-3-2',
+    id: '4-4-2',
     name: 'NORMAL',
     slots: [
-      { role: 'def', x: 0.22, y: 0.25 }, { role: 'def', x: 0.22, y: 0.5 }, { role: 'def', x: 0.22, y: 0.75 },
-      { role: 'mid', x: 0.45, y: 0.25 }, { role: 'mid', x: 0.45, y: 0.5 }, { role: 'mid', x: 0.45, y: 0.75 },
+      { role: 'def', x: 0.2, y: 0.15 }, { role: 'def', x: 0.2, y: 0.38 }, { role: 'def', x: 0.2, y: 0.62 }, { role: 'def', x: 0.2, y: 0.85 },
+      { role: 'mid', x: 0.45, y: 0.15 }, { role: 'mid', x: 0.45, y: 0.38 }, { role: 'mid', x: 0.45, y: 0.62 }, { role: 'mid', x: 0.45, y: 0.85 },
       { role: 'fwd', x: 0.7, y: 0.35 }, { role: 'fwd', x: 0.7, y: 0.65 },
     ],
   },
   {
-    id: '3-2-3',
+    id: '4-3-3',
     name: 'OFENSIVA',
     slots: [
-      { role: 'def', x: 0.22, y: 0.25 }, { role: 'def', x: 0.22, y: 0.5 }, { role: 'def', x: 0.22, y: 0.75 },
-      { role: 'mid', x: 0.45, y: 0.35 }, { role: 'mid', x: 0.45, y: 0.65 },
-      { role: 'fwd', x: 0.7, y: 0.2 }, { role: 'fwd', x: 0.7, y: 0.5 }, { role: 'fwd', x: 0.7, y: 0.8 },
+      { role: 'def', x: 0.2, y: 0.15 }, { role: 'def', x: 0.2, y: 0.38 }, { role: 'def', x: 0.2, y: 0.62 }, { role: 'def', x: 0.2, y: 0.85 },
+      { role: 'mid', x: 0.45, y: 0.25 }, { role: 'mid', x: 0.45, y: 0.5 }, { role: 'mid', x: 0.45, y: 0.75 },
+      { role: 'fwd', x: 0.72, y: 0.2 }, { role: 'fwd', x: 0.72, y: 0.5 }, { role: 'fwd', x: 0.72, y: 0.8 },
     ],
   },
   {
-    id: '4-3-1',
+    id: '5-3-2',
     name: 'DEFENSIVA',
     slots: [
-      { role: 'def', x: 0.2, y: 0.15 }, { role: 'def', x: 0.2, y: 0.38 }, { role: 'def', x: 0.2, y: 0.62 }, { role: 'def', x: 0.2, y: 0.85 },
-      { role: 'mid', x: 0.42, y: 0.25 }, { role: 'mid', x: 0.42, y: 0.5 }, { role: 'mid', x: 0.42, y: 0.75 },
-      { role: 'fwd', x: 0.68, y: 0.5 },
+      { role: 'def', x: 0.18, y: 0.12 }, { role: 'def', x: 0.18, y: 0.31 }, { role: 'def', x: 0.18, y: 0.5 }, { role: 'def', x: 0.18, y: 0.69 }, { role: 'def', x: 0.18, y: 0.88 },
+      { role: 'mid', x: 0.44, y: 0.25 }, { role: 'mid', x: 0.44, y: 0.5 }, { role: 'mid', x: 0.44, y: 0.75 },
+      { role: 'fwd', x: 0.7, y: 0.35 }, { role: 'fwd', x: 0.7, y: 0.65 },
     ],
   },
 ];

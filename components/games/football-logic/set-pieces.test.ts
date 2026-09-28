@@ -21,6 +21,17 @@ const FORMS: readonly [Formation, Formation] = [F, F];
 const STRATS: readonly [Strategy, Strategy] = ['neutral', 'neutral'];
 const ATTACK: AttackDirs = [1, -1];
 const CY = centerY(PITCH);
+// The kickoff spot every test below uses. NOT centerX(PITCH): on the exact centre line
+// the 4-4-2's slots at y = 0.38 and y = 0.62 are equidistant from it to the last bit, so
+// the taker would be decided by nearestOutfield's strict `<` and nothing else.
+const SPOT_X = 1000;
+// Hand-derived for the 4-4-2 of G15-16 on the 2200 x 1430 pitch: team 0 attacking +x
+// puts its midfielders at x = 0.45 * 2200 = 990, and the two central ones at
+// y = 0.38 * 1430 = 543.4 and y = 0.62 * 1430 = 886.6 -- both exactly 171.6 u from
+// CY = 715, so both are 171.891 u from (1000, 715). That IS an exact tie, and
+// nearestOutfield keeps the first one it sees, the lower id: slot 5, i.e. id 6. Every
+// other outfield player is at least 489 u away, so the tie is only between these two.
+const KICKOFF_TAKER_ID = 6;
 
 type W = { players: PlayerState[]; ball: BallState; sp: SetPieceState; input: TeamInput; aim: { x: number; y: number }; out: ActionEvent };
 
@@ -67,22 +78,22 @@ describe('beginSetPiece', () => {
   it('kickoff: everyone by formation, the nearest outfield player of the team takes it from the centre facing attackDir', () => {
     const w = world();
     w.players[3].x = 1700; // moved away: kickoff must reset it
-    begin(w, 'kickoff', 0, 1000, CY);
+    begin(w, 'kickoff', 0, SPOT_X, CY);
     expect(w.players[3].x).toBe(F.slots[2].x * PITCH.width);
-    expect(w.sp).toMatchObject({ kind: 'kickoff', team: 0, x: 1000, y: CY, dirX: 1, dirY: 0, stepsLeft: SET_PIECE_COUNTDOWN_STEPS });
-    expect(w.sp.takerId).toBe(5); // slot 4 (centre mid at 900, 650) is the closest to the spot
-    expect(w.ball.owner).toBe(5);
-    expect(w.ball.x).toBeCloseTo(1000, 10);
+    expect(w.sp).toMatchObject({ kind: 'kickoff', team: 0, x: SPOT_X, y: CY, dirX: 1, dirY: 0, stepsLeft: SET_PIECE_COUNTDOWN_STEPS });
+    expect(w.sp.takerId).toBe(KICKOFF_TAKER_ID); // slot 5 (a central mid at 990, 543.4) is the closest
+    expect(w.ball.owner).toBe(KICKOFF_TAKER_ID);
+    expect(w.ball.x).toBeCloseTo(SPOT_X, 10);
     expect(w.ball.y).toBeCloseTo(CY, 10);
-    expect(w.players[5].x).toBeCloseTo(1000 - CONTROL_DIST, 10);
+    expect(w.players[KICKOFF_TAKER_ID].x).toBeCloseTo(SPOT_X - CONTROL_DIST, 10);
     expect(SET_PIECE_COUNTDOWN_STEPS).toBe(300);
   });
   it('team 1 kicks off facing -x', () => {
     const w = world();
-    begin(w, 'kickoff', 1, 1000, CY);
+    begin(w, 'kickoff', 1, SPOT_X, CY);
     expect(w.sp.dirX).toBe(-1);
     expect(w.players[w.sp.takerId].team).toBe(1);
-    expect(w.players[w.sp.takerId].x).toBeCloseTo(1000 + CONTROL_DIST, 10);
+    expect(w.players[w.sp.takerId].x).toBeCloseTo(SPOT_X + CONTROL_DIST, 10);
   });
   it('corner: default direction points at the rival goal centre, a nearby rival is pushed to SET_PIECE_CLEARANCE', () => {
     const w = world();
@@ -95,11 +106,11 @@ describe('beginSetPiece', () => {
     begin(w, 'corner', 0, PITCH.width, 0);
     const d12 = Math.sqrt((w.players[12].x - PITCH.width) ** 2 + (w.players[12].y - 0) ** 2);
     expect(d12).toBeGreaterThanOrEqual(SET_PIECE_CLEARANCE - 1e-6);
-    // The rival keeper (player 9) is untouched by this fixture and simply
+    // The rival keeper (player TEAM_SIZE) is untouched by this fixture and simply
     // documents that its formation starting spot is already inside its box --
     // it is not evidence that clampToBigArea ran.
-    expect(isInsideBigArea(PITCH, 1, w.players[9].x, w.players[9].y)).toBe(true);
-    // direction from (2000, 0) towards (2000, 650) is straight down
+    expect(isInsideBigArea(PITCH, 1, w.players[TEAM_SIZE].x, w.players[TEAM_SIZE].y)).toBe(true);
+    // direction from (2200, 0) towards (2200, 715) is straight down
     expect(w.sp.dirX).toBeCloseTo(0, 10);
     expect(w.sp.dirY).toBeCloseTo(1, 10);
     expect(w.players[w.sp.takerId].team).toBe(0);
@@ -124,15 +135,20 @@ describe('beginSetPiece', () => {
     // places the keeper close enough to be pushed, and picks a push direction
     // that lands it outside its own big area, so clampToBigArea has to act.
     const w = world();
-    const gk = w.players[TEAM_SIZE]; // team 1's keeper (index 9)
-    gk.x = 1690; gk.y = CY; // inside its box (edge at x = width - bigAreaDepth = 1680)
-    begin(w, 'free-kick', 0, 1800, CY);
-    // d((1800, 650), (1690, 650)) = 110 < 180: pushRivalsAway pushes it along
-    // the straight line away from the spot, i.e. (-1, 0), landing it at
-    // x = 1800 - 180 = 1620 -- outside the box (needs x >= 1680) -- so
-    // clampToBigArea must pull it back to exactly 1680 for this to pass.
+    const gk = w.players[TEAM_SIZE]; // team 1's keeper
+    // Re-derived against the x1.1 big area of G15-16 (Paco, 24-sep) and written as the
+    // formula, so the next time the pitch moves this fixture moves with it: the box edge
+    // is at EDGE = width - bigAreaDepth = 2200 - 352 = 1848.
+    const edge = PITCH.width - PITCH.bigAreaDepth;
+    gk.x = edge + 10; gk.y = CY;                  // just inside its box
+    begin(w, 'free-kick', 0, edge + 120, CY);
+    // d(spot, gk) = 110 < SET_PIECE_CLEARANCE = 180: pushRivalsAway pushes it along the
+    // straight line away from the spot, i.e. (-1, 0), landing it at
+    // x = (edge + 120) - 180 = edge - 60 -- outside the box -- so clampToBigArea must
+    // pull it back to exactly `edge` for this to pass.
+    expect(edge + 120 - SET_PIECE_CLEARANCE).toBeLessThan(edge);
     expect(isInsideBigArea(PITCH, 1, gk.x, gk.y)).toBe(true);
-    expect(gk.x).toBe(1680);
+    expect(gk.x).toBe(edge);
     expect(gk.y).toBe(CY);
   });
   it('throw-in / free kick do not reset the formation', () => {
@@ -144,17 +160,20 @@ describe('beginSetPiece', () => {
     expect(w.players[3].y).toBe(900);
   });
   it('the kickoff taker is the outfield player nearest the centre spot in EVERY formation (ids differ, the rule does not)', () => {
-    // Hand-computed (see the note below): 3-3-2 → id 5; 3-2-3 → id 5 (NOT a tie: 0.35 * 1300 is
-    // 454.99999999999994, so the slot at y = 845 is 5e-14 closer); 4-3-1 → id 6.
-    for (const [fi, expectedId] of [[0, 5], [1, 5], [2, 6]] as const) {
+    // Hand-computed on the 2200 x 1430 pitch of G15-16, spot (1000, 715):
+    //   4-4-2 → id 6: mids at x = 990; the two central ones (y = 543.4 and y = 886.6) are
+    //           exactly tied at 171.891 u, and nearestOutfield keeps the lower id.
+    //   4-3-3 → id 6: the central mid sits at (990, 715), 10 u away -- no contest.
+    //   5-3-2 → id 7: the central mid sits at (968, 715), 32 u away -- no contest.
+    for (const [fi, expectedId] of [[0, KICKOFF_TAKER_ID], [1, 6], [2, 7]] as const) {
       const f = FORMATIONS[fi];
       const w = { ...world(), players: createPlayers([f, f], PITCH) };
-      beginSetPiece(w.sp, 'kickoff', 0, 1000, CY, w.players, w.ball, [f, f], STRATS, ATTACK, PITCH, 0);
+      beginSetPiece(w.sp, 'kickoff', 0, SPOT_X, CY, w.players, w.ball, [f, f], STRATS, ATTACK, PITCH, 0);
       expect(w.sp.takerId).toBe(expectedId);
       expect(w.players[w.sp.takerId].role).not.toBe('gk');
       let best = Infinity;
-      for (let i = 1; i <= 8; i++) best = Math.min(best, dist(w.players[i].x, w.players[i].y, 1000, CY));
-      expect(dist(w.players[w.sp.takerId].x, w.players[w.sp.takerId].y, 1000, CY)).toBeCloseTo(best, 6);
+      for (let i = 1; i <= OUTFIELD; i++) best = Math.min(best, dist(w.players[i].x, w.players[i].y, SPOT_X, CY));
+      expect(dist(w.players[w.sp.takerId].x, w.players[w.sp.takerId].y, SPOT_X, CY)).toBeCloseTo(best, 6);
     }
   });
 });
@@ -162,7 +181,7 @@ describe('beginSetPiece', () => {
 describe('direction and countdown', () => {
   it('keeps the last non-null d-pad direction and moves the taker behind the ball', () => {
     const w = world();
-    begin(w, 'kickoff', 0, 1000, CY);
+    begin(w, 'kickoff', 0, SPOT_X, CY);
     w.input.dx = 0; w.input.dy = 1;
     run(w, 1);
     expect(w.sp.dirY).toBe(1);
@@ -170,7 +189,7 @@ describe('direction and countdown', () => {
     run(w, 100, createRng(1), 0.6, 2);
     expect(w.sp.dirX).toBe(0);
     expect(w.sp.dirY).toBe(1);
-    expect(w.players[5].y).toBeCloseTo(CY - CONTROL_DIST, 10);
+    expect(w.players[KICKOFF_TAKER_ID].y).toBeCloseTo(CY - CONTROL_DIST, 10);
     expect(w.ball.y).toBeCloseTo(CY, 10);
     w.input.dx = -1; w.input.dy = -1;
     run(w, 1, createRng(1), 0.6, 102);
@@ -179,11 +198,11 @@ describe('direction and countdown', () => {
   });
   it('executes exactly when the 300-step countdown reaches zero (sampled at 250, 299, 300)', () => {
     const w = world();
-    begin(w, 'kickoff', 0, 1000, CY);
+    begin(w, 'kickoff', 0, SPOT_X, CY);
     expect(run(w, 250)).toBe(-1);
     expect(w.sp.stepsLeft).toBe(50);
     expect(run(w, 49, createRng(1), 0.6, 251)).toBe(-1);
-    expect(w.ball.owner).toBe(5);
+    expect(w.ball.owner).toBe(KICKOFF_TAKER_ID);
     expect(run(w, 1, createRng(1), 0.6, 300)).toBe(300);
     expect(w.ball.owner).toBeNull();
   });
@@ -282,16 +301,17 @@ describe('shootout kick', () => {
     s.taken[1] = taken[1];
     return s;
   }
-  // S-PK3: the outfield takers go by ascending id without repeating until the eight are
-  // used up, and then it starts again. Keepers never take one.
-  it('the taker cycles through the eight outfield ids of its team and wraps around', () => {
+  // S-PK3: the outfield takers go by ascending id without repeating until the OUTFIELD of
+  // them are used up, and then it starts again. Keepers never take one. G15-16 made that
+  // ten instead of eight, so the wrap moves from the eighth kick to the tenth.
+  it('the taker cycles through the ten outfield ids of its team and wraps around', () => {
     expect(shootoutTakerId(0, 0)).toBe(1);
-    expect(shootoutTakerId(0, 7)).toBe(8);
-    expect(shootoutTakerId(0, 8)).toBe(1);
+    expect(shootoutTakerId(0, OUTFIELD - 1)).toBe(OUTFIELD);
+    expect(shootoutTakerId(0, OUTFIELD)).toBe(1);
     expect(shootoutTakerId(1, 0)).toBe(TEAM_SIZE + 1);
-    expect(shootoutTakerId(1, 7)).toBe(TEAM_SIZE + 8);
-    expect(shootoutTakerId(1, 8)).toBe(TEAM_SIZE + 1);
-    // Anti-coincidence: the eight ids of a team are all different and none is a keeper.
+    expect(shootoutTakerId(1, 9)).toBe(TEAM_SIZE + 10);
+    expect(shootoutTakerId(1, 10)).toBe(TEAM_SIZE + 1);
+    // Anti-coincidence: the ten ids of a team are all different and none is a keeper.
     const seen = new Set<number>();
     for (let taken = 0; taken < OUTFIELD; taken++) seen.add(shootoutTakerId(1, taken));
     expect(seen.size).toBe(OUTFIELD);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { PITCH, centerY, goalLineX, isInsideBigArea, isInsideSmallArea } from './pitch';
-import { FORMATIONS, TEAMS, type Formation, type Strategy } from './teams';
+import { FORMATIONS, OUTFIELD, STRATEGIES, TEAMS, TEAM_SIZE, type Formation, type Strategy } from './teams';
 import { dist } from './geometry';
 import { checkTeamInput, copyTeamInput, createTeamInput, type Axis, type TeamInput } from './input';
 import { HALF_STEPS, perStep, stepsFor } from './step';
@@ -109,19 +109,22 @@ describe('laneBlocked: a rival inside the corridor blocks, outside or beyond its
     const ps = createPlayers([F, F], PITCH);
     for (const p of ps) at(p, 50 + p.id * 10, 1250);
     // The lane is team 0's (attacking +x from (1000, 650)): the second argument is MY team, so
-    // the obstacles are the players of team 1 (ids 9-17). Pre-flight H1: never pass the rival's team.
-    at(ps[10], 1100, 640);          // 100 u along the lane, 10 u off it: blocks a radius of 60
+    // the obstacles are the players of team 1 (ids TEAM_SIZE..2 * TEAM_SIZE - 1). Pre-flight H1:
+    // never pass the rival's team. The id is written as an offset from TEAM_SIZE, because a bare
+    // literal quietly became one of OUR players when G15-16 grew the teams -- and an own player
+    // is not an obstacle, so every assertion below would have read `false`.
+    at(ps[TEAM_SIZE + 1], 1100, 640);          // 100 u along the lane, 10 u off it: blocks a radius of 60
     expect(laneBlocked(ps, 0, 1000, 650, 1, 0, 200, 60, 0)).toBe(true);
-    at(ps[10], 1100, 731);          // 81 u off the lane: outside a radius of 60
+    at(ps[TEAM_SIZE + 1], 1100, 731);          // 81 u off the lane: outside a radius of 60
     expect(laneBlocked(ps, 0, 1000, 650, 1, 0, 200, 60, 0)).toBe(false);
-    at(ps[10], 1237, 650);          // on the lane but 237 u along it: beyond a length of 200
+    at(ps[TEAM_SIZE + 1], 1237, 650);          // on the lane but 237 u along it: beyond a length of 200
     expect(laneBlocked(ps, 0, 1000, 650, 1, 0, 200, 60, 0)).toBe(false);
-    at(ps[10], 1100, 640); ps[10].downUntilStep = 50;
+    at(ps[TEAM_SIZE + 1], 1100, 640); ps[TEAM_SIZE + 1].downUntilStep = 50;
     expect(laneBlocked(ps, 0, 1000, 650, 1, 0, 200, 60, 20)).toBe(false);   // on the floor: not an obstacle
-    at(ps[10], 150, 1250);          // rival 10 back on the touchline (and up again: at() clears downUntilStep)
+    at(ps[TEAM_SIZE + 1], 150, 1250);          // the rival back on the touchline (and up again: at() clears downUntilStep)
     at(ps[3], 1100, 640);           // a TEAMMATE of team 0 on the lane is not a rival of team 0
     expect(laneBlocked(ps, 0, 1000, 650, 1, 0, 200, 60, 100)).toBe(false);
-    at(ps[10], 930, 650);           // behind the start: negative projection
+    at(ps[TEAM_SIZE + 1], 930, 650);           // behind the start: negative projection
     expect(laneBlocked(ps, 0, 1000, 650, 1, 0, 200, 60, 100)).toBe(false);
   });
 });
@@ -180,12 +183,12 @@ describe('positionTeam: anchor + drift + separation + bounded pursuit (spec "Los
   it('with possession, a mate far from its anchor wants to go there, shifted by the strategy (criterion 11 lives here)', () => {
     const w = world();
     givePossession(w.ball, w.players[5], 0);                 // team 0 has the ball; ball near (918, 650)
-    at(w.players[1], 100, 100);                              // slot 0 anchor: (440, 325) neutral
+    at(w.players[1], 100, 100);                              // far from slot 0's anchor, up and to the left
     const want = wantOf(w, 1, 'neutral', 5);
     expect(Math.sqrt(want.x * want.x + want.y * want.y)).toBeCloseTo(1, 10);   // far away: full speed
     expect(want.x).toBeGreaterThan(0);
     expect(want.y).toBeGreaterThan(0);
-    // attack shifts the anchor +240 u in x: the want turns flatter (more x per y)
+    // attack shifts the anchor STRATEGY_SHIFT * PITCH.width in x: the want turns flatter
     const atk = wantOf(w, 1, 'attack', 5);
     expect(atk.x / atk.y).toBeGreaterThan(want.x / want.y);
   });
@@ -195,10 +198,14 @@ describe('positionTeam: anchor + drift + separation + bounded pursuit (spec "Los
     w.players[5].x = 1400; w.players[5].y = 1000; w.players[5].facingX = 1; w.players[5].facingY = 0;
     w.ball.x = 1418; w.ball.y = 1000;                        // stickToOwner geometry, written explicitly
     // Isolate player 1: put every other outfield mate far away so separation adds nothing.
-    for (let i = 2; i <= 8; i++) at(w.players[i], 1900, 50 + i * 20);
-    const expectedX = 440 + DRIFT_LONG * (1418 - 440);     // 733.4
-    const expectedY = 325 + DRIFT_SHORT * (1000 - 325);    // 460
-    const p = at(w.players[1], 732, 459);                    // 1.7 u short of the drift target: one step arrives
+    for (let i = 2; i <= OUTFIELD; i++) at(w.players[i], 1900, 50 + i * 20);
+    // Player 1 is slot 0, so its anchor is that slot's fractions times the pitch -- written as
+    // the formula, never as the pair of numbers it gave on the 2000 x 1300 pitch.
+    const anchorX = F.slots[0].x * PITCH.width;
+    const anchorY = F.slots[0].y * PITCH.height;
+    const expectedX = anchorX + DRIFT_LONG * (w.ball.x - anchorX);
+    const expectedY = anchorY + DRIFT_SHORT * (w.ball.y - anchorY);
+    const p = at(w.players[1], expectedX - 1.2, expectedY - 1.2);   // 1.7 u short: one step arrives
     wantOf(w, 1, 'neutral', 5);
     const t = targetOf(p);
     // |want| < 1 here means "arrive this step": the want encodes the exact target.
@@ -213,14 +220,17 @@ describe('positionTeam: anchor + drift + separation + bounded pursuit (spec "Los
     givePossession(w.ball, w.players[5], 0);
     w.players[5].x = 1400; w.players[5].y = 1000; w.players[5].facingX = 1; w.players[5].facingY = 0;
     w.ball.x = 1418; w.ball.y = 1000;
-    for (let i = 3; i <= 8; i++) at(w.players[i], 1900, 50 + i * 20);   // far away: no separation from them
+    for (let i = 3; i <= OUTFIELD; i++) at(w.players[i], 1900, 50 + i * 20);   // far away: no separation from them
     const a = at(w.players[1], 700, 500);
     const b = at(w.players[2], 741, 500);                    // 41 u to the right of a
     wantOf(w, 1, 'neutral', 5);
-    // Anchor + drift, computed here from the rule: slots 0 and 1 share x = 0.22 (440 u).
-    const tx = 440 + DRIFT_LONG * (1418 - 440);
-    const tyA = 325 + DRIFT_SHORT * (1000 - 325);
-    const tyB = 650 + DRIFT_SHORT * (1000 - 650);
+    // Anchor + drift, computed here from the rule: slots 0 and 1 share the same x fraction, so
+    // the two targets differ only in y. Derived from the formation, not from the numbers the
+    // 3-3-2 gave on the old pitch.
+    const tx = F.slots[0].x * PITCH.width + DRIFT_LONG * (w.ball.x - F.slots[0].x * PITCH.width);
+    const tyA = F.slots[0].y * PITCH.height + DRIFT_SHORT * (w.ball.y - F.slots[0].y * PITCH.height);
+    const tyB = F.slots[1].y * PITCH.height + DRIFT_SHORT * (w.ball.y - F.slots[1].y * PITCH.height);
+    expect(F.slots[0].x).toBe(F.slots[1].x);                 // the premise of "they share tx"
     const push = SEPARATION_DIST - 41;                       // 19 u each, a to the left, b to the right
     const unit = (p: PlayerState, x: number, y: number) => { const d = dist(p.x, p.y, x, y); return { x: (x - p.x) / d, y: (y - p.y) / d }; };
     const ea = unit(a, tx - push, tyA);
@@ -239,37 +249,57 @@ describe('positionTeam: anchor + drift + separation + bounded pursuit (spec "Los
     // Distances to the ball, ascending: 1 (50 u, the controlled), 2 (80), 3 (134), 4 (255); the rest > 900.
     // Every pair is more than SEPARATION_DIST apart, so no push distorts the directions asserted below.
     at(w.players[1], 1300, 700); at(w.players[2], 1220, 650); at(w.players[3], 1180, 590); at(w.players[4], 1050, 700);
-    for (let i = 5; i <= 8; i++) at(w.players[i], 300, 100 + i * 100);
+    for (let i = 5; i <= OUTFIELD; i++) at(w.players[i], 300, 100 + i * 100);
     const expectWant = (p: PlayerState, ux: number, uy: number) => {
       expect(p.wantX).toBeCloseTo(ux, 3);
       expect(p.wantY).toBeCloseTo(uy, 3);
     };
+    // The three targets of the rule, written as the rule and not as the unit vectors they gave
+    // on the 2000 x 1300 pitch with the 3-3-2: the ball itself for a chaser, COVER_DIST from
+    // the ball towards our own goal MOUTH for the coverer, and anchor + drift for the rest.
+    const unitFrom = (p: PlayerState, x: number, y: number): { x: number; y: number } => {
+      const d = dist(p.x, p.y, x, y);
+      return { x: (x - p.x) / d, y: (y - p.y) / d };
+    };
+    const coverSpot = (): { x: number; y: number } => {
+      const gx = goalLineX(PITCH, 0);                        // our own goal line (team 0 attacks +x)
+      const d = dist(w.ball.x, w.ball.y, gx, CY);
+      return { x: w.ball.x + ((gx - w.ball.x) / d) * COVER_DIST, y: w.ball.y + ((CY - w.ball.y) / d) * COVER_DIST };
+    };
+    const anchorDrift = (slot: number, strategy: Strategy): { x: number; y: number } => {
+      const ax = (F.slots[slot].x + STRATEGIES[strategy]) * PITCH.width;
+      const ay = F.slots[slot].y * PITCH.height;
+      return { x: ax + DRIFT_LONG * (w.ball.x - ax), y: ay + DRIFT_SHORT * (w.ball.y - ay) };
+    };
+    const expectTarget = (p: PlayerState, t: { x: number; y: number }): void => {
+      const u = unitFrom(p, t.x, t.y);
+      expectWant(p, u.x, u.y);
+    };
     // neutral: 2 chase (1 = controlled, 2), 3 covers, 4 anchors
     positionTeam(w.players, w.ball, 0, F, 'neutral', 1, 1, PITCH, 0, w.scratch);
     expectWant(w.players[2], 1, 0);                          // straight at the ball
-    expectWant(w.players[3], 0, 1);                          // cover spot (1300 - COVER_DIST, 650) = (1180, 650): straight down
-    expectWant(w.players[4], -0.0963, -0.9954);              // slot 3 anchor (900, 325) + drift = (1020, 390)
+    expectTarget(w.players[3], coverSpot());                 // the cover spot, from (1180, 590)
+    expectTarget(w.players[4], anchorDrift(3, 'neutral'));   // slot 3's anchor + drift
     // attack: 3 chase, 4 covers
     positionTeam(w.players, w.ball, 0, F, 'attack', 1, 1, PITCH, 0, w.scratch);
-    expectWant(w.players[3], 0.8944, 0.4472);                // at the ball from (1180, 590)
-    expectWant(w.players[4], 0.9333, -0.359);                // cover spot from (1050, 700)
+    expectTarget(w.players[3], { x: w.ball.x, y: w.ball.y }); // at the ball from (1180, 590)
+    expectTarget(w.players[4], coverSpot());                  // cover spot from (1050, 700)
     // defend: only the controlled chases, 2 covers, 3 anchors
     positionTeam(w.players, w.ball, 0, F, 'defend', 1, 1, PITCH, 0, w.scratch);
-    expectWant(w.players[2], -1, 0);                         // cover spot from (1220, 650)
-    // Measured: the strategy shifts the anchor too (spec rule 1), so under defend slot 2 anchors at
-    // (200, 975), not at its neutral (440, 975); + drift = (530, 910), from (1180, 590).
-    expectWant(w.players[3], -0.8972, 0.4417);
+    expectTarget(w.players[2], coverSpot());                  // cover spot from (1220, 650)
+    // The strategy shifts the anchor too (spec rule 1), which is why anchorDrift takes it.
+    expectTarget(w.players[3], anchorDrift(2, 'defend'));
     expect(COVER_DIST).toBe(120);
     expect(CHASERS).toEqual({ attack: 3, neutral: 2, defend: 1 });
   });
   it('never writes the keeper, never writes the other team, never sets wantSprint', () => {
     const w = world();
     freeBall(w.ball, 1000, 650);
-    w.players[0].wantX = 0.5; w.players[10].wantX = -0.5;
+    w.players[0].wantX = 0.5; w.players[TEAM_SIZE + 1].wantX = -0.5;
     positionTeam(w.players, w.ball, 0, F, 'neutral', 1, 1, PITCH, 0, w.scratch);
     expect(w.players[0].wantX).toBe(0.5);
-    expect(w.players[10].wantX).toBe(-0.5);
-    for (let i = 1; i <= 8; i++) expect(w.players[i].wantSprint).toBe(false);
+    expect(w.players[TEAM_SIZE + 1].wantX).toBe(-0.5);
+    for (let i = 1; i <= OUTFIELD; i++) expect(w.players[i].wantSprint).toBe(false);
   });
 });
 
@@ -277,8 +307,8 @@ describe('keeperStep: on its line closing the angle, out inside the small area f
   const LINE_X = goalLineX(PITCH, 0) + GK_LINE_DIST;   // team 0 keeper (id 0), attacking +x, defends side 0
   it('a ball owned by a rival far up the pitch: the keeper stays on its line at the intersection ball->goal centre', () => {
     const w = world();
-    givePossession(w.ball, w.players[12], 0);
-    w.players[12].x = 600; w.players[12].y = 300; w.players[12].facingX = -1; w.players[12].facingY = 0;
+    givePossession(w.ball, w.players[TEAM_SIZE + 3], 0);
+    w.players[TEAM_SIZE + 3].x = 600; w.players[TEAM_SIZE + 3].y = 300; w.players[TEAM_SIZE + 3].facingX = -1; w.players[TEAM_SIZE + 3].facingY = 0;
     w.ball.x = 582; w.ball.y = 300;
     const gk = at(w.players[0], LINE_X, CY);
     keeperStep(gk, w.players, w.ball, 1, PITCH, 0);
@@ -292,20 +322,27 @@ describe('keeperStep: on its line closing the angle, out inside the small area f
   });
   it('a loose ball in the small area with no mate closer: the keeper goes for it', () => {
     const w = world();
-    freeBall(w.ball, 60, 700);                               // inside side-0 small area (x <= 105, |y - 650| <= 175)
-    expect(isInsideSmallArea(PITCH, 0, 60, 700)).toBe(true);
-    for (let i = 1; i <= 8; i++) at(w.players[i], 900, 100 + i * 100);
+    // BELOW centerY on purpose (+50), so "slides along the line TOWARDS it" has a sign to
+    // assert. Anchored to CY: G15-16 moved the centre of the pitch, and a literal y that used
+    // to be below it is now above it.
+    const BALL_X = 60;
+    const BALL_Y = CY + 50;
+    freeBall(w.ball, BALL_X, BALL_Y);                        // inside the side-0 small area
+    expect(isInsideSmallArea(PITCH, 0, BALL_X, BALL_Y)).toBe(true);
+    for (let i = 1; i <= OUTFIELD; i++) at(w.players[i], 900, 100 + i * 100);
     const gk = at(w.players[0], LINE_X, CY);
     keeperStep(gk, w.players, w.ball, 1, PITCH, 0);
     const len = Math.sqrt(gk.wantX ** 2 + gk.wantY ** 2);
-    expect(gk.wantX / len).toBeCloseTo((60 - LINE_X) / dist(LINE_X, CY, 60, 700), 6);
-    expect(gk.wantY / len).toBeCloseTo((700 - CY) / dist(LINE_X, CY, 60, 700), 6);
+    expect(gk.wantX / len).toBeCloseTo((BALL_X - LINE_X) / dist(LINE_X, CY, BALL_X, BALL_Y), 6);
+    expect(gk.wantY / len).toBeCloseTo((BALL_Y - CY) / dist(LINE_X, CY, BALL_X, BALL_Y), 6);
   });
-  it('the same loose ball just OUTSIDE the small area (x = 122): the keeper stays on its line', () => {
+  it('the same loose ball just OUTSIDE the small area (smallAreaDepth + 6.5): the keeper stays on its line', () => {
     const w = world();
-    freeBall(w.ball, 122, 700);
-    expect(isInsideSmallArea(PITCH, 0, 122, 700)).toBe(false);
-    for (let i = 1; i <= 8; i++) at(w.players[i], 900, 100 + i * 100);
+    const BALL_X = PITCH.smallAreaDepth + 6.5;               // 6.5 u past the line, wherever the line is
+    const BALL_Y = CY + 50;
+    freeBall(w.ball, BALL_X, BALL_Y);
+    expect(isInsideSmallArea(PITCH, 0, BALL_X, BALL_Y)).toBe(false);
+    for (let i = 1; i <= OUTFIELD; i++) at(w.players[i], 900, 100 + i * 100);
     const gk = at(w.players[0], LINE_X, CY);
     keeperStep(gk, w.players, w.ball, 1, PITCH, 0);
     expect(gk.wantX).toBe(0);                                // never leaves the line for it
@@ -313,8 +350,8 @@ describe('keeperStep: on its line closing the angle, out inside the small area f
   });
   it('a loose ball in the small area with a mate closer: the keeper leaves it and holds the line', () => {
     const w = world();
-    freeBall(w.ball, 60, 700);
-    at(w.players[3], 75, 720);                               // 25 u from the ball; the keeper is ~63 u away
+    freeBall(w.ball, 60, CY + 50);
+    at(w.players[3], 75, CY + 70);                           // 25 u from the ball; the keeper is ~63 u away
     const gk = at(w.players[0], LINE_X, CY);
     keeperStep(gk, w.players, w.ball, 1, PITCH, 0);
     expect(gk.wantX).toBe(0);
@@ -334,7 +371,7 @@ describe('keeperStep: on its line closing the angle, out inside the small area f
     freeBall(w.ball, 60, 5);                                 // x inside the small-area depth, y far outside its width
     expect(isInsideSmallArea(PITCH, 0, 60, 5)).toBe(false);  // not a loose ball the keeper may go for
     // intersection: t = (25 - 60)/(0 - 60) = 0.583 -> y = 5 + 0.583 * 645 = 381 < 475 = CY - 175: clamped to 475
-    for (let i = 1; i <= 8; i++) at(w.players[i], 900, 100 + i * 100);
+    for (let i = 1; i <= OUTFIELD; i++) at(w.players[i], 900, 100 + i * 100);
     const gk = at(w.players[0], LINE_X, CY - PITCH.smallAreaWidth / 2);   // already at the clamp
     keeperStep(gk, w.players, w.ball, 1, PITCH, 0);
     expect([gk.wantX, gk.wantY]).toEqual([0, 0]);
@@ -345,11 +382,11 @@ describe('keeperStep G12-3', () => {
   const LINE_X = goalLineX(PITCH, 0) + GK_LINE_DIST;   // team 0 keeper (id 0), attacking +x, defends side 0
   it('rival owner inside small area, no mate closer: the keeper comes out for it', () => {
     const w = world();
-    givePossession(w.ball, w.players[10], 0);                // rival (team 1) outfield player
-    w.players[10].x = 60; w.players[10].y = 700;
+    givePossession(w.ball, w.players[TEAM_SIZE + 1], 0);                // rival (team 1) outfield player
+    w.players[TEAM_SIZE + 1].x = 60; w.players[TEAM_SIZE + 1].y = 700;
     w.ball.x = 60; w.ball.y = 700;
     expect(isInsideSmallArea(PITCH, 0, 60, 700)).toBe(true);
-    for (let i = 1; i <= 8; i++) at(w.players[i], 900, 100 + i * 100);   // own mates, all far away
+    for (let i = 1; i <= OUTFIELD; i++) at(w.players[i], 900, 100 + i * 100);   // own mates, all far away
     const gk = at(w.players[0], LINE_X, CY);
     keeperStep(gk, w.players, w.ball, 1, PITCH, 0);
     const len = Math.sqrt(gk.wantX ** 2 + gk.wantY ** 2);
@@ -358,8 +395,8 @@ describe('keeperStep G12-3', () => {
   });
   it('rival owner inside small area, a mate closer: the keeper stays on the line', () => {
     const w = world();
-    givePossession(w.ball, w.players[10], 0);
-    w.players[10].x = 60; w.players[10].y = 700;
+    givePossession(w.ball, w.players[TEAM_SIZE + 1], 0);
+    w.players[TEAM_SIZE + 1].x = 60; w.players[TEAM_SIZE + 1].y = 700;
     w.ball.x = 60; w.ball.y = 700;
     at(w.players[3], 75, 720);                               // own mate, closer to the ball than the keeper
     const gk = at(w.players[0], LINE_X, CY);
@@ -368,12 +405,12 @@ describe('keeperStep G12-3', () => {
   });
   it('rival owner inside the big area (outside the small area), keeper is the closest of his team: comes out', () => {
     const w = world();
-    givePossession(w.ball, w.players[10], 0);
-    w.players[10].x = 200; w.players[10].y = 700;
+    givePossession(w.ball, w.players[TEAM_SIZE + 1], 0);
+    w.players[TEAM_SIZE + 1].x = 200; w.players[TEAM_SIZE + 1].y = 700;
     w.ball.x = 200; w.ball.y = 700;
     expect(isInsideSmallArea(PITCH, 0, 200, 700)).toBe(false);
     expect(isInsideBigArea(PITCH, 0, 200, 700)).toBe(true);
-    for (let i = 1; i <= 8; i++) at(w.players[i], 900, 100 + i * 100);
+    for (let i = 1; i <= OUTFIELD; i++) at(w.players[i], 900, 100 + i * 100);
     const gk = at(w.players[0], LINE_X, CY);
     keeperStep(gk, w.players, w.ball, 1, PITCH, 0);
     const len = Math.sqrt(gk.wantX ** 2 + gk.wantY ** 2);
@@ -382,8 +419,8 @@ describe('keeperStep G12-3', () => {
   });
   it('rival owner inside the big area, an own outfield player closer: the keeper stays on the line', () => {
     const w = world();
-    givePossession(w.ball, w.players[10], 0);
-    w.players[10].x = 200; w.players[10].y = 700;
+    givePossession(w.ball, w.players[TEAM_SIZE + 1], 0);
+    w.players[TEAM_SIZE + 1].x = 200; w.players[TEAM_SIZE + 1].y = 700;
     w.ball.x = 200; w.ball.y = 700;
     at(w.players[3], 210, 710);                              // own mate, much closer to the ball than the keeper
     const gk = at(w.players[0], LINE_X, CY);
@@ -395,18 +432,18 @@ describe('keeperStep G12-3', () => {
     freeBall(w.ball, 200, 700);
     expect(isInsideSmallArea(PITCH, 0, 200, 700)).toBe(false);
     expect(isInsideBigArea(PITCH, 0, 200, 700)).toBe(true);
-    for (let i = 1; i <= 8; i++) at(w.players[i], 900, 100 + i * 100);
+    for (let i = 1; i <= OUTFIELD; i++) at(w.players[i], 900, 100 + i * 100);
     const gk = at(w.players[0], LINE_X, CY);
     keeperStep(gk, w.players, w.ball, 1, PITCH, 0);
     expect(gk.wantX).toBe(0);
   });
   it('rival owner outside the big area: the keeper stays on the line', () => {
     const w = world();
-    givePossession(w.ball, w.players[10], 0);
-    w.players[10].x = 500; w.players[10].y = 700;
+    givePossession(w.ball, w.players[TEAM_SIZE + 1], 0);
+    w.players[TEAM_SIZE + 1].x = 500; w.players[TEAM_SIZE + 1].y = 700;
     w.ball.x = 500; w.ball.y = 700;
     expect(isInsideBigArea(PITCH, 0, 500, 700)).toBe(false);
-    for (let i = 1; i <= 8; i++) at(w.players[i], 900, 100 + i * 100);
+    for (let i = 1; i <= OUTFIELD; i++) at(w.players[i], 900, 100 + i * 100);
     const gk = at(w.players[0], LINE_X, CY);
     keeperStep(gk, w.players, w.ball, 1, PITCH, 0);
     expect(gk.wantX).toBe(0);
@@ -414,10 +451,10 @@ describe('keeperStep G12-3', () => {
   it('a teammate owns the ball inside the small area, keeper closest of his team to it: never presses his own mate', () => {
     const w = world();
     givePossession(w.ball, w.players[3], 0);                 // own team (team 0)
-    w.players[3].x = 48; w.players[3].y = 655;               // teammate owner, farther from the ball than the keeper
-    w.ball.x = 30; w.ball.y = 655;
-    expect(isInsideSmallArea(PITCH, 0, 30, 655)).toBe(true);
-    for (let i = 1; i <= 8; i++) { if (i !== 3) at(w.players[i], 900, 100 + i * 100); }   // other mates, all far away
+    w.players[3].x = 48; w.players[3].y = CY + 5;            // teammate owner, farther from the ball than the keeper
+    w.ball.x = 30; w.ball.y = CY + 5;
+    expect(isInsideSmallArea(PITCH, 0, 30, CY + 5)).toBe(true);
+    for (let i = 1; i <= OUTFIELD; i++) { if (i !== 3) at(w.players[i], 900, 100 + i * 100); }   // other mates, all far away
     const gk = at(w.players[0], LINE_X, CY);
     // Negative control (fix-B-findings.md #1): the keeper, not the owner, is the
     // closest of his team to the ball, so `mateCloserToBall` alone would let him
@@ -431,16 +468,16 @@ describe('keeperStep G12-3', () => {
 });
 
 describe('keeperCatch: one roll per approach, penalised by shot charge, never on a ball already out', () => {
-  function approach(vx: number, gkX = 1975): { w: World; gk: PlayerState; out: ActionEvent; rolled: [boolean, boolean] } {
+  function approach(vx: number, gkX = PITCH.width - GK_LINE_DIST): { w: World; gk: PlayerState; out: ActionEvent; rolled: [boolean, boolean] } {
     const w = world();
-    const gk = at(w.players[9], gkX, CY);                    // team 1 keeper on its line, side 1
+    const gk = at(w.players[TEAM_SIZE], gkX, CY);                    // team 1 keeper on its line, side 1
     freeBall(w.ball, gkX - 31, CY, vx, 0);                   // 31 u away, inside GK_CATCH_RADIUS (40), off the boundary
     return { w, gk, out: createActionEvent(), rolled: [false, false] };
   }
   it('catches when rng() < catchChance: possession, event gk-catch, returns true, and marks the roll', () => {
     const { w, gk, out, rolled } = approach(700);
     expect(keeperCatch(gk, w.ball, 0.9, rolled, fixedRng([0.7]), PITCH, 0, out)).toBe(true);
-    expect(w.ball.owner).toBe(9);
+    expect(w.ball.owner).toBe(TEAM_SIZE);
     expect(out.kind).toBe('gk-catch');
     expect(rolled[1]).toBe(true);
   });
@@ -479,7 +516,7 @@ describe('keeperCatch: one roll per approach, penalised by shot charge, never on
   it('never rolls for its own kick inside the kick lock (D4: the throw must leave, not bounce back into the gloves)', () => {
     const { w, gk, out, rolled } = approach(-700);
     w.ball.x = gk.x - 9;                                     // one step after a throw: 9 u out, well inside the radius
-    w.ball.kickerId = 9; w.ball.kickLockUntilStep = KICK_LOCK_STEPS;   // what kickBall wrote at step 0 (15 steps)
+    w.ball.kickerId = TEAM_SIZE; w.ball.kickLockUntilStep = KICK_LOCK_STEPS;   // what kickBall wrote at step 0 (15 steps)
     let calls = 0;
     const rng = () => { calls++; return 0.1; };
     expect(keeperCatch(gk, w.ball, 0.9, rolled, rng, PITCH, 3, out)).toBe(false);
@@ -616,11 +653,11 @@ describe('decideTeamInput with the ball: the three-branch tree (spec "La CPU con
   it('does not shoot with a rival on the line inside its first 200 u, and does shoot with the rival 250 u out', () => {
     const blocked = scenario();
     at(blocked.me, PITCH.width - 300, CY, 1, 0); blocked.m.ball.x = blocked.me.x + 18;
-    at(blocked.m.players[12], blocked.me.x + 120, CY + 30);   // 120 u along, 30 u off: inside radius 60
+    at(blocked.m.players[TEAM_SIZE + 3], blocked.me.x + 120, CY + 30);   // 120 u along, 30 u off: inside radius 60
     expect(decide(blocked).a).toBe('up');
     const open = scenario();
     at(open.me, PITCH.width - 300, CY, 1, 0); open.m.ball.x = open.me.x + 18;
-    at(open.m.players[12], open.me.x + 250, CY + 30);         // beyond SHOT_LANE_LENGTH
+    at(open.m.players[TEAM_SIZE + 3], open.me.x + 250, CY + 30);         // beyond SHOT_LANE_LENGTH
     expect(decide(open).a).toBe('pressed');
   });
   it('shoots on the diagonal when that ray enters the goal and the straight one does not', () => {
@@ -633,7 +670,7 @@ describe('decideTeamInput with the ball: the three-branch tree (spec "La CPU con
   });
   it('2. under pressure with a mate in a clear lane, passes: short to a mate 200 u away, long to one 400 u away', () => {
     const short = scenario();
-    at(short.m.players[12], short.me.x - 60, CY);             // rival 60 u behind: pressure, not on the lane
+    at(short.m.players[TEAM_SIZE + 3], short.me.x - 60, CY);             // rival 60 u behind: pressure, not on the lane
     at(short.m.players[6], short.me.x + 200, CY);             // mate straight ahead, more advanced
     // A mate exactly on the +x axis is by construction on the EDGE of both diagonal cones too
     // (dot = INV_SQRT2 with (1, +-1), and the assist uses `< INV_SQRT2` to exclude): three
@@ -642,7 +679,7 @@ describe('decideTeamInput with the ball: the three-branch tree (spec "La CPU con
     expect(buttonTrace(short, 'b')).toEqual(['pressed', 'released']);
     expect([short.out.dx, short.out.dy]).toEqual([1, 0]);
     const long = scenario();
-    at(long.m.players[12], long.me.x - 60, CY);
+    at(long.m.players[TEAM_SIZE + 3], long.me.x - 60, CY);
     at(long.m.players[6], long.me.x + 400, CY);
     const trace = buttonTrace(long, 'b');
     expect(trace[0]).toBe('pressed');
@@ -650,9 +687,9 @@ describe('decideTeamInput with the ball: the three-branch tree (spec "La CPU con
   });
   it('2b. under pressure with the only mate lane blocked, carries AWAY from the nearest rival', () => {
     const s = scenario();
-    at(s.m.players[12], s.me.x - 40, CY - 60);                // rival 72 u away, behind and above
+    at(s.m.players[TEAM_SIZE + 3], s.me.x - 40, CY - 60);                // rival 72 u away, behind and above
     at(s.m.players[6], s.me.x + 200, CY);
-    at(s.m.players[13], s.me.x + 100, CY + 10);               // on the pass lane, 10 u off it
+    at(s.m.players[TEAM_SIZE + 4], s.me.x + 100, CY + 10);               // on the pass lane, 10 u off it
     const out = decide(s);
     expect(out.b).toBe('up');
     expect(out.a).toBe('up');
@@ -669,7 +706,7 @@ describe('decideTeamInput with the ball: the three-branch tree (spec "La CPU con
     expect(out.dx).toBe(1);
     expect(out.dy).toBe(0);                                   // goal centre is 10.6 deg below-right: inside the (1, 0) sector
     expect(out.c).toBe('held');
-    at(s.m.players[12], s.me.x + 90, s.me.y + 40);            // 98 u ahead (no pressure), 40 u off the track (< 60): no sprint
+    at(s.m.players[TEAM_SIZE + 3], s.me.x + 90, s.me.y + 40);            // 98 u ahead (no pressure), 40 u off the track (< 60): no sprint
     s.state.plan = 'none';
     const again = decide(s);
     expect(again.c).toBe('up');
@@ -700,8 +737,8 @@ describe('decideTeamInput with the ball: the three-branch tree (spec "La CPU con
 describe('decideTeamInput without the ball: chase every step, act at the gate', () => {
   it('runs at the ball (quantized, dead zone) and sprints while it is far', () => {
     const s = scenario();
-    givePossession(s.m.ball, s.m.players[12], 0);
-    at(s.m.players[12], 1400, CY + 300, -1, 0);
+    givePossession(s.m.ball, s.m.players[TEAM_SIZE + 3], 0);
+    at(s.m.players[TEAM_SIZE + 3], 1400, CY + 300, -1, 0);
     s.m.ball.x = 1382; s.m.ball.y = CY + 300;
     const out = decide(s);
     expect([out.dx, out.dy]).toEqual([1, 1]);
@@ -709,25 +746,25 @@ describe('decideTeamInput without the ball: chase every step, act at the gate', 
   });
   it('steals at < STEAL_RANGE (B pressed), slides at < TACKLE_DIST from the FRONT when the roll passes tackleChance, never from behind', () => {
     const steal = scenario();
-    const owner = at(steal.m.players[12], 1020, CY, -1, 0);   // faces -x, towards me: I am in front
+    const owner = at(steal.m.players[TEAM_SIZE + 3], 1020, CY, -1, 0);   // faces -x, towards me: I am in front
     givePossession(steal.m.ball, owner, 0);
     expect(decide(steal).b).toBe('pressed');
     const slide = scenario();
-    const o2 = at(slide.m.players[12], 1060, CY, -1, 0);      // 60 u, facing me
+    const o2 = at(slide.m.players[TEAM_SIZE + 3], 1060, CY, -1, 0);      // 60 u, facing me
     givePossession(slide.m.ball, o2, 0);
     expect(decide(slide, fixedRng([0.1])).a).toBe('pressed');  // 0.1 < tackleChance(8) = 0.77
     const shy = scenario();
-    const o3 = at(shy.m.players[12], 1060, CY, -1, 0);
+    const o3 = at(shy.m.players[TEAM_SIZE + 3], 1060, CY, -1, 0);
     givePossession(shy.m.ball, o3, 0);
     expect(decide(shy, fixedRng([0.9])).a).toBe('up');          // 0.9 >= 0.77: keeps chasing
     const behind = scenario();
-    const o4 = at(behind.m.players[12], 1060, CY, 1, 0);        // faces away: I am behind him
+    const o4 = at(behind.m.players[TEAM_SIZE + 3], 1060, CY, 1, 0);        // faces away: I am behind him
     givePossession(behind.m.ball, o4, 0);
     expect(decide(behind, fixedRng([0.1])).a).toBe('up');
   });
   it('the defensive roll consumes the rng only when a slide is actually considered', () => {
     const s = scenario();
-    const owner = at(s.m.players[12], 1300, CY, -1, 0);       // 300 u away: nothing to consider
+    const owner = at(s.m.players[TEAM_SIZE + 3], 1300, CY, -1, 0);       // 300 u away: nothing to consider
     givePossession(s.m.ball, owner, 0);
     let calls = 0;
     decideTeamInput(s.m, 0, s.m.profiles[0], s.state, () => { calls++; return 0; }, s.out);
@@ -824,7 +861,7 @@ const CPU_CAP = 4 * HALF_STEPS;
 
 // Team t defends side (attackDir === 1 ? 0 : 1); its keeper's line x is GK_LINE_DIST off that goal line.
 function keeperLineDist(m: MatchState, t: 0 | 1): number {
-  const gk = m.players[t * 9];
+  const gk = m.players[t * TEAM_SIZE];
   const side = m.attackDir[t] === 1 ? 0 : 1;
   const lineX = goalLineX(PITCH, side) + m.attackDir[t] * GK_LINE_DIST;
   return Math.abs(gk.x - lineX);
@@ -837,7 +874,7 @@ function keeperLineDist(m: MatchState, t: 0 | 1): number {
 // or rival-owned, no closer mate) or big area (rival-owned one-on-one, no closer
 // own outfield player).
 function keeperWouldPressG12_3(m: MatchState, t: 0 | 1): boolean {
-  const gk = m.players[t * 9];
+  const gk = m.players[t * TEAM_SIZE];
   const side = m.attackDir[t] === 1 ? 0 : 1;
   const { ball, players, stepCount } = m;
   const ownerTeam = ball.owner === null ? null : players[ball.owner].team;
@@ -924,7 +961,7 @@ function playCpuMatch(seed: number, formationTable: readonly Formation[], fi: re
       const off = keeperLineDist(match, t);
       if (open && prevOpen && off > prevLine[t] + 1e-9) {
         stats.keeperLeftLine++;
-        const gk = match.players[t * 9];
+        const gk = match.players[t * TEAM_SIZE];
         const side = match.attackDir[t] === 1 ? 0 : 1;
         if (!isInsideSmallArea(PITCH, side, gk.x, gk.y)) {
           stats.keeperLeftLineOutsideSmallArea++;
@@ -993,15 +1030,24 @@ describe('CPU vs CPU: a recorded, deterministic full match that exercises the wh
   });
   it('(c) the keepers never left their box (G12-3: off-line moves can now also be a big-area press)', () => {
     expect(game.stats.keeperOutsideBox).toBe(0);
-    // G12-3 (re-recorded, old value 0): the keeper now legitimately leaves the small
-    // area to press a rival one-on-one inside the big area; the invariant that matters
-    // is keeperOutsideBox above, asserted unchanged at 0.
-    expect(game.stats.keeperLeftLineOutsideSmallArea).toBe(69);
-    // fix-B-findings.md #2: the successor structural property -- every one of those
-    // 69 big-area off-line moves has an independently-recomputed G12-3 press reason.
+    // G12-3: the keeper legitimately leaves the small area to press a rival one-on-one
+    // inside the big area; the invariant that matters is keeperOutsideBox above, at 0.
+    // fix-B-findings.md #2: the successor structural property -- every big-area off-line
+    // move has an independently-recomputed G12-3 press reason.
     expect(game.stats.keeperLeftLineWithoutPressReason).toBe(0);
     // keeperLeftLine is reported, not asserted: whether a loose ball reaches a small
     // area in this seed is a measurement (probe P3 of the closing checks it over 20 seeds).
+    // The COUNT of big-area off-line moves is a measurement too, so it lives on its own
+    // in the `it` below -- the two structural zeros above stay live for Tasks 2-8.
+  });
+  // PENDING_REBASELINE (Task V15-4-9): eleven a side + a 10 % bigger pitch with x1.1
+  // areas move every measured count of this recording. ONLY the measured count is here
+  // (review-1b fix round 1): the structural zeros stay live in the `it` above, and in
+  // engine-invariants.test.ts since Task V15-4-1a. `game` is the describe-level recording,
+  // so un-skipping this replays nothing.
+  it.skip('(c, measured) how many times the keepers left their line outside the small area (G12-3 presses)', () => {
+    // G12-3 (re-recorded, old value 0).
+    expect(game.stats.keeperLeftLineOutsideSmallArea).toBe(69);
   });
   it('(e) the same seed replays to the same score and the same final positions; a different seed does not', () => {
     const again = playCpuMatch(SEED, FORMATIONS, [0, 0]);
@@ -1036,21 +1082,25 @@ describe('CPU vs CPU: a recorded, deterministic full match that exercises the wh
   });
 });
 
-describe('CPU vs CPU with every published formation (Task 7): the AI works with all three, not only the 3-3-2', () => {
+describe('CPU vs CPU with every published formation (Task 7): the AI works with all three, not only the 4-4-2', () => {
   const PAIRS: readonly (readonly [number, number])[] = [[1, 1], [2, 2], [0, 2], [1, 0]];
-  // Per-pair counts for seed 31 (measured once, G12-3 probe): only 3-2-3 vs 3-2-3 and
-  // 3-2-3 vs 3-3-2 ever put a rival one-on-one inside this match's big area; the other
-  // two pairs never do, so their count is still the pre-G12-3 value of 0.
+  // Per-pair counts for seed 31 (measured once on the nine-a-side engine, G12-3 probe):
+  // only OFENSIVA vs OFENSIVA and OFENSIVA vs NORMAL ever put a rival one-on-one inside
+  // this match's big area; the other two pairs never did, so their count was still the
+  // pre-G12-3 value of 0. The PAIRS are formation INDICES, so they still name the same
+  // three line-ups after G15-16 replaced the shapes -- but every count moved, which is
+  // what the mark below is about.
   const EXPECTED_OUTSIDE_SMALL_AREA: Record<string, number> = { '1-1': 19, '1-0': 36 };
   for (const pair of PAIRS) {
+    // Every assertion here is structural or a floor, and stays live for Tasks 2-8: this is
+    // the ONLY place the suite plays each formation pair (engine-invariants.test.ts runs its
+    // own seeds with one formation). The measured per-pair count lives in the `it.skip`
+    // after the loop (review-1b fix round 1).
     it(`${FORMATIONS[pair[0]].id} vs ${FORMATIONS[pair[1]].id}: ends, plays the whole game, replays identically`, () => {
       const g = playCpuMatch(31, FORMATIONS, pair);
       expect(g.match.phase).toBe('over');
       expect(g.stats.invalid).toBe(0);
       expect(g.stats.keeperOutsideBox).toBe(0);
-      // G12-3 (re-recorded, old value 0 for every pair): the keeper now legitimately
-      // presses a rival one-on-one inside the big area, outside the small area.
-      expect(g.stats.keeperLeftLineOutsideSmallArea).toBe(EXPECTED_OUTSIDE_SMALL_AREA[`${pair[0]}-${pair[1]}`] ?? 0);
       expect(g.stats.shots + g.stats.shortPasses + g.stats.longPasses).toBeGreaterThanOrEqual(5);
       // The brief names these `tackles`/`steals`; CpuStats (Task 6b) calls the
       // outcome counters `tacklesWon`/`stealsWon` -- attempts are not counted at all.
@@ -1059,10 +1109,23 @@ describe('CPU vs CPU with every published formation (Task 7): the AI works with 
       expect(sameFinal(g.match, replay(31, FORMATIONS, g.recorded))).toBe(true);
     });
   }
+  // PENDING_REBASELINE (Task V15-4-9): eleven a side + a 10 % bigger pitch with x1.1
+  // areas move EXPECTED_OUTSIDE_SMALL_AREA for every pair. ONLY the measured counts are
+  // here (review-1b fix round 1): 'over', invalid 0, keeperOutsideBox 0 and the replay stay
+  // live per pair in the loop above. It replays the four matches itself, so it depends on
+  // no other test -- and costs nothing while it is skipped.
+  it.skip('the per-pair count of G12-3 presses outside the small area (seed 31)', () => {
+    for (const pair of PAIRS) {
+      const g = playCpuMatch(31, FORMATIONS, pair);
+      // G12-3 (re-recorded, old value 0 for every pair): the keeper now legitimately
+      // presses a rival one-on-one inside the big area, outside the small area.
+      expect(g.stats.keeperLeftLineOutsideSmallArea, `pair ${pair[0]}-${pair[1]}`).toBe(EXPECTED_OUTSIDE_SMALL_AREA[`${pair[0]}-${pair[1]}`] ?? 0);
+    }
+  });
 });
 
-describe('criterion 11 with the real formations: switching 3-3-2 → 4-3-1 mid-play moves the changed slots at once', () => {
-  it('slot 7 (a 3-3-2 forward at 0.7) becomes a 4-3-1 forward at 0.68: it walks back on the very next step', () => {
+describe('criterion 11 with the real formations: switching 4-4-2 → 5-3-2 mid-play moves the changed slots at once', () => {
+  it('slot 7 (a 4-4-2 midfielder at 0.45) becomes a 5-3-2 midfielder at 0.44: it walks back on the very next step', () => {
     const m = createMatch([TEAMS[0], TEAMS[1]], FORMATIONS, PITCH, [profileFor(TEAMS[0], 5), profileFor(TEAMS[1], 5)]);
     resumePlay(m);
     const rng = createRng(1);
@@ -1074,7 +1137,12 @@ describe('criterion 11 with the real formations: switching 3-3-2 → 4-3-1 mid-p
     stepMatch(m, idle, rng);
     expect(m.formationIndex[0]).toBe(2);
     expect(fwd.x).not.toBe(before);                // moved this very step (the direction depends on the drift; the move does not)
-    expect(m.players[8].role).toBe('fwd');         // roles are fixed at creation (v1: slots keep their player)
+    // Slot 7 is a MIDFIELDER in the 4-4-2 of G15-16 (it was the second forward of the 3-3-2),
+    // and roles are fixed at creation (v1: slots keep their player), so it stays a midfielder
+    // across the switch even though the 5-3-2 puts that slot somewhere else.
+    expect(m.players[8].role).toBe('mid');
+    expect(F.slots[7].role).toBe('mid');
+    expect(FORMATIONS[2].slots[7].role).toBe('mid');
   });
 });
 

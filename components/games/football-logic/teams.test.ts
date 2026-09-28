@@ -7,15 +7,16 @@ import { checkBank, checkFormation, checkFormations, checkGoalkeepersInBox, chec
 import { PITCH } from './pitch';
 import { createPlayers, placeByFormation } from './players';
 
-// The stage-A 3-3-2, byte for byte: every test the final review lists as coupled
-// to this geometry (N1 clock traces, takerId 5, KICK_TARGET_ID 7, ...) depends on
-// it staying exactly here, at index 0.
-const STAGE_A_332: Formation = {
-  id: '3-3-2',
+// The published 4-4-2, byte for byte: several tests are coupled to the geometry of
+// index 0 (takerId, KICK_TARGET_ID, the camera traces), so it lives here as a fixture
+// and the test below is what notices if somebody nudges it. Replaces the stage-A
+// 3-3-2 fixture, which V15-4 retired with the nine-a-side engine.
+const PUBLISHED_442: Formation = {
+  id: '4-4-2',
   name: 'NORMAL',
   slots: [
-    { role: 'def', x: 0.22, y: 0.25 }, { role: 'def', x: 0.22, y: 0.5 }, { role: 'def', x: 0.22, y: 0.75 },
-    { role: 'mid', x: 0.45, y: 0.25 }, { role: 'mid', x: 0.45, y: 0.5 }, { role: 'mid', x: 0.45, y: 0.75 },
+    { role: 'def', x: 0.2, y: 0.15 }, { role: 'def', x: 0.2, y: 0.38 }, { role: 'def', x: 0.2, y: 0.62 }, { role: 'def', x: 0.2, y: 0.85 },
+    { role: 'mid', x: 0.45, y: 0.15 }, { role: 'mid', x: 0.45, y: 0.38 }, { role: 'mid', x: 0.45, y: 0.62 }, { role: 'mid', x: 0.45, y: 0.85 },
     { role: 'fwd', x: 0.7, y: 0.35 }, { role: 'fwd', x: 0.7, y: 0.65 },
   ],
 };
@@ -65,15 +66,19 @@ describe('the three formations', () => {
     expect(FORMATIONS).toHaveLength(FORMATION_COUNT);
     for (const f of FORMATIONS) expect({ id: f.id, problems: checkFormation(f) }).toEqual({ id: f.id, problems: [] });
   });
-  it('are the 3-3-2 NORMAL, 3-2-3 OFENSIVA and 4-3-1 DEFENSIVA of the spec, in that order, with matching slot counts', () => {
+  // G15-16: the three line-ups of the v1.5, with the SAME keys 1/2/3 and the same
+  // three names. The ids are derived from the slots, so checkFormation already
+  // guarantees the name matches the shape -- these are the SHAPES themselves.
+  it('are the 4-4-2 NORMAL, 4-3-3 OFENSIVA and 5-3-2 DEFENSIVA of the spec, in that order, with matching slot counts', () => {
     expect(FORMATIONS.map((f) => [f.id, f.name, ...slotCounts(f)])).toEqual([
-      ['3-3-2', 'NORMAL', 3, 3, 2],
-      ['3-2-3', 'OFENSIVA', 3, 2, 3],
-      ['4-3-1', 'DEFENSIVA', 4, 3, 1],
+      ['4-4-2', 'NORMAL', 4, 4, 2],
+      ['4-3-3', 'OFENSIVA', 4, 3, 3],
+      ['5-3-2', 'DEFENSIVA', 5, 3, 2],
     ]);
+    for (const f of FORMATIONS) expect(f.slots).toHaveLength(OUTFIELD);
   });
-  it('the 3-3-2 is the stage-A one, byte for byte, at index 0', () => {
-    expect(FORMATIONS[0]).toEqual(STAGE_A_332);
+  it('the 4-4-2 is the published one, byte for byte, at index 0', () => {
+    expect(FORMATIONS[0]).toEqual(PUBLISHED_442);
   });
   it('every slot of every formation survives both strategy shifts inside the pitch', () => {
     for (const f of FORMATIONS) {
@@ -85,9 +90,9 @@ describe('the three formations', () => {
       }
     }
   });
-  it('team size is nine: eight outfield plus the goalkeeper; strategies shift by ±STRATEGY_SHIFT', () => {
+  it('team size is eleven: ten outfield plus the goalkeeper; strategies shift by ±STRATEGY_SHIFT', () => {
     expect(TEAM_SIZE).toBe(OUTFIELD + 1);
-    expect(OUTFIELD).toBe(8);
+    expect(OUTFIELD).toBe(10);            // G15-16: eleven a side, ten outfield
     expect(STRATEGIES.attack).toBe(STRATEGY_SHIFT);
     expect(STRATEGIES.defend).toBe(-STRATEGY_SHIFT);
     expect(STRATEGIES.neutral).toBe(0);

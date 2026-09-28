@@ -14,17 +14,27 @@ export type PitchDef = {
 };
 
 // World units: a real 105 x 68 m pitch at ~19 u/m.
+//
+// G15-16 (v1.5, V15-4): ~10 % bigger, so eleven a side is not a crowd. Both axes scale
+// by exactly 1.1, which keeps the aspect ratio (and therefore minimap.ts's 200 x 130
+// and flow-layout.ts's previews) EXACT without touching those files.
+//
+// Paco, 24-sep: the AREAS and the CENTRE CIRCLE scale with the pitch, in proportion,
+// and so does the penalty spot, which is big-area geometry (checkPitch requires it
+// inside the big area and outside the small one). The GOAL does NOT: goalWidth and
+// crossbarHeight stay exactly as they are, because they are what decides how many
+// goals go in and they are balanced against catchChance and SHOT_POST_MARGIN.
 export const PITCH: PitchDef = {
-  width: 2000,
-  height: 1300,
-  goalWidth: 150,
-  crossbarHeight: 50,
-  bigAreaDepth: 320,
-  bigAreaWidth: 770,
-  smallAreaDepth: 105,
-  smallAreaWidth: 350,
-  penaltySpotDist: 210,
-  centerCircleRadius: 175,
+  width: 2200,               // 2000 * 1.1
+  height: 1430,              // 1300 * 1.1
+  goalWidth: 150,            // NOT scaled
+  crossbarHeight: 50,        // NOT scaled
+  bigAreaDepth: 352,         // 320 * 1.1
+  bigAreaWidth: 847,         // 770 * 1.1
+  smallAreaDepth: 115.5,     // 105 * 1.1
+  smallAreaWidth: 385,       // 350 * 1.1
+  penaltySpotDist: 231,      // 210 * 1.1
+  centerCircleRadius: 192.5, // 175 * 1.1
 };
 
 export function centerX(pitch: PitchDef): number {

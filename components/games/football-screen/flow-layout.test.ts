@@ -53,8 +53,9 @@ describe('the team grid (G15-9: twenty selections in a 5 x 4 grid)', () => {
     expect(formationLabelX(2) + 80).toBeLessThan(TEAM_PREVIEW_X);
     expect(TEAM_PREVIEW_X + TEAM_PREVIEW_W).toBeLessThan(VIEW_W);
     expect(TEAM_PREVIEW_Y + TEAM_PREVIEW_H).toBeLessThan(SELECT_HINT_Y - 8);
-    // 2000 x 1300 is the pitch; the preview keeps that ratio within one pixel.
-    expect(Math.abs(TEAM_PREVIEW_W / TEAM_PREVIEW_H - 2000 / 1300)).toBeLessThan(0.02);
+    // 2200 x 1430 is the pitch (G15-16: v1's 2000 x 1300 x 1.1, the SAME ratio); the
+    // preview keeps that ratio within one pixel.
+    expect(Math.abs(TEAM_PREVIEW_W / TEAM_PREVIEW_H - 2200 / 1430)).toBeLessThan(0.02);
   });
 });
 
@@ -119,7 +120,7 @@ describe('the other screens', () => {
   it('the ALINEACIÓN screen: a mini pitch on the left, the reserves on the right, both sizes (G15-17)', () => {
     expect(LINEUP_PITCH_X).toBeGreaterThan(0);
     expect(LINEUP_PITCH_X + LINEUP_PITCH_W).toBeLessThan(LINEUP_RESERVE_X);
-    expect(Math.abs(LINEUP_PITCH_W / LINEUP_PITCH_H - 2000 / 1300)).toBeLessThan(0.02);
+    expect(Math.abs(LINEUP_PITCH_W / LINEUP_PITCH_H - 2200 / 1430)).toBeLessThan(0.02);
     expect(LINEUP_PITCH_Y + LINEUP_PITCH_H).toBeLessThan(LINEUP_STATUS_Y);
     expect(LINEUP_STATUS_Y).toBeLessThan(LINEUP_HINT_Y);
     expect(LINEUP_HINT_Y).toBeLessThan(VIEW_H);

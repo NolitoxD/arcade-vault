@@ -35,22 +35,26 @@ describe('createPlayers', () => {
       const mine = ps.filter((p) => p.team === team);
       expect(mine.filter((p) => p.role === 'gk')).toHaveLength(1);
       expect(mine.filter((p) => p.role !== 'gk')).toHaveLength(OUTFIELD);
-      expect(mine.filter((p) => p.role === 'def')).toHaveLength(3);
+      // The published NORMAL is the 4-4-2 of G15-16: four defenders, four midfielders
+      // and two forwards. Spelled out, so a formation table swapped underneath is noticed
+      // here and not only in the generic slot-order test below.
+      expect(mine.filter((p) => p.role === 'def')).toHaveLength(4);
+      expect(mine.filter((p) => p.role === 'mid')).toHaveLength(4);
       expect(mine.filter((p) => p.role === 'fwd')).toHaveLength(2);
     }
     expect(ps[0].role).toBe('gk');
-    expect(ps[9].role).toBe('gk');
+    expect(ps[TEAM_SIZE].role).toBe('gk');
     expect(ps[0].slot).toBe(-1);
     expect(ps[1].slot).toBe(0);
-    expect(ps[10].slot).toBe(0);
+    expect(ps[TEAM_SIZE + 1].slot).toBe(0);
   });
   it('team 0 attacks +x from the left half and team 1 is its mirror', () => {
     const ps = fresh();
     expect(ps[0].x).toBe(GK_LINE_DIST);
-    expect(ps[9].x).toBe(PITCH.width - GK_LINE_DIST);
+    expect(ps[TEAM_SIZE].x).toBe(PITCH.width - GK_LINE_DIST);
     expect(ps[0].y).toBe(centerY(PITCH));
-    // Ruling R2: the published 3-3-2 puts both fwd at fraction 0.7, i.e. x = 1400 >
-    // PITCH.width / 2 = 1000, so "stays in its own half" is false for the data;
+    // Ruling R2: the published 4-4-2 puts both fwd at fraction 0.7, i.e. x = 1540 >
+    // PITCH.width / 2 = 1100, so "stays in its own half" is false for the data;
     // only "stays on the pitch" and the exact mirror hold.
     for (let i = 1; i <= OUTFIELD; i++) {
       expect(ps[i].x).toBeGreaterThan(0);
@@ -59,7 +63,7 @@ describe('createPlayers', () => {
       expect(ps[i + TEAM_SIZE].y).toBe(ps[i].y);
     }
     expect(ps[1].facingX).toBe(1);
-    expect(ps[10].facingX).toBe(-1);
+    expect(ps[TEAM_SIZE + 1].facingX).toBe(-1);
   });
   it('every published formation gives its team exactly the roles its slots say, in slot order', () => {
     for (const f of FORMATIONS) {
@@ -77,34 +81,42 @@ describe('createPlayers', () => {
   it('two different formations on the two sides: each team follows its own', () => {
     const ps = createPlayers([FORMATIONS[1], FORMATIONS[2]], PITCH);
     expect(ps.filter((p) => p.team === 0 && p.role === 'fwd')).toHaveLength(3);
-    expect(ps.filter((p) => p.team === 1 && p.role === 'def')).toHaveLength(4);
-    expect(ps[8].role).toBe('fwd');    // 3-2-3: last slot is a forward
-    expect(ps[17].role).toBe('fwd');   // 4-3-1: last slot is the lone forward
-    expect(ps[10].role).toBe('def');
+    expect(ps.filter((p) => p.team === 1 && p.role === 'def')).toHaveLength(5);
+    // The last outfield id of a team is TEAM_SIZE - 1 slots after its keeper, i.e.
+    // OUTFIELD for team 0 -- written as the formula, not as an index of a nine-a-side.
+    expect(ps[OUTFIELD].role).toBe('fwd');                  // 4-3-3: last slot is a forward
+    expect(ps[TEAM_SIZE + OUTFIELD].role).toBe('fwd');      // 5-3-2: last slot is a forward
+    expect(ps[TEAM_SIZE + 1].role).toBe('def');
   });
 });
 
 describe('anchorFor / placeByFormation', () => {
   const slot = { role: 'mid' as const, x: 0.45, y: 0.25 };
+  // The expected answers are the fractions times the pitch, never the numbers they
+  // happened to give on the 2000 x 1300 pitch: G15-16 scaled it once and these three
+  // tests are about the MAPPING, not about a particular size.
+  const ANCHOR_X = slot.x * PITCH.width;                  // 0.45 * 2200 = 990
+  const ANCHOR_Y = slot.y * PITCH.height;                 // 0.25 * 1430 = 357.5
+  const MIRRORED_X = PITCH.width - ANCHOR_X;              // 1210
   it('maps a fraction to world units for the team attacking +x', () => {
     const out = { x: 0, y: 0 };
     anchorFor(slot, 'neutral', 1, PITCH, out);
-    expect(out).toEqual({ x: 900, y: 325 });
+    expect(out).toEqual({ x: ANCHOR_X, y: ANCHOR_Y });
   });
   it('mirrors x for the team attacking -x', () => {
     const out = { x: 0, y: 0 };
     anchorFor(slot, 'neutral', -1, PITCH, out);
-    expect(out).toEqual({ x: 1100, y: 325 });
+    expect(out).toEqual({ x: MIRRORED_X, y: ANCHOR_Y });
   });
   it('attack pushes towards the rival goal and defend pulls back, on both sides', () => {
     const a = { x: 0, y: 0 };
     const d = { x: 0, y: 0 };
     anchorFor(slot, 'attack', 1, PITCH, a);
     anchorFor(slot, 'defend', 1, PITCH, d);
-    expect(a.x).toBeCloseTo(900 + 0.12 * PITCH.width, 6);
-    expect(d.x).toBeCloseTo(900 - 0.12 * PITCH.width, 6);
+    expect(a.x).toBeCloseTo(ANCHOR_X + 0.12 * PITCH.width, 6);
+    expect(d.x).toBeCloseTo(ANCHOR_X - 0.12 * PITCH.width, 6);
     anchorFor(slot, 'attack', -1, PITCH, a);
-    expect(a.x).toBeCloseTo(1100 - 0.12 * PITCH.width, 6);
+    expect(a.x).toBeCloseTo(MIRRORED_X - 0.12 * PITCH.width, 6);
   });
   it('placeByFormation rewrites positions, zeroes velocity and leaves the other team alone', () => {
     const ps = fresh();
@@ -152,7 +164,7 @@ describe('stepPlayer movement', () => {
     walk(gk0, 400, 1, true, false);   // would run 1680 u; must stop at the box edge
     expect(gk0.x).toBe(PITCH.bigAreaDepth);
     expect(isInsideBigArea(PITCH, ownGoalSide(1), gk0.x, gk0.y)).toBe(true);
-    const gk1 = ps[9];
+    const gk1 = ps[TEAM_SIZE];
     for (let s = 0; s < 400; s++) stepPlayer(gk1, -1, 0, true, false, -1, PITCH, s);
     expect(gk1.x).toBe(PITCH.width - PITCH.bigAreaDepth);
     for (let s = 0; s < 400; s++) stepPlayer(gk1, 0, -1, false, false, -1, PITCH, s);
@@ -282,12 +294,12 @@ describe('stepPlayerFree: the AI movement channel', () => {
   });
 });
 
-// Stage B2, S-PK4: during a shootout the fifteen outfield players who are not taking
-// the kick stand still around the centre spot. S-PK7: the two keepers do NOT join them
+// Stage B2, S-PK4: during a shootout the outfield players who are not taking the kick
+// stand still around the centre spot. S-PK7: the two keepers do NOT join them
 // -- criterion 9b forbids a keeper outside its own big area, and a keeper parked on the
 // centre circle would break the invariant on every step of the shootout.
 describe('placeAroundCentreSpot (shootout)', () => {
-  it('parks the fifteen outfield players who are not the taker on a grid inside the centre circle, and leaves both keepers alone', () => {
+  it('parks the nineteen outfield players who are not the taker on a grid inside the centre circle, and leaves both keepers alone', () => {
     const players = createPlayers([FORMATIONS[0], FORMATIONS[0]], PITCH);
     const keeperPositions = [players[0], players[TEAM_SIZE]].map((p) => ({ x: p.x, y: p.y }));
     const takerId = 3;
@@ -312,16 +324,18 @@ describe('placeAroundCentreSpot (shootout)', () => {
       expect(p.downUntilStep).toBe(0);
     }
     expect(parked).toBe(2 * OUTFIELD - 1);
-    // Stage B2 finding H4: the grid has 2 * OUTFIELD = 16 slots, one more than the
-    // fifteen players it parks -- see Step 3 for which one is left empty and why.
+    // Stage B2 finding H4: the grid has 2 * OUTFIELD = 20 slots, one more than the
+    // nineteen players it parks -- the last one is simply never reached.
     expect(SHOOTOUT_GRID_COLUMNS * SHOOTOUT_GRID_ROWS).toBe(2 * OUTFIELD);
     expect(SHOOTOUT_GRID_SPACING_Y).toBe(80);
   });
   // Anti-coincidence: a grid that put two players on the same spot would still be
   // "inside the circle" and still park fifteen. Nobody overlaps, and nobody lands on
-  // the centre spot itself (Stage B2 finding H4): with an even number of columns and
-  // an even number of rows, no slot's offset from the centre is ever (0, 0) -- unlike
-  // the 5 x 3 layout this replaces, whose middle column and row landed exactly on it.
+  // the centre spot itself (Stage B2 finding H4): with an EVEN number of ROWS, no slot's
+  // offset from the centre is ever (0, 0) -- the y offset alone rules it out, whatever
+  // the column -- unlike the 5 x 3 layout this replaces, whose middle column and row
+  // landed exactly on it. (G15-16 made the columns odd again, five; the rows are what
+  // carries the property.)
   it('nobody shares a spot and the grid is wider than a player', () => {
     const players = createPlayers([FORMATIONS[0], FORMATIONS[0]], PITCH);
     placeAroundCentreSpot(players, 3, PITCH);

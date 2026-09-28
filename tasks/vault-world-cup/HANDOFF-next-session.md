@@ -1,6 +1,22 @@
-# HANDOFF — VAULT WORLD CUP · v1.5: V15-3 COMMITEADO (`f1d7d2a`); PLAN V15-4 «Motor» LISTO para ejecutar (3 días) · actualizado 2026-09-24
+# HANDOFF — VAULT WORLD CUP · v1.5: V15-4 «Motor» DÍA 1 HECHO (11v11, sin commit) · siguiente día 2 (Tasks 2-4) · actualizado 2026-09-28
 
-Prompt para retomar: `/retomar tasks/vault-world-cup/HANDOFF-next-session.md` → SDD del plan V15-4 (día 1: Task 1a red + 1b once contra once) → día 2 Tasks 2-4 → día 3 Tasks 5-9 (regrabado único) + 10-11.
+Prompt para retomar: `/retomar tasks/vault-world-cup/HANDOFF-next-session.md` → SDD V15-4 día 2: Task 2 (atributos + porteros) → 3 (postes/larguero) → 4 (entradas + pausa 4 s). Ledger `.superpowers/sdd/2026-09-24-vault-world-cup-v15-4/progress.md` manda.
+
+## -18. 28-sep: V15-4 DÍA 1 (Tasks 1a + 1b) EJECUTADO — once contra once en el motor (sin commit)
+
+**1a:** `football-logic/engine-invariants.test.ts`, la red estructural (portero por rol, contadores de presión a 0, un portero por equipo).
+Verde en 9v9 y, verificado por el revisor en una copia, verde en 11v11 sin tocarla. El control de determinismo del «empujón de 0,0001» es
+vacuo por construcción (cualquier mutación que sea función del estado se replica igual en las corridas comparadas): se sustituye por la
+variante `Math.random()`.
+**1b:** `TEAM_SIZE` 11 / `OUTFIELD` 10, formaciones 4-4-2 / 4-3-3 / 5-3-2 (idénticas a la tabla que V15-3 dejó preparada), campo 2200×1430 con
+áreas, círculo y penalti ×1,1 y portería sin escalar, rejilla de tanda 5×4. Solo `teams.ts`, `pitch.ts`, `players.ts` en producción; `squads.ts`,
+`lineup.ts`, `formation-preview.ts`, `minimap.ts` intactos (la promesa de V15-3 se cumplió). El censo del pre-vuelo se reprodujo exacto (89 rojos).
+Ronda de arreglo: 4 tests que habían perdido su sentido (índices que ya no eran el portero o un rival) reanclados por rol con control negativo;
+las marcas 1 y 2 separadas para no enterrar asertos estructurales `=== 0`; bucles `<= 8` → `OUTFIELD`.
+**Estado:** 1392 passed | 3 skipped (1395), 84 ficheros; tsc limpio; **marcas PENDING_REBASELINE: 3 de 5**; lista blanca intacta vs `f1d7d2a`.
+**Para la Task 9 (regrabado):** gol de oro en `match.test.ts:925` sobre `visitedFirst`; medir las parejas en fresco (brief 36 / medido 1);
+confirmar el colapso 69 → 0 de `keeperLeftLineOutsideSmallArea` antes de regrabarlo; `KICK_TARGET_ID = 7` de `step.test.ts` es clase 3.
+**Commit de punto de control (opcional, Paco):** `feat(world-cup): v15-4 day 1 — eleven-a-side engine (4-4-2/4-3-3/5-3-2, 2200x1430 pitch) with structural net, 3 pending rebaseline marks`
 
 ## -17. 24-sep: V15-3 commiteado (`f1d7d2a`) + PLAN V15-4 «Motor» ESCRITO, PRE-VUELO APLICADO (sin código)
 

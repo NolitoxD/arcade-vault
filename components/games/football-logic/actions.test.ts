@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { PITCH } from './pitch';
-import { FORMATIONS } from './teams';
+import { PITCH, centerY } from './pitch';
+import { FORMATIONS, OUTFIELD, TEAM_SIZE } from './teams';
 import { createTeamInput, type TeamInput } from './input';
-import { createPlayers, stepPlayer, TACKLE_STEPS, type PlayerState } from './players';
+import { GK_LINE_DIST, createPlayers, stepPlayer, TACKLE_STEPS, type PlayerState } from './players';
 import { LONG_PASS_VZ, createBall, givePossession, stickToOwner, type BallState } from './ball';
 import type { Rng } from './rng';
 import {
@@ -23,6 +23,15 @@ function world(): World {
   // Everyone parked on the bottom touch line, spaced by id, so every test places its actors explicitly.
   for (const p of players) { p.x = 100 + p.id * 40; p.y = 1290; p.facingX = 1; p.facingY = 0; }
   return { players, ball: createBall(), out: createActionEvent(), aim: { x: 0, y: 0 } };
+}
+
+// A team's goalkeeper, found by ROLE and never by index: a bare index is exactly what
+// quietly changed team when G15-16 grew the sides (review-1b, I1-I3), and a test whose
+// "keeper" is really a teammate keeps passing for the wrong reason.
+function keeperOf(players: readonly PlayerState[], team: 0 | 1): PlayerState {
+  const gk = players.find((q) => q.team === team && q.role === 'gk');
+  if (gk === undefined) throw new Error(`team ${team} has no goalkeeper`);
+  return gk;
 }
 
 function at(p: PlayerState, x: number, y: number, fx = 1, fy = 0): PlayerState {
@@ -126,13 +135,16 @@ describe('steal: 65% by the injected rng, 35% against a sprinting owner, no roll
   });
   it('never robs a goalkeeper and does not roll for it', () => {
     const w = world();
-    const gk = at(w.players[9], 1000, 600, -1, 0);
+    const gk = at(keeperOf(w.players, 1), 1000, 600, -1, 0);
     givePossession(w.ball, gk, 50);
     const thief = at(w.players[4], 1000 - 20, 600);
+    // The premise, asserted: the keeper is a RIVAL of the thief, so the teammate clause of
+    // steal() cannot be what stops it -- only the goalkeeper clause can.
+    expect(gk.team).not.toBe(thief.team);
     const rng = fixedRng([0]);
     steal(thief, w.ball, w.players, rng, 60, w.out);
     expect(rng.calls).toBe(0);
-    expect(w.ball.owner).toBe(9);
+    expect(w.ball.owner).toBe(gk.id);
   });
   // R8: split so the free-ball branch is proven separately from the teammate-owner
   // branch — a naive `if (owner.team === p.team) return` would pass "teammate
@@ -230,13 +242,14 @@ describe('sliding tackle: three outcomes', () => {
   });
   it('never robs a goalkeeper holding the ball', () => {
     const w = world();
-    const gk = at(w.players[9], 1090, 600, -1, 0);
+    const gk = at(keeperOf(w.players, 1), 1090, 600, -1, 0);
     givePossession(w.ball, gk, 0);
     stickToOwner(w.ball, gk);
     const p = at(w.players[4], 1000, 600);
+    expect(gk.team).not.toBe(p.team);   // a rival keeper: only ballIsTakeable's gk clause protects it
     startTackle(p, 1, 0, w.out);
     runTackle(w, p, TACKLE_STEPS + 5, 600);
-    expect(w.ball.owner).toBe(9);
+    expect(w.ball.owner).toBe(gk.id);
   });
 });
 
@@ -266,7 +279,7 @@ describe('pickPassTarget: the id aimPass locks onto (same scan, so the direction
     // passer ids 3 and 4 fall INSIDE the -x cone (dot 0.749 and 0.731 >= INV_SQRT2). Park every
     // mate this test does not place straight BELOW the passer instead: |dx| << |dy| keeps them
     // out of the +x cone and the -x cone alike, so each assertion sees only its own actors.
-    for (let i = 3; i <= 8; i++) if (i !== p.id) at(w.players[i], 990 + i, 1290);
+    for (let i = 3; i <= OUTFIELD; i++) if (i !== p.id) at(w.players[i], 990 + i, 1290);
     at(w.players[1], p.x + 150 * 0.9848078, p.y + 150 * 0.1736482); // 10 deg: (0.9848078, 0.1736482)
     at(w.players[2], p.x + 80 * 0.8660254, p.y + 80 * 0.5);         // 30 deg: (0.8660254, 0.5)
     expect(pickPassTarget(p, w.players, 1, 0, false, 0)).toBe(2);
@@ -283,16 +296,22 @@ describe('pickPassTarget: the id aimPass locks onto (same scan, so the direction
 describe('freestMateDir: the outfield mate in OWN half farthest from every rival', () => {
   it('picks the mate with the largest nearest-rival distance among those in the keeper\'s half', () => {
     const w = world();
-    const gk = at(w.players[0], 25, 650, 1, 0);   // team 0 defends side 0: own half is x < 1000
+    const halfX = PITCH.width / 2;
+    const gk = at(w.players[0], 25, centerY(PITCH), 1, 0);   // team 0 defends side 0: own half is x < halfX
     const crowded = at(w.players[1], 400, 400);
-    at(w.players[10], 430, 400);                   // rival 30 u from the crowded mate
+    at(w.players[TEAM_SIZE + 1], 430, 400);                  // rival 30 u from the crowded mate
     const free = at(w.players[2], 500, 900);
-    at(w.players[11], 750, 900);                   // nearest rival 250 u away
-    // Anti-coincidence (pre-flight H6): world() parks mates 4-8 at (260..420, 1290), in OWN half,
-    // and mate 4 has the parked rival keeper 9 at (460, 1290) EXACTLY 200 u away. With the rival
-    // at 200 u the "free" mate would win only by lowest id; at 250 u it wins by margin.
-    expect(dist2(w.players[4], w.players[9])).toBe(200);
-    at(w.players[3], 1300, 650);                   // freest of all but in the rival half: ignored
+    at(w.players[TEAM_SIZE + 2], 750, 900);                  // nearest rival 250 u away
+    // Anti-coincidence (pre-flight H6): world() parks everybody on the bottom touch line spaced
+    // by id, and with eleven a side that whole line sits in the OWN half -- a parked mate far
+    // from every parked rival would quietly out-free the one this test is about. So every mate
+    // this test does not place is pushed into the RIVAL half, where freestMateDir ignores it
+    // (which also keeps the old "freest of all but in the rival half" case), and the count
+    // below is what notices if that stops being true.
+    for (let i = 3; i <= OUTFIELD; i++) at(w.players[i], halfX + 100 + i, 1290);
+    let inOwnHalf = 0;
+    for (const q of w.players) if (q.team === 0 && q.role !== 'gk' && q.x < halfX) inOwnHalf++;
+    expect(inOwnHalf).toBe(2);                               // exactly `crowded` and `free`
     const out = { x: 0, y: 0 };
     expect(freestMateDir(gk, w.players, 1, PITCH, out)).toBe(true);
     const d = dist2(gk, free);
@@ -302,8 +321,8 @@ describe('freestMateDir: the outfield mate in OWN half farthest from every rival
   });
   it('returns false and leaves out untouched when every outfield mate is in the rival half', () => {
     const w = world();
-    const gk = at(w.players[0], 25, 650, 1, 0);
-    for (let i = 1; i <= 8; i++) at(w.players[i], 1200 + i * 10, 650);
+    const gk = at(w.players[0], 25, centerY(PITCH), 1, 0);
+    for (let i = 1; i <= OUTFIELD; i++) at(w.players[i], PITCH.width / 2 + 100 + i * 10, centerY(PITCH));
     const out = { x: 7, y: 7 };
     expect(freestMateDir(gk, w.players, 1, PITCH, out)).toBe(false);
     expect(out).toEqual({ x: 7, y: 7 });
@@ -313,13 +332,14 @@ describe('freestMateDir: the outfield mate in OWN half farthest from every rival
 describe('releaseFromGoalkeeper', () => {
   it('kicks a long pass at the freest own-half mate once GK_HOLD_STEPS have passed, and not before', () => {
     const w = world();
-    const gk = at(w.players[9], 1975, 650, -1, 0);   // team 1 defends side 1: own half is x > 1000
-    const target = at(w.players[12], 1500, 300);
-    at(w.players[13], 1500, 1000);
-    at(w.players[4], 1470, 1000);                     // rival crowds mate 13, so 12 is the freest
+    // team 1 defends side 1: own half is x > PITCH.width / 2
+    const gk = at(w.players[TEAM_SIZE], PITCH.width - GK_LINE_DIST, centerY(PITCH), -1, 0);
+    const target = at(w.players[TEAM_SIZE + 1], 1500, 300);
+    at(w.players[TEAM_SIZE + 2], 1500, 1000);
+    at(w.players[4], 1470, 1000);                     // rival crowds the second mate, so the first is the freest
     givePossession(w.ball, gk, 100);
     releaseFromGoalkeeper(gk, w.ball, w.players, -1, PITCH, 100 + GK_HOLD_STEPS - 7, w.aim, w.out);
-    expect(w.ball.owner).toBe(9);
+    expect(w.ball.owner).toBe(TEAM_SIZE);
     expect(w.out.kind).toBe('none');
     releaseFromGoalkeeper(gk, w.ball, w.players, -1, PITCH, 100 + GK_HOLD_STEPS, w.aim, w.out);
     expect(w.ball.owner).toBeNull();
@@ -332,8 +352,8 @@ describe('releaseFromGoalkeeper', () => {
   });
   it('falls back to a straight kick along attackDir when no mate is in its half', () => {
     const w = world();
-    const gk = at(w.players[9], 1975, 650, -1, 0);
-    for (let i = 10; i <= 17; i++) at(w.players[i], 300 + i, 650);
+    const gk = at(w.players[TEAM_SIZE], PITCH.width - GK_LINE_DIST, centerY(PITCH), -1, 0);
+    for (let i = TEAM_SIZE + 1; i <= TEAM_SIZE + OUTFIELD; i++) at(w.players[i], 300 + i, centerY(PITCH));
     givePossession(w.ball, gk, 0);
     releaseFromGoalkeeper(gk, w.ball, w.players, -1, PITCH, GK_HOLD_STEPS, w.aim, w.out);
     expect(w.ball.vx).toBeCloseTo(-LONG_PASS_SPEED, 6);
@@ -350,9 +370,9 @@ describe('releaseFromGoalkeeper', () => {
   });
   it('leaves `out` alone on its no-op paths (D4: the throw applyKeeperButtons wrote in the same slot this step survives)', () => {
     const w = world();
-    const gk = at(w.players[9], 1975, 650, -1, 0);
+    const gk = at(w.players[TEAM_SIZE], PITCH.width - GK_LINE_DIST, centerY(PITCH), -1, 0);
     givePossession(w.ball, gk, 100);
-    w.out.kind = 'short-pass'; w.out.ok = true; w.out.actorId = 9;
+    w.out.kind = 'short-pass'; w.out.ok = true; w.out.actorId = TEAM_SIZE;
     releaseFromGoalkeeper(gk, w.ball, w.players, -1, PITCH, 100 + GK_HOLD_STEPS - 7, w.aim, w.out);   // holding: no-op
     expect(w.out.kind).toBe('short-pass');
     shortPass(gk, w.ball, -1, 0, 100 + GK_HOLD_STEPS, w.out);                                         // the ball left by button
@@ -363,16 +383,20 @@ describe('releaseFromGoalkeeper', () => {
 });
 
 describe('applyKeeperButtons (D4): the keeper holding the ball throws by button, exact, from the step after taking it', () => {
-  // Team 1 keeper (id 9) on its line, attacking -x. Its eight outfield mates are
-  // parked BEHIND it near the goal line at x = 1990, y = 100..170, so from the
-  // keeper they lie almost straight up (+15, -480..-550): outside the -x cone,
+  // Team 1 keeper (id TEAM_SIZE) on its line, attacking -x. Its OUTFIELD mates are
+  // parked BEHIND it near the goal line at x = PITCH.width - 10, y = 100..190, so from
+  // the keeper they lie almost straight up (+15, -525..-615): outside the -x cone,
   // the +y cone and the +x cone every test below opens. Only the mates each test
   // places with `at` are candidates. The keeper faces +y on purpose: a neutral
   // d-pad must open the cone along attackDir, never along the facing (S-GK.1).
+  // Every actor is placed RELATIVE to the keeper, so the angles quoted below stay true
+  // whatever the pitch measures (G15-16 scaled it by 1.1).
   function holding(): World & { gk: PlayerState; input: TeamInput } {
     const w = world();
-    for (let i = 10; i <= 17; i++) at(w.players[i], 1990, 100 + (i - 10) * 10);
-    const gk = at(w.players[9], 1975, 650, 0, 1);
+    for (let i = TEAM_SIZE + 1; i <= TEAM_SIZE + OUTFIELD; i++) {
+      at(w.players[i], PITCH.width - 10, 100 + (i - TEAM_SIZE - 1) * 10);
+    }
+    const gk = at(w.players[TEAM_SIZE], PITCH.width - GK_LINE_DIST, centerY(PITCH), 0, 1);
     givePossession(w.ball, gk, 100);
     return { ...w, gk, input: createTeamInput() };
   }
@@ -382,24 +406,24 @@ describe('applyKeeperButtons (D4): the keeper holding the ball throws by button,
   }
   it('B pressed with the d-pad on -x throws a SHORT pass at the nearest mate in the cone and turns the keeper to face it', () => {
     const s = holding();
-    const near = at(s.players[12], 1775, 700);        // 206 u away, 14 deg off -x: in the cone
-    at(s.players[13], 1475, 550);                     // 510 u away, 11 deg off -x: in the cone, farther
+    const near = at(s.players[TEAM_SIZE + 1], s.gk.x - 200, s.gk.y + 50);   // 206 u away, 14 deg off -x: in the cone
+    at(s.players[TEAM_SIZE + 2], s.gk.x - 500, s.gk.y - 100);               // 510 u away, 11 deg off -x: in the cone, farther
     s.input.dx = -1; s.input.b = 'pressed';
     applyKeeperButtons(s.gk, s.input, s.ball, s.players, -1, 101, s.aim, s.out);
     const u = unitTo(s.gk, near);
     expect(s.ball.owner).toBeNull();
-    expect(s.ball.kickerId).toBe(9);
+    expect(s.ball.kickerId).toBe(TEAM_SIZE);
     expect(speedOf(s.ball)).toBeCloseTo(SHORT_PASS_SPEED, 6);
     expect(s.ball.vz).toBe(0);
     expect(s.ball.vx / speedOf(s.ball)).toBeCloseTo(u.x, 10);
     expect(s.ball.vy / speedOf(s.ball)).toBeCloseTo(u.y, 10);
     expect([s.gk.facingX, s.gk.facingY]).toEqual([u.x, u.y]);
-    expect(s.out).toMatchObject({ kind: 'short-pass', ok: true, foul: false, actorId: 9 });
+    expect(s.out).toMatchObject({ kind: 'short-pass', ok: true, foul: false, actorId: TEAM_SIZE });
   });
   it('A pressed throws a LONG pass at the farthest mate in the same cone', () => {
     const s = holding();
-    at(s.players[12], 1775, 700);
-    const far = at(s.players[13], 1475, 550);
+    at(s.players[TEAM_SIZE + 1], s.gk.x - 200, s.gk.y + 50);
+    const far = at(s.players[TEAM_SIZE + 2], s.gk.x - 500, s.gk.y - 100);
     s.input.dx = -1; s.input.a = 'pressed';
     applyKeeperButtons(s.gk, s.input, s.ball, s.players, -1, 101, s.aim, s.out);
     const u = unitTo(s.gk, far);
@@ -408,20 +432,20 @@ describe('applyKeeperButtons (D4): the keeper holding the ball throws by button,
     expect(s.ball.vz).toBe(LONG_PASS_VZ);
     expect(s.ball.vx / speedOf(s.ball)).toBeCloseTo(u.x, 10);
     expect(s.ball.vy / speedOf(s.ball)).toBeCloseTo(u.y, 10);
-    expect(s.out).toMatchObject({ kind: 'long-pass', ok: true, actorId: 9 });
+    expect(s.out).toMatchObject({ kind: 'long-pass', ok: true, actorId: TEAM_SIZE });
   });
   it('a neutral d-pad opens the cone along attackDir (towards the rival half), not along the keeper\'s facing; the d-pad on +y opens it there', () => {
     const neutral = holding();
-    const ahead = at(neutral.players[12], 1775, 700);   // in the -x cone only
-    at(neutral.players[14], 1975, 850);                 // 200 u straight down (+y): in the +y cone only
+    const ahead = at(neutral.players[TEAM_SIZE + 1], neutral.gk.x - 200, neutral.gk.y + 50);   // in the -x cone only
+    at(neutral.players[TEAM_SIZE + 3], neutral.gk.x, neutral.gk.y + 200);                      // 200 u straight down (+y): in the +y cone only
     neutral.input.b = 'pressed';                        // dx = dy = 0
     applyKeeperButtons(neutral.gk, neutral.input, neutral.ball, neutral.players, -1, 101, neutral.aim, neutral.out);
     const u = unitTo(neutral.gk, ahead);
     expect(neutral.ball.vx / speedOf(neutral.ball)).toBeCloseTo(u.x, 10);
     expect(neutral.ball.vy / speedOf(neutral.ball)).toBeCloseTo(u.y, 10);
     const down = holding();
-    at(down.players[12], 1775, 700);
-    const below = at(down.players[14], 1975, 850);
+    at(down.players[TEAM_SIZE + 1], down.gk.x - 200, down.gk.y + 50);
+    const below = at(down.players[TEAM_SIZE + 3], down.gk.x, down.gk.y + 200);
     down.input.dy = 1; down.input.b = 'pressed';
     applyKeeperButtons(down.gk, down.input, down.ball, down.players, -1, 101, down.aim, down.out);
     const v = unitTo(down.gk, below);
@@ -438,23 +462,23 @@ describe('applyKeeperButtons (D4): the keeper holding the ball throws by button,
   });
   it('only a press fires: a held B (a steal attempt carried over) throws nothing; A and B pressed together -> A wins', () => {
     const held = holding();
-    at(held.players[12], 1775, 700);
+    at(held.players[TEAM_SIZE + 1], held.gk.x - 200, held.gk.y + 50);
     held.input.dx = -1; held.input.b = 'held';
     applyKeeperButtons(held.gk, held.input, held.ball, held.players, -1, 101, held.aim, held.out);
-    expect(held.ball.owner).toBe(9);
+    expect(held.ball.owner).toBe(TEAM_SIZE);
     expect(held.out.kind).toBe('none');
     const both = holding();
-    at(both.players[12], 1775, 700);
+    at(both.players[TEAM_SIZE + 1], both.gk.x - 200, both.gk.y + 50);
     both.input.dx = -1; both.input.a = 'pressed'; both.input.b = 'pressed';
     applyKeeperButtons(both.gk, both.input, both.ball, both.players, -1, 101, both.aim, both.out);
     expect(both.out.kind).toBe('long-pass');
   });
   it('never on the step the keeper took the ball (S-GK.4), never for an outfield player, never for a keeper without the ball; no rng anywhere', () => {
     const same = holding();                           // ownerSinceStep = 100
-    at(same.players[12], 1775, 700);
+    at(same.players[TEAM_SIZE + 1], same.gk.x - 200, same.gk.y + 50);
     same.input.dx = -1; same.input.b = 'pressed';
     applyKeeperButtons(same.gk, same.input, same.ball, same.players, -1, 100, same.aim, same.out);
-    expect(same.ball.owner).toBe(9);
+    expect(same.ball.owner).toBe(TEAM_SIZE);
     expect(same.out.kind).toBe('none');
     applyKeeperButtons(same.gk, same.input, same.ball, same.players, -1, 101, same.aim, same.out);
     expect(same.ball.owner).toBeNull();
@@ -730,10 +754,10 @@ describe('updateControlled: the derived controlled player (criteria 4 and 5)', (
     updateControlled(w.players, w.ball, controlled);
     expect(controlled[0]).toBe(3);
     // team 1: the keeper is 10 u from the ball, an outfield player 200 u away
-    at(w.players[9], 40, 650);
-    at(w.players[11], 240, 650);
+    at(w.players[TEAM_SIZE], 40, 650);
+    at(w.players[TEAM_SIZE + 1], 240, 650);
     updateControlled(w.players, w.ball, controlled);
-    expect(controlled[1]).toBe(11);
+    expect(controlled[1]).toBe(TEAM_SIZE + 1);
   });
   it('picks the nearest outfield player with the lowest id breaking exact ties', () => {
     const w = world();
@@ -768,7 +792,15 @@ describe('updateControlled: the derived controlled player (criteria 4 and 5)', (
     const w = world();
     w.ball.x = 1000; w.ball.y = 600;
     at(w.players[3], 1000 - 300, 600);
-    const controlled: [number, number] = [0, 9];    // both keepers: never valid as controlled
+    // Each keeper is placed where it WOULD be kept if it counted as controllable: ours at 310 u,
+    // within CONTROL_HYSTERESIS of our nearest outfield player (3, at 300 u), and theirs as the
+    // nearest of its team. Otherwise, far from the ball, it loses on distance alone and the
+    // "never a keeper" half of the rule is not exercised (negative control A.3b).
+    at(keeperOf(w.players, 0), 1000, 600 + 310);
+    at(keeperOf(w.players, 1), 1000 + 5, 600);
+    // Both KEEPERS, by role (review-1b: the literal 9 had become a team-0 forward, invalid for
+    // team 1 only because of its team, so the keeper half of the rule was not exercised).
+    const controlled: [number, number] = [keeperOf(w.players, 0).id, keeperOf(w.players, 1).id];
     updateControlled(w.players, w.ball, controlled);
     expect(controlled[0]).toBe(3);
     expect(w.players[controlled[1]].team).toBe(1);
@@ -816,8 +848,15 @@ describe('nextManualControl: the manual switch with C (G15-5)', () => {
 
   it('never hands control to the keeper, a rival or a teammate on the floor', () => {
     const w = scene();
-    at(w.players[0], 1010, 600);        // our keeper, 10 u
-    at(w.players[10], 1020, 600);       // a rival, 20 u
+    // The keeper and the rival sit BETWEEN the current (1, at 50 u) and the right answer (3, at
+    // 150 u), on purpose. Anyone NEARER than the current raises the current's rank and the
+    // target rank by one alike, so it cancels out: the old fixture (keeper at 10 u, rival at
+    // 20 u) gave 3 with or without either filter, even at nine-a-side (review-1b fix round 1,
+    // negative controls A.3/A.3b). Here, admitting either one hands it the control.
+    const keeper = at(keeperOf(w.players, 0), 1000, 600 + 120);   // our keeper, 120 u
+    const rival = at(w.players[TEAM_SIZE + 1], 1000, 600 - 130);   // a rival, 130 u
+    expect(keeper.team).toBe(0);
+    expect(rival.team).toBe(1);
     w.players[2].downUntilStep = 50;    // 100 u, but on the floor until step 50
     expect(nextManualControl(w.players, w.ball, 0, 1, 10)).toBe(3);
     expect(nextManualControl(w.players, w.ball, 0, 1, 50)).toBe(2);   // back on his feet at step 50
@@ -835,12 +874,15 @@ describe('nextManualControl: the manual switch with C (G15-5)', () => {
 
   it('returns -1 when nobody else can take over, and the nearest when the current id is not ours', () => {
     const w = scene();
-    for (let id = 2; id <= 8; id++) w.players[id].downUntilStep = 100;
+    for (let id = 2; id <= OUTFIELD; id++) w.players[id].downUntilStep = 100;
     expect(nextManualControl(w.players, w.ball, 0, 1, 0)).toBe(-1);
     const v = scene();
     expect(nextManualControl(v.players, v.ball, 0, -1, 0)).toBe(1);
-    expect(nextManualControl(v.players, v.ball, 0, 12, 0)).toBe(1);   // a rival's id is not a current of ours
-    // Team 1 works the same: all eight parked, 17 (x = 780) is the nearest to (1000, 600).
-    expect(nextManualControl(v.players, v.ball, 1, 10, 0)).toBe(17);
+    // A rival's id is not a current of ours.
+    expect(nextManualControl(v.players, v.ball, 0, TEAM_SIZE + 1, 0)).toBe(1);
+    // Team 1 works the same: all OUTFIELD of them still parked by world() on the bottom
+    // touch line at x = 100 + id * 40, so the LAST id is the nearest to (1000, 600) and
+    // the current id given (its first outfield) falls outside MANUAL_SWITCH_POOL.
+    expect(nextManualControl(v.players, v.ball, 1, TEAM_SIZE + 1, 0)).toBe(TEAM_SIZE + OUTFIELD);
   });
 });

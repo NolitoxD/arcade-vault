@@ -17,6 +17,17 @@ const TEN_SLOTS: Formation = {
   ],
 };
 
+// The pre-V15-4 3-3-2, written here as data (never imported: FORMATIONS no longer has
+// it). It is what a lineup saved by V15-3 was built from, and the only way to prove the
+// fallback promise of G15-16 with a test instead of with faith.
+const NINE_SLOTS: Formation = {
+  id: '3-3-2', name: 'NORMAL', slots: [
+    { role: 'def', x: 0.22, y: 0.25 }, { role: 'def', x: 0.22, y: 0.5 }, { role: 'def', x: 0.22, y: 0.75 },
+    { role: 'mid', x: 0.45, y: 0.25 }, { role: 'mid', x: 0.45, y: 0.5 }, { role: 'mid', x: 0.45, y: 0.75 },
+    { role: 'fwd', x: 0.7, y: 0.35 }, { role: 'fwd', x: 0.7, y: 0.65 },
+  ],
+};
+
 function built(f: Formation): Lineup {
   const l = createLineup();
   defaultLineup(f, l);
@@ -140,7 +151,7 @@ describe('the lineup model (G15-17): starters and reserves derived from the form
     applySwap(f, l, 4, inc);
     lineupTypeChar(l, 2, 'x');
     const raw = serializeLineup(f, l);
-    expect(raw).toContain('"f":"3-2-3"');
+    expect(raw).toContain(`"f":"${FORMATIONS[1].id}"`);
     expect(raw).toContain(`"n":${lineupPositionCount(f)}`);
     const back = createLineup();
     parseLineup(raw, f, back);
@@ -154,19 +165,42 @@ describe('the lineup model (G15-17): starters and reserves derived from the form
     lineupTypeChar(stored, 3, 'q');
     const raw = serializeLineup(FORMATIONS[0], stored);
     const out = createLineup();
-    parseLineup(raw, FORMATIONS[2], out);                       // 4-3-1, a different formation
+    parseLineup(raw, FORMATIONS[2], out);                       // DEFENSIVA, a different formation
     expect(out.starters).toEqual(built(FORMATIONS[2]).starters);
     expect(lineupName(out, 'espana', 3)).toBe('Q');
-    // And the same when only the starter count moved (the V15-4 case).
-    const eleven = createLineup();
-    parseLineup(raw.replace('"n":9', '"n":11'), FORMATIONS[0], eleven);
-    expect(eleven.starters).toEqual(built(FORMATIONS[0]).starters);
+    // And the same when only the starter count moved: the count is derived from the
+    // formation, so the fixture asks for "this formation's count, plus one" instead of
+    // naming a size that V15-4 has already moved once.
+    const positions = lineupPositionCount(FORMATIONS[0]);
+    const wrongCount = createLineup();
+    parseLineup(raw.replace(`"n":${positions}`, `"n":${positions + 1}`), FORMATIONS[0], wrongCount);
+    expect(wrongCount.starters).toEqual(built(FORMATIONS[0]).starters);
+  });
+
+  it('a lineup saved before V15-4 (f: "3-3-2", n: 9) falls back to the default eleven and KEEPS the edited names', () => {
+    const old = built(NINE_SLOTS);
+    lineupTypeChar(old, 3, 'p');
+    const raw = serializeLineup(NINE_SLOTS, old);
+    expect(raw).toContain('"f":"3-3-2"');
+    expect(raw).toContain(`"n":${lineupPositionCount(NINE_SLOTS)}`);
+    const out = createLineup();
+    parseLineup(raw, FORMATIONS[0], out);
+    expect(out.starters).toHaveLength(TEAM_SIZE);
+    expect(out.starters).toEqual(built(FORMATIONS[0]).starters);
+    expect(lineupName(out, 'espana', 3)).toBe('P');
   });
 
   it('garbage, null and a throwing storage all give the default lineup and never throw', () => {
     const f = FORMATIONS[0];
     const expected = built(f).starters;
-    for (const raw of [null, '', 'not json', '{}', '{"f":"3-3-2","n":9,"s":[0,0,0,0,0,0,0,0,0],"m":[]}', '{"f":"3-3-2","n":9,"s":[0,1,2,3,4,5,6,7,99],"m":[]}']) {
+    // The last two MATCH the formation id and the starter count on purpose: that is the
+    // only way they reach checkLineup, which is what has to reject them (a repeated
+    // squad index, and one out of range). Anchored to FORMATIONS[0], not to a literal
+    // shape, so they keep reaching it after V15-4 moved the team size.
+    const n = lineupPositionCount(f);
+    const repeated = `{"f":"${f.id}","n":${n},"s":[${Array.from({ length: n }, () => 0).join(',')}],"m":[]}`;
+    const outOfRange = `{"f":"${f.id}","n":${n},"s":[${Array.from({ length: n - 1 }, (_v, i) => i).join(',')},99],"m":[]}`;
+    for (const raw of [null, '', 'not json', '{}', repeated, outOfRange]) {
       const out = createLineup();
       expect(() => parseLineup(raw, f, out)).not.toThrow();
       expect(out.starters).toEqual(expected);

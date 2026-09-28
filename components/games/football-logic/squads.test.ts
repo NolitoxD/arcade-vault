@@ -5,29 +5,32 @@ import {
   checkSquad, checkSquadCoversFormations, checkSquads, isSquadName, squadName, squadNumber, squadRole, squadRoleCount,
 } from './squads';
 
-// G15-16 / V15-4: the three eleven-a-side formations the spec already fixed. Written
-// out here, NOT imported, so this test keeps guarding the squad composition before
-// V15-4 exists -- and fails the day someone adds a formation the squad cannot fill.
-const V15_4_FORMATIONS: readonly Formation[] = [
+// The three NINE-a-side formations of the v1, written out here and NOT imported (V15-4
+// retired them from FORMATIONS). Until V15-4 this table held the eleven-a-side shapes,
+// to prove in advance that the squad of eighteen could field them; now that FORMATIONS
+// IS that table, the test is turned around and keeps the property it always really
+// asserted -- the squad of eighteen fields ANY formation table, yesterday's and today's
+// -- which is also the proof that squads.ts did not have to be reopened for G15-16.
+const PREVIOUS_FORMATIONS: readonly Formation[] = [
   {
-    id: '4-4-2', name: 'NORMAL', slots: [
-      { role: 'def', x: 0.2, y: 0.15 }, { role: 'def', x: 0.2, y: 0.38 }, { role: 'def', x: 0.2, y: 0.62 }, { role: 'def', x: 0.2, y: 0.85 },
-      { role: 'mid', x: 0.45, y: 0.15 }, { role: 'mid', x: 0.45, y: 0.38 }, { role: 'mid', x: 0.45, y: 0.62 }, { role: 'mid', x: 0.45, y: 0.85 },
-      { role: 'fwd', x: 0.7, y: 0.35 }, { role: 'fwd', x: 0.7, y: 0.65 },
-    ],
-  },
-  {
-    id: '4-3-3', name: 'OFENSIVA', slots: [
-      { role: 'def', x: 0.2, y: 0.15 }, { role: 'def', x: 0.2, y: 0.38 }, { role: 'def', x: 0.2, y: 0.62 }, { role: 'def', x: 0.2, y: 0.85 },
+    id: '3-3-2', name: 'NORMAL', slots: [
+      { role: 'def', x: 0.22, y: 0.25 }, { role: 'def', x: 0.22, y: 0.5 }, { role: 'def', x: 0.22, y: 0.75 },
       { role: 'mid', x: 0.45, y: 0.25 }, { role: 'mid', x: 0.45, y: 0.5 }, { role: 'mid', x: 0.45, y: 0.75 },
-      { role: 'fwd', x: 0.72, y: 0.2 }, { role: 'fwd', x: 0.72, y: 0.5 }, { role: 'fwd', x: 0.72, y: 0.8 },
+      { role: 'fwd', x: 0.7, y: 0.35 }, { role: 'fwd', x: 0.7, y: 0.65 },
     ],
   },
   {
-    id: '5-3-2', name: 'DEFENSIVA', slots: [
-      { role: 'def', x: 0.18, y: 0.12 }, { role: 'def', x: 0.18, y: 0.31 }, { role: 'def', x: 0.18, y: 0.5 }, { role: 'def', x: 0.18, y: 0.69 }, { role: 'def', x: 0.18, y: 0.88 },
-      { role: 'mid', x: 0.44, y: 0.25 }, { role: 'mid', x: 0.44, y: 0.5 }, { role: 'mid', x: 0.44, y: 0.75 },
-      { role: 'fwd', x: 0.7, y: 0.35 }, { role: 'fwd', x: 0.7, y: 0.65 },
+    id: '3-2-3', name: 'OFENSIVA', slots: [
+      { role: 'def', x: 0.22, y: 0.25 }, { role: 'def', x: 0.22, y: 0.5 }, { role: 'def', x: 0.22, y: 0.75 },
+      { role: 'mid', x: 0.45, y: 0.35 }, { role: 'mid', x: 0.45, y: 0.65 },
+      { role: 'fwd', x: 0.7, y: 0.2 }, { role: 'fwd', x: 0.7, y: 0.5 }, { role: 'fwd', x: 0.7, y: 0.8 },
+    ],
+  },
+  {
+    id: '4-3-1', name: 'DEFENSIVA', slots: [
+      { role: 'def', x: 0.2, y: 0.15 }, { role: 'def', x: 0.2, y: 0.38 }, { role: 'def', x: 0.2, y: 0.62 }, { role: 'def', x: 0.2, y: 0.85 },
+      { role: 'mid', x: 0.42, y: 0.25 }, { role: 'mid', x: 0.42, y: 0.5 }, { role: 'mid', x: 0.42, y: 0.75 },
+      { role: 'fwd', x: 0.68, y: 0.5 },
     ],
   },
 ];
@@ -80,19 +83,22 @@ describe('the twenty squads of eighteen (G15-17 + Paco 23-sep)', () => {
 
   it('the squad can field EVERY formation of today with a reserve to spare in every line', () => {
     expect(checkSquadCoversFormations(FORMATIONS)).toEqual([]);
-    // Bench size is derived, never written down as a literal -- nine today, changes
-    // once V15-4 raises TEAM_SIZE.
-    expect(SQUAD_SIZE - TEAM_SIZE).toBe(9);
+    // Bench size is derived, never written down as a literal -- seven reserves with
+    // eleven starters, since G15-16 raised TEAM_SIZE.
+    expect(SQUAD_SIZE - TEAM_SIZE).toBe(7);
     expect(SQUAD_SIZE).toBeGreaterThan(TEAM_SIZE);
   });
 
-  it('and EVERY eleven-a-side formation of V15-4 (G15-16), so V15-4 does not reopen this file', () => {
-    expect(checkSquadCoversFormations(V15_4_FORMATIONS)).toEqual([]);
-    for (const f of V15_4_FORMATIONS) expect(f.slots).toHaveLength(10);
-    // The point of eighteen over fourteen (H8): 4-4-2 needs 4 midfielders and 5-3-2
-    // needs 5 defenders, and BOTH must still leave someone on the bench for that line.
-    expect(squadRoleCount('mid')).toBeGreaterThan(4);
-    expect(squadRoleCount('def')).toBeGreaterThan(5);
+  it('and EVERY nine-a-side formation of the v1, so the squad of eighteen is not tied to one table', () => {
+    expect(checkSquadCoversFormations(PREVIOUS_FORMATIONS)).toEqual([]);
+    for (const f of PREVIOUS_FORMATIONS) expect(f.slots).toHaveLength(8);
+    // The point of eighteen over fourteen (H8), re-read against this table: the 4-3-1
+    // needs 4 defenders and the 3-3-2 needs 3 midfielders, and BOTH must still leave
+    // someone on the bench for that line. (The tighter bounds of the eleven-a-side
+    // table -- 4 midfielders, 5 defenders -- are the ones the test above asserts, on
+    // FORMATIONS itself, through checkSquadCoversFormations.)
+    expect(squadRoleCount('mid')).toBeGreaterThan(3);
+    expect(squadRoleCount('def')).toBeGreaterThan(4);
     expect(squadRoleCount('gk')).toBeGreaterThan(1);   // G15-18: the keeper can be injured
   });
 

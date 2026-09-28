@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { PITCH } from './pitch';
-import { FORMATIONS } from './teams';
+import { PITCH, centerY, goalLineX } from './pitch';
+import { FORMATIONS, TEAM_SIZE } from './teams';
 import {
   BALL_GROUND_DECEL, CONTROL_DIST, KICK_LOCK_STEPS, LONG_PASS_VZ, POSSESSION_RADIUS, canPickUp,
   createBall, givePossession, kickBall, stepBall, stickToOwner,
@@ -159,28 +159,41 @@ describe('pickup by proximity', () => {
     stepBall(ball, players, 5, PITCH);
     expect(ball.owner).toBeNull();
     expect([ball.x, ball.y]).toEqual([743, -1]);
-    // Same on the goal line, where the keeper stands: this is the goal C2 cancelled.
-    ball.x = PITCH.width + 7.5; ball.y = 612;
-    players[9].x = PITCH.width; players[9].y = 612;
+    // Same on the goal line, where the keeper stands: this is the goal C2 cancelled. The
+    // keeper is found by ROLE (review-1b I4: players[9] had quietly become an outfield
+    // player of the other team), and the ball crosses BETWEEN the posts -- 38 u above
+    // centerY, the C2 fixture of match.test.ts -- so this really is a goal being judged.
+    let keeper: PlayerState | undefined;
+    for (const q of players) if (q.team === 1 && q.role === 'gk') keeper = q;
+    if (keeper === undefined) throw new Error('team 1 has no goalkeeper');
+    const goalY = centerY(PITCH) - 38;
+    expect(Math.abs(goalY - centerY(PITCH))).toBeLessThan(PITCH.goalWidth / 2);
+    ball.x = PITCH.width + 7.5; ball.y = goalY;
+    keeper.x = PITCH.width; keeper.y = goalY;
     stepBall(ball, players, 6, PITCH);
     expect(ball.owner).toBeNull();
     // And the guard is not blanket-off: one unit inside the same line it still picks up.
     ball.x = PITCH.width - 1;
     stepBall(ball, players, 7, PITCH);
-    expect(ball.owner).toBe(9);
+    expect(ball.owner).toBe(keeper.id);
   });
   // Stage B (S6): a moving ball reaching the keeper is decided by keeperCatch
   // (catchChance), never by the free pickup; a ball at rest is a loose ball.
   it('the keeper does not pick up a MOVING ball but does pick up one at rest (an outfield player takes both)', () => {
     const { players, ball } = world();
-    const gk = players[9];
-    gk.x = 1960; gk.y = 650;
-    ball.x = 1970; ball.y = 650; ball.vx = -120; ball.vy = 0;   // 10 u away, rolling towards him
+    const gk = players[TEAM_SIZE];   // team 1's keeper; canPickUp only cares about its ROLE
+    // The spot is incidental (the rule is about the ball moving, not about the area), but
+    // it is anchored to the pitch so it keeps sitting near team 1's goal line -- inside
+    // its own small area, whose line moved with the x1.1 areas of G15-16.
+    const line = goalLineX(PITCH, 1);
+    gk.x = line - 40; gk.y = centerY(PITCH);
+    ball.x = line - 30; ball.y = centerY(PITCH); ball.vx = -120; ball.vy = 0;   // 10 u away, rolling towards him
+    expect(gk.x).toBeGreaterThan(PITCH.width - PITCH.smallAreaDepth);
     stepBall(ball, players, 5, PITCH);
     expect(ball.owner).toBeNull();
-    ball.vx = 0; ball.vy = 0; ball.x = 1970;
+    ball.vx = 0; ball.vy = 0; ball.x = line - 30;
     stepBall(ball, players, 6, PITCH);
-    expect(ball.owner).toBe(9);
+    expect(ball.owner).toBe(TEAM_SIZE);
     const { players: ps, ball: b } = world();
     ps[7].x = 1000; ps[7].y = 600;
     b.x = 1010; b.y = 600; b.vx = -120;

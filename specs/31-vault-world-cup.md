@@ -506,7 +506,7 @@ amistoso a dos sea justo, y que el Mundial dé ganas de otro.
    módulo de `football-logic/` lee teclado, `Math.random` ni estado de módulo.
 3. **Toda formación suma ocho de campo y ninguna posición se sale del campo**; el banco no repite
    ids ni equipaciones. Invariantes con test negativo cada uno.
-4. **Nueve por equipo**, y el portero nunca es el jugador controlado.
+4. **Nueve por equipo** (v1.5, G15-16: **once por equipo**, 10 de campo + portero, en amistoso y Mundial), y el portero nunca es el jugador controlado.
 5. **Se controla siempre el más cercano al balón**, con histéresis de 40 u para que no parpadee,
    y el cambio es automático y derivado del estado (no es entrada).
    *G15-5 (v1.5): salvo el cambio manual del humano con C al defender, que sale de su `TeamInput`
