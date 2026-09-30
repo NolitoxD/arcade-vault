@@ -1,19 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import { PITCH, centerX, centerY, isInsideBigArea } from './pitch';
-import { FORMATIONS, OUTFIELD, TEAM_SIZE, slotCounts } from './teams';
+import { FORMATIONS, TEAMS, OUTFIELD, TEAM_SIZE, slotCounts } from './teams';
 import { dist } from './geometry';
 import { STEPS_PER_SECOND } from './step';
 import {
   GK_LINE_DIST, GK_SPEED, PLAYER_SPEED, PLAYER_SPEED_WITH_BALL, SHOOTOUT_GRID_COLUMNS, SHOOTOUT_GRID_ROWS,
   SHOOTOUT_GRID_SPACING_X, SHOOTOUT_GRID_SPACING_Y, SPRINT_COOLDOWN_STEPS, SPRINT_MULT, SPRINT_STEPS,
-  TACKLE_DIST, TACKLE_STEPS, anchorFor, createPlayers, isPlayerDown, isSprinting, ownGoalSide,
+  KEEPER_RUSHING_SPAN, TACKLE_DIST, TACKLE_STEPS, anchorFor, createPlayers, multForLevel, isPlayerDown, isSprinting, ownGoalSide,
   placeAroundCentreSpot, placeByFormation, stepPlayer, stepPlayerFree, type PlayerState,
 } from './players';
 
 const F = FORMATIONS[0];
 
 function fresh(): PlayerState[] {
-  return createPlayers([F, F], PITCH);
+  return createPlayers([F, F], PITCH, [TEAMS[0].id, TEAMS[1].id]);
 }
 
 // Walks `p` for `steps` steps with the same input and returns the distance covered in x.
@@ -67,7 +67,7 @@ describe('createPlayers', () => {
   });
   it('every published formation gives its team exactly the roles its slots say, in slot order', () => {
     for (const f of FORMATIONS) {
-      const ps = createPlayers([f, f], PITCH);
+      const ps = createPlayers([f, f], PITCH, [TEAMS[0].id, TEAMS[1].id]);
       const [def, mid, fwd] = slotCounts(f);
       for (const team of [0, 1] as const) {
         const mine = ps.filter((p) => p.team === team && p.role !== 'gk');
@@ -79,7 +79,7 @@ describe('createPlayers', () => {
     }
   });
   it('two different formations on the two sides: each team follows its own', () => {
-    const ps = createPlayers([FORMATIONS[1], FORMATIONS[2]], PITCH);
+    const ps = createPlayers([FORMATIONS[1], FORMATIONS[2]], PITCH, [TEAMS[0].id, TEAMS[1].id]);
     expect(ps.filter((p) => p.team === 0 && p.role === 'fwd')).toHaveLength(3);
     expect(ps.filter((p) => p.team === 1 && p.role === 'def')).toHaveLength(5);
     // The last outfield id of a team is TEAM_SIZE - 1 slots after its keeper, i.e.
@@ -131,18 +131,18 @@ describe('anchorFor / placeByFormation', () => {
 describe('stepPlayer movement', () => {
   it('runs at PLAYER_SPEED without the ball', () => {
     const p = fresh()[4];
-    expect(walk(p, 60, 1, false, false)).toBeCloseTo(PLAYER_SPEED, 6);
+    expect(walk(p, 60, 1, false, false)).toBeCloseTo(PLAYER_SPEED * p.speedMult, 6);
   });
   it('runs at PLAYER_SPEED_WITH_BALL with the ball', () => {
     const p = fresh()[4];
-    expect(walk(p, 60, 1, false, true)).toBeCloseTo(PLAYER_SPEED_WITH_BALL, 6);
+    expect(walk(p, 60, 1, false, true)).toBeCloseTo(PLAYER_SPEED_WITH_BALL * p.speedMult, 6);
   });
   it('diagonals are normalized: same speed, not sqrt(2) faster', () => {
     const p = fresh()[4];
     const x0 = p.x; const y0 = p.y;
     for (let s = 0; s < 60; s++) stepPlayer(p, 1, 1, false, false, 1, PITCH, s);
     const covered = Math.sqrt((p.x - x0) ** 2 + (p.y - y0) ** 2);
-    expect(covered).toBeCloseTo(PLAYER_SPEED, 6);
+    expect(covered).toBeCloseTo(PLAYER_SPEED * p.speedMult, 6);
   });
   it('faces the last non-zero direction and keeps it when idle', () => {
     const p = fresh()[4];
@@ -180,7 +180,7 @@ describe('sprint burst and recovery (measured in steps, off the boundaries)', ()
     // from the pitch clamp so this test isolates sprint/cooldown timing, which
     // "never leaves the pitch" already covers separately.
     p.x = 0;
-    const perStepBase = PLAYER_SPEED / STEPS_PER_SECOND;
+    const perStepBase = (PLAYER_SPEED * p.speedMult) / STEPS_PER_SECOND;
     // 100 steps deep into the burst: all sprinting
     expect(walk(p, 100, 1, true, false, 0)).toBeCloseTo(100 * perStepBase * SPRINT_MULT, 6);
     // 20 more finish the burst; 30 more are already cooling down at base speed
@@ -199,7 +199,7 @@ describe('sprint burst and recovery (measured in steps, off the boundaries)', ()
   });
   it('releasing C early ends the burst and still charges the full recovery', () => {
     const p = fresh()[4];
-    const perStepBase = PLAYER_SPEED / STEPS_PER_SECOND;
+    const perStepBase = (PLAYER_SPEED * p.speedMult) / STEPS_PER_SECOND;
     walk(p, 30, 1, true, false, 0);          // steps 0..29: burst
     walk(p, 1, 1, false, false, 30);         // step 30: release -> the full 180-step recovery starts
     walk(p, 144, 1, false, false, 31);       // steps 31..174: still recovering
@@ -209,7 +209,7 @@ describe('sprint burst and recovery (measured in steps, off the boundaries)', ()
   });
   it('sprinting also applies with the ball', () => {
     const p = fresh()[4];
-    expect(walk(p, 10, 1, true, true)).toBeCloseTo(10 * (PLAYER_SPEED_WITH_BALL / STEPS_PER_SECOND) * SPRINT_MULT, 6);
+    expect(walk(p, 10, 1, true, true)).toBeCloseTo(10 * ((PLAYER_SPEED_WITH_BALL * p.speedMult) / STEPS_PER_SECOND) * SPRINT_MULT, 6);
   });
 });
 
@@ -221,7 +221,7 @@ describe('down and tackling players ignore the d-pad', () => {
     stepPlayer(p, 1, 0, false, false, 1, PITCH, 37);
     expect(p.vx).toBe(0);
     expect(isPlayerDown(p, 61)).toBe(false);
-    expect(walk(p, 1, 1, false, false, 61)).toBeCloseTo(PLAYER_SPEED / STEPS_PER_SECOND, 6);
+    expect(walk(p, 1, 1, false, false, 61)).toBeCloseTo((PLAYER_SPEED * p.speedMult) / STEPS_PER_SECOND, 6);
   });
   it('a tackling player slides TACKLE_DIST along tackleDir in TACKLE_STEPS steps and ignores the d-pad', () => {
     const p = fresh()[4];
@@ -249,8 +249,8 @@ describe('stepPlayerFree: the AI movement channel', () => {
     p.wantX = 0.6; p.wantY = 0.8;   // 3-4-5: a unit vector off both axes
     const x0 = p.x; const y0 = p.y;
     for (let s = 0; s < 60; s++) stepPlayerFree(p, false, 1, PITCH, s);
-    expect(p.x - x0).toBeCloseTo(PLAYER_SPEED * 0.6, 6);
-    expect(p.y - y0).toBeCloseTo(PLAYER_SPEED * 0.8, 6);
+    expect(p.x - x0).toBeCloseTo(PLAYER_SPEED * p.speedMult * 0.6, 6);
+    expect(p.y - y0).toBeCloseTo(PLAYER_SPEED * p.speedMult * 0.8, 6);
     expect(p.facingX).toBeCloseTo(0.6, 10);
     expect(p.facingY).toBeCloseTo(0.8, 10);
   });
@@ -259,19 +259,19 @@ describe('stepPlayerFree: the AI movement channel', () => {
     half.wantX = 0.5; half.wantY = 0;
     const x0 = half.x;
     for (let s = 0; s < 60; s++) stepPlayerFree(half, false, 1, PITCH, s);
-    expect(half.x - x0).toBeCloseTo(PLAYER_SPEED * 0.5, 6);
+    expect(half.x - x0).toBeCloseTo(PLAYER_SPEED * half.speedMult * 0.5, 6);
     const over = fresh()[4];
     over.wantX = 1.7; over.wantY = 0;
     const x1 = over.x;
     for (let s = 0; s < 60; s++) stepPlayerFree(over, false, 1, PITCH, s);
-    expect(over.x - x1).toBeCloseTo(PLAYER_SPEED, 6);
+    expect(over.x - x1).toBeCloseTo(PLAYER_SPEED * over.speedMult, 6);
   });
-  it('the goalkeeper moves at GK_SPEED and never sprints', () => {
+  it('the goalkeeper moves at his own keeperSpeed (GK_SPEED bent by rushing, G15-26) and never sprints', () => {
     const gk = fresh()[0];
     gk.wantX = 0; gk.wantY = 1; gk.wantSprint = true;
     const y0 = gk.y;
     for (let s = 0; s < 60; s++) stepPlayerFree(gk, false, 1, PITCH, s);
-    expect(gk.y - y0).toBeCloseTo(GK_SPEED, 6);
+    expect(gk.y - y0).toBeCloseTo(GK_SPEED * multForLevel(gk.keeperRushing, KEEPER_RUSHING_SPAN), 6);
     expect(isSprinting(gk)).toBe(false);
   });
   it('wantSprint sprints an outfield player at x1.4 and the want is ignored while down or mid-tackle', () => {
@@ -280,7 +280,7 @@ describe('stepPlayerFree: the AI movement channel', () => {
     p.wantX = 1; p.wantY = 0; p.wantSprint = true;
     const x0 = p.x;
     for (let s = 0; s < 30; s++) stepPlayerFree(p, false, 1, PITCH, s);
-    expect(p.x - x0).toBeCloseTo(30 * (PLAYER_SPEED / STEPS_PER_SECOND) * SPRINT_MULT, 6);
+    expect(p.x - x0).toBeCloseTo(30 * ((PLAYER_SPEED * p.speedMult) / STEPS_PER_SECOND) * SPRINT_MULT, 6);
     const down = fresh()[5];
     down.wantX = 1; down.downUntilStep = 100;
     const xd = down.x;
@@ -300,7 +300,7 @@ describe('stepPlayerFree: the AI movement channel', () => {
 // centre circle would break the invariant on every step of the shootout.
 describe('placeAroundCentreSpot (shootout)', () => {
   it('parks the nineteen outfield players who are not the taker on a grid inside the centre circle, and leaves both keepers alone', () => {
-    const players = createPlayers([FORMATIONS[0], FORMATIONS[0]], PITCH);
+    const players = createPlayers([FORMATIONS[0], FORMATIONS[0]], PITCH, [TEAMS[0].id, TEAMS[1].id]);
     const keeperPositions = [players[0], players[TEAM_SIZE]].map((p) => ({ x: p.x, y: p.y }));
     const takerId = 3;
     for (const p of players) { p.vx = 7; p.vy = -7; p.tackleStepsLeft = 9; p.downUntilStep = 1000; }
@@ -337,7 +337,7 @@ describe('placeAroundCentreSpot (shootout)', () => {
   // landed exactly on it. (G15-16 made the columns odd again, five; the rows are what
   // carries the property.)
   it('nobody shares a spot and the grid is wider than a player', () => {
-    const players = createPlayers([FORMATIONS[0], FORMATIONS[0]], PITCH);
+    const players = createPlayers([FORMATIONS[0], FORMATIONS[0]], PITCH, [TEAMS[0].id, TEAMS[1].id]);
     placeAroundCentreSpot(players, 3, PITCH);
     for (const p of players) {
       if (p.role === 'gk' || p.id === 3) continue;

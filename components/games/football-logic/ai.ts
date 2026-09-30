@@ -7,7 +7,7 @@ import type { PenaltySide } from './set-pieces';
 import type { MatchState } from './match';
 import { HALF_STEPS, perStep, stepsFor } from './step';
 import {
-  GK_CATCH_RADIUS, GK_LINE_DIST, GK_SPEED, PLAYER_HEIGHT, PLAYER_SPEED, TACKLE_DIST, anchorFor, isPlayerDown,
+  GK_CATCH_RADIUS, GK_LINE_DIST, PLAYER_HEIGHT, PLAYER_SPEED, TACKLE_DIST, anchorFor, isPlayerDown, keeperSpeed, multForLevel,
   ownGoalSide, type PlayerState,
 } from './players';
 import { givePossession, type BallState } from './ball';
@@ -41,7 +41,9 @@ const LATE_GAME_STEPS = stepsFor(LATE_GAME_SECONDS);
 // front-only slide in `chase`, is NOT: assumption, review in QA)
 const DODGE_DIST = 150;
 const SPRINT_LANE_RADIUS = 60;
-const SHOT_POST_MARGIN = 20;
+// G15-27 (Paco, 30-sep): 20 -> 8, below the post reach POST_RADIUS + BALL_RADIUS (11),
+// so a CPU shot can actually meet the frame (with 20 it never did). The posts are NOT thickened.
+const SHOT_POST_MARGIN = 8;
 const CHASE_DEAD_ZONE = 4;
 
 // Profile formulas (spec table "Perfil por dificultad (1-8)").
@@ -93,20 +95,47 @@ function clampNum(v: number, min: number, max: number): number {
   return v;
 }
 
+// G15-10: the five attributes BEND the profile; the difficulty still dominates
+// (attributes.test.ts asserts both). Level 3 is neutral, so a 3-3-3-3-3 selection
+// gives byte-for-byte the profile of the v1 -- which is what keeps the bend honest.
+const ATTR_PASS_ERROR_PER_LEVEL = 0.35;
+const ATTR_SHOT_ERROR_PER_LEVEL = 0.25;
+const ATTR_CATCH_PER_LEVEL = 0.006;
+const ATTR_TACKLE_PER_LEVEL = 0.012;
+
 // Pure formulas over the difficulty, as profileFor(def, difficulty) in Vault
-// Fighter. `def` is received from day one (spec) and unused in v1: v1.5 attributes
-// per selection plug in here. Difficulty never touches speed (criterion 14).
+// Fighter, bent by the selection's attributes since V15-4 (G15-10). Difficulty never
+// touches speed (criterion 14). penaltyReadChance is NOT bent: its clamp to
+// [0.5125, 0.60] is what guarantees the sudden death ends (S-PK9).
 export function profileFor(def: TeamDef, difficulty: number): AiProfile {
-  void def;
+  const a = def.attrs;
   const reactionMs = clampNum(REACTION_MS_BASE - difficulty * REACTION_MS_PER_LEVEL, REACTION_MS_MIN, REACTION_MS_MAX);
   return {
     reactionSteps: stepsFor(reactionMs / 1000),
-    passErrorDeg: clampNum(PASS_ERROR_BASE - difficulty * PASS_ERROR_PER_LEVEL, PASS_ERROR_MIN, PASS_ERROR_MAX),
-    shotErrorDeg: clampNum(SHOT_ERROR_BASE - difficulty * SHOT_ERROR_PER_LEVEL, SHOT_ERROR_MIN, SHOT_ERROR_MAX),
-    catchChance: clampNum(CATCH_BASE + difficulty * CATCH_PER_LEVEL, CATCH_MIN, CATCH_MAX),
+    passErrorDeg: clampNum(PASS_ERROR_BASE - difficulty * PASS_ERROR_PER_LEVEL - (a.passing - 3) * ATTR_PASS_ERROR_PER_LEVEL, PASS_ERROR_MIN, PASS_ERROR_MAX),
+    shotErrorDeg: clampNum(SHOT_ERROR_BASE - difficulty * SHOT_ERROR_PER_LEVEL - (a.shooting - 3) * ATTR_SHOT_ERROR_PER_LEVEL, SHOT_ERROR_MIN, SHOT_ERROR_MAX),
+    catchChance: clampNum(CATCH_BASE + difficulty * CATCH_PER_LEVEL + (a.defence - 3) * ATTR_CATCH_PER_LEVEL, CATCH_MIN, CATCH_MAX),
     penaltyReadChance: clampNum(PENALTY_READ_BASE + difficulty * PENALTY_READ_PER_LEVEL, PENALTY_READ_MIN, PENALTY_READ_MAX),
-    tackleChance: clampNum(TACKLE_BASE + difficulty * TACKLE_PER_LEVEL, TACKLE_MIN, TACKLE_MAX),
+    tackleChance: clampNum(TACKLE_BASE + difficulty * TACKLE_PER_LEVEL + (a.defence - 3) * ATTR_TACKLE_PER_LEVEL, TACKLE_MIN, TACKLE_MAX),
   };
+}
+
+// G15-26: the team profile still sets the floor (the difficulty), the keeper's own
+// reflexes bend it. Level 3 is neutral, so a keeper with 3 reflexes catches exactly
+// like the v1 one did at the same difficulty.
+export const KEEPER_REFLEX_PER_LEVEL = 0.03;
+
+export function keeperCatchChance(teamCatchChance: number, gk: PlayerState): number {
+  return clampNum(teamCatchChance + (gk.keeperReflexes - 3) * KEEPER_REFLEX_PER_LEVEL, CATCH_MIN, CATCH_MAX);
+}
+
+// G15-26, the accuracy half of kicking: a keeper's throw carries the team profile's
+// pass error scaled by his kicking (level 5: x0.8, level 3: x1, level 1: x1.2). The
+// human profile has passErrorDeg 0 (ruling R10), so the human's throws stay exact.
+export const KEEPER_KICKING_ERROR_SPAN = 0.2;
+
+export function keeperThrowErrorDeg(teamPassErrorDeg: number, gk: PlayerState): number {
+  return teamPassErrorDeg * multForLevel(6 - gk.keeperKicking, KEEPER_KICKING_ERROR_SPAN);
 }
 
 // The human team's profile (ruling R10: no angular error on human kicks). The
@@ -294,19 +323,22 @@ export function keeperStep(gk: PlayerState, players: readonly PlayerState[], bal
   const goalX = goalLineX(pitch, side);
   const lineX = goalX + attackDir * GK_LINE_DIST;
   const cy = centerY(pitch);
+  // G15-26: the keeper's rushing sets his speed (keeperSpeed); steering with the same
+  // value keeps steerTo's exact arrival.
+  const speed = keeperSpeed(gk);
   const ownerTeam = ball.owner === null ? null : players[ball.owner].team;
   const mateCloser = mateCloserToBall(gk, players, ball, stepCount);
   // 1b (G12-3): out inside the small area for a ball that is loose OR owned by a
   // rival, as long as no non-down teammate is closer to it than the keeper.
   if (ownerTeam !== gk.team && !mateCloser && isInsideSmallArea(pitch, side, ball.x, ball.y)) {
-    steerTo(gk, ball.x, ball.y, GK_SPEED);
+    steerTo(gk, ball.x, ball.y, speed);
     return;
   }
   // G12-3: one-on-one press. A rival owns the ball inside the own big (penalty)
   // area -- never for a loose ball, never outside it -- and no own non-down
   // outfield player is closer to it than the keeper.
   if (ownerTeam !== null && ownerTeam !== gk.team && !mateCloser && isInsideBigArea(pitch, side, ball.x, ball.y)) {
-    steerTo(gk, ball.x, ball.y, GK_SPEED);
+    steerTo(gk, ball.x, ball.y, speed);
     return;
   }
   // 1a. on the line, at the point where the ball->goal-centre line crosses it
@@ -319,7 +351,7 @@ export function keeperStep(gk: PlayerState, players: readonly PlayerState[], bal
   const half = pitch.smallAreaWidth / 2;
   if (targetY < cy - half) targetY = cy - half;
   if (targetY > cy + half) targetY = cy + half;
-  steerTo(gk, lineX, targetY, GK_SPEED);
+  steerTo(gk, lineX, targetY, speed);
 }
 
 // Spec "El portero" 2 (D4): a moving ball inside GK_CATCH_RADIUS is caught with

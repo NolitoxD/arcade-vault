@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { PITCH, centerY, goalLineX, isInsideBigArea, isInsideSmallArea } from './pitch';
 import { FORMATIONS, OUTFIELD, STRATEGIES, TEAMS, TEAM_SIZE, type Formation, type Strategy } from './teams';
 import { dist } from './geometry';
+import { BALL_RADIUS, POST_RADIUS } from './goal-frame';
 import { checkTeamInput, copyTeamInput, createTeamInput, type Axis, type TeamInput } from './input';
 import { HALF_STEPS, perStep, stepsFor } from './step';
 import { GK_LINE_DIST, GK_SPEED, PLAYER_HEIGHT, PLAYER_SPEED, createPlayers, isPlayerDown, type PlayerState } from './players';
@@ -9,7 +10,7 @@ import { KICK_LOCK_STEPS, createBall, givePossession, type BallState } from './b
 import { createRng, type Rng } from './rng';
 import { SET_PIECE_COUNTDOWN_STEPS, SHOOTOUT_RESOLVE_STEPS, SHOOTOUT_ROUNDS } from './set-pieces';
 import {
-  LONG_PASS_HOLD_STEPS, SHOT_CHARGE_STEPS, SHOT_SPEED_MAX, SHOT_SPEED_MIN, createActionEvent, type ActionEvent,
+  LONG_PASS_HOLD_STEPS, SHOT_CHARGE_STEPS, SHOT_SPEED_MAX, SHOT_SPEED_MIN, contactIsFoul, createActionEvent, type ActionEvent,
 } from './actions';
 import {
   callSetPiece, createMatch, endExtraTime, endHalf, endHalfTime, resumePlay, stepMatch, winnerOf,
@@ -46,10 +47,15 @@ function freeBall(ball: BallState, x: number, y: number, vx = 0, vy = 0): void {
   ball.kickerId = -1; ball.kickLockUntilStep = 0;
 }
 
+// V15-4 (G15-10): the spec table is the profile of a NEUTRAL selection (all five
+// attributes at 3, where the bend is zero); the real TEAMS[0] now carries its own
+// attributes, so the formula tests pin the neutral one and attributes.test.ts the bend.
+const NEUTRAL = { ...ESP, attrs: { defence: 3, attack: 3, counter: 3, shooting: 3, passing: 3 } };
+
 describe('profileFor: the spec formulas, in steps, clamped (levels 1 and 8 exact)', () => {
   it('level 1 and level 8 are the values of the spec table', () => {
-    const easy = profileFor(ESP, 1);
-    const hard = profileFor(ESP, 8);
+    const easy = profileFor(NEUTRAL, 1);
+    const hard = profileFor(NEUTRAL, 8);
     expect(easy.reactionSteps).toBe(stepsFor(0.595));   // 36
     expect(hard.reactionSteps).toBe(stepsFor(0.210));   // 13
     expect(easy.passErrorDeg).toBe(16);
@@ -74,11 +80,11 @@ describe('profileFor: the spec formulas, in steps, clamped (levels 1 and 8 exact
     expect(hard.tackleChance).toBeGreaterThan(easy.tackleChance);
   });
   it('difficulties beyond 1..8 saturate at the level-1 / level-8 values (S1)', () => {
-    expect(profileFor(ESP, -40)).toEqual(profileFor(ESP, 1));
-    expect(profileFor(ESP, 99)).toEqual(profileFor(ESP, 8));
+    expect(profileFor(NEUTRAL, -40)).toEqual(profileFor(NEUTRAL, 1));
+    expect(profileFor(NEUTRAL, 99)).toEqual(profileFor(NEUTRAL, 8));
   });
-  it('the team is received but does not change the profile in v1 (identical selections)', () => {
-    expect(profileFor(TEAMS[0], 5)).toEqual(profileFor(TEAMS[1], 5));
+  it('since V15-4 (G15-10) the team DOES bend the profile: ESPAÑA and ITALIA differ at the same level', () => {
+    expect(profileFor(TEAMS[0], 5)).not.toEqual(profileFor(TEAMS[1], 5));
   });
   it('humanProfile is the same keeper and penalty with ZERO kick error (ruling R10)', () => {
     const h = humanProfile(ESP, 5);
@@ -106,7 +112,7 @@ describe('quantizeDir: the nearest of the eight d-pad directions', () => {
 
 describe('laneBlocked: a rival inside the corridor blocks, outside or beyond its length does not', () => {
   it('judges perpendicular distance and projection, ignoring downed rivals and own team', () => {
-    const ps = createPlayers([F, F], PITCH);
+    const ps = createPlayers([F, F], PITCH, [TEAMS[0].id, TEAMS[1].id]);
     for (const p of ps) at(p, 50 + p.id * 10, 1250);
     // The lane is team 0's (attacking +x from (1000, 650)): the second argument is MY team, so
     // the obstacles are the players of team 1 (ids TEAM_SIZE..2 * TEAM_SIZE - 1). Pre-flight H1:
@@ -165,7 +171,7 @@ describe('applyKickError: one rng draw, centred on zero, smaller at level 8 than
 
 type World = { players: PlayerState[]; ball: BallState; scratch: { x: number; y: number } };
 function world(): World {
-  const players = createPlayers([F, F], PITCH);
+  const players = createPlayers([F, F], PITCH, [TEAMS[0].id, TEAMS[1].id]);
   return { players, ball: createBall(), scratch: { x: 0, y: 0 } };
 }
 // Runs positionTeam for team 0 (attacking +x) and returns the want of player `id`.
@@ -668,6 +674,29 @@ describe('decideTeamInput with the ball: the three-branch tree (spec "La CPU con
     expect(out.a).toBe('pressed');
     expect([out.dx, out.dy]).toEqual([1, 1]);
   });
+  // G15-27 (Paco, 30-sep): the CPU aims close enough to the post that its shot can meet
+  // the frame (POST_RADIUS + BALL_RADIUS of the post centre), without aiming AT the post.
+  // Structural: nothing here is measured, the offsets come from the goal and the frame.
+  it('G15-27: shoots on a straight line that crosses the goal line within the post\'s reach, at both posts', () => {
+    const inReach = PITCH.goalWidth / 2 - (POST_RADIUS + BALL_RADIUS) + 1;   // 1 u inside the reach
+    for (const sign of [1, -1]) {
+      const s = scenario();
+      at(s.me, PITCH.width - 300, CY + sign * inReach, 1, 0);
+      s.m.ball.x = s.me.x + 18; s.m.ball.y = s.me.y;
+      const out = decide(s);
+      expect(out.a).toBe('pressed');
+      expect([out.dx, out.dy]).toEqual([1, 0]);
+    }
+  });
+  it('G15-27: still keeps a margin -- never shoots on a line whose ball would cover the centre of a post', () => {
+    const intoThePost = PITCH.goalWidth / 2 - BALL_RADIUS + 1;   // the ball's edge passes over the post centre
+    for (const sign of [1, -1]) {
+      const s = scenario();
+      at(s.me, PITCH.width - 300, CY + sign * intoThePost, 1, 0);
+      s.m.ball.x = s.me.x + 18; s.m.ball.y = s.me.y;
+      expect(decide(s).a).toBe('up');
+    }
+  });
   it('2. under pressure with a mate in a clear lane, passes: short to a mate 200 u away, long to one 400 u away', () => {
     const short = scenario();
     at(short.m.players[TEAM_SIZE + 3], short.me.x - 60, CY);             // rival 60 u behind: pressure, not on the lane
@@ -744,7 +773,7 @@ describe('decideTeamInput without the ball: chase every step, act at the gate', 
     expect([out.dx, out.dy]).toEqual([1, 1]);
     expect(out.c).toBe('held');
   });
-  it('steals at < STEAL_RANGE (B pressed), slides at < TACKLE_DIST from the FRONT when the roll passes tackleChance, never from behind', () => {
+  it('steals at < STEAL_RANGE (B pressed), slides at < TACKLE_DIST only from the owner\'s front half-plane when the roll passes tackleChance, never from behind', () => {
     const steal = scenario();
     const owner = at(steal.m.players[TEAM_SIZE + 3], 1020, CY, -1, 0);   // faces -x, towards me: I am in front
     givePossession(steal.m.ball, owner, 0);
@@ -761,6 +790,13 @@ describe('decideTeamInput without the ball: chase every step, act at the gate', 
     const o4 = at(behind.m.players[TEAM_SIZE + 3], 1060, CY, 1, 0);        // faces away: I am behind him
     givePossession(behind.m.ball, o4, 0);
     expect(decide(behind, fixedRng([0.1])).a).toBe('up');
+    // Stage B assumption S14b (ai.ts, `chase`) still keeps the CPU's slide to the owner's
+    // front HALF-PLANE (dot > 0) -- Paco's resolution 8 (24-sep) leaves it untouched. Only
+    // its inner +-45 deg cone (FOUL_FRONT_COS) is a clash under G15-24: a body contact from
+    // 45-90 deg off the owner's facing passes S14b and is still a foul. The two ends pinned
+    // here are head on (a clash) and from behind (a foul, which the CPU refuses).
+    expect(contactIsFoul(slide.me, o2)).toBe(false);
+    expect(contactIsFoul(behind.me, o4)).toBe(true);
   });
   it('the defensive roll consumes the rng only when a slide is actually considered', () => {
     const s = scenario();
@@ -1013,7 +1049,10 @@ describe('CPU vs CPU: a recorded, deterministic full match that exercises the wh
     const s = game.stats;
     expect(game.match.phase).toBe('over');
     expect(s.score[0] + s.score[1]).toBeGreaterThanOrEqual(1);
-    expect(s.shots).toBeGreaterThanOrEqual(3);
+    // The shots floor is in the marked `it` below (V15-4-2): it is the one count of this
+    // recording that the attributes moved under its floor. What needs no measured number
+    // stays here: the recording exercises the shoot path at all.
+    expect(s.shots).toBeGreaterThan(0);
     expect(s.shortPasses).toBeGreaterThanOrEqual(3);
     expect(s.longPasses).toBeGreaterThanOrEqual(1);
     expect(s.tacklesWon).toBeGreaterThanOrEqual(1);
@@ -1024,6 +1063,14 @@ describe('CPU vs CPU: a recorded, deterministic full match that exercises the wh
     expect(visited).toContain('set-piece');
     expect(visited).toContain('goal');
     // Measured once and reported in the task report (steps, score, counts); never tuned here.
+  });
+  // PENDING_REBASELINE (Task V15-4-9): the G15-10/G15-26 attributes (profile bend, per-player
+  // speed and shot, keeper reflexes/rushing/kicking) move this recording, and its open-play
+  // shot count fell under the floor. ONLY that floor is here (mark-3 technique): every other
+  // count and the structural zeros stay live in the `it`s around it. `game` is the
+  // describe-level recording, so un-skipping this replays nothing.
+  it.skip('(measured) the recording shoots at least three times in open play', () => {
+    expect(game.stats.shots).toBeGreaterThanOrEqual(3);
   });
   it('(a) never produced an invalid TeamInput in the whole match', () => {
     expect(game.stats.invalid).toBe(0);
@@ -1066,17 +1113,25 @@ describe('CPU vs CPU: a recorded, deterministic full match that exercises the wh
       expect(g.stats.keeperLeftLineWithoutPressReason).toBe(0);
     }
   });
-  it('(b, end to end) level 8 vs level 1 over twelve seeds: the harder side scores at least as many goals in total', () => {
+  it('(b, end to end) level 8 vs level 1 over twelve seeds, in BOTH orientations: the harder side scores at least as many goals in total', () => {
     // A trend probe, not a theorem. The brief sampled three seeds; measured, those three
     // are the worst sample there is (3-4 for the easy side) while the twelve below read
     // 32-9 for the hard one, and 35-9 with the levels swapped between the two teams. The
     // sample was widened, never the assertion: a red here is still a QA signal (Task 11).
+    // V15-4-2 (controller ruling, 30-sep): widened again, to both orientations. Since
+    // eleven a side the one-orientation sum was already fragile when the sides were swapped
+    // (measured at 1ecf01e, task-2-report.md), and from V15-4 the two sides are also two
+    // different selections (ESPAÑA, ITALIA) with their own attributes -- so which one is
+    // the hard side is part of the sample, not a constant of it.
     let hardGoals = 0;
     let easyGoals = 0;
     for (const seed of [21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32]) {
       const g = playCpuMatch(seed, FORMATIONS, [0, 0], [8, 1]);
       hardGoals += g.stats.score[0];
       easyGoals += g.stats.score[1];
+      const swapped = playCpuMatch(seed, FORMATIONS, [0, 0], [1, 8]);
+      hardGoals += swapped.stats.score[1];
+      easyGoals += swapped.stats.score[0];
     }
     expect(hardGoals).toBeGreaterThanOrEqual(easyGoals);
   });

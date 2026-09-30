@@ -1,14 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { PITCH, centerY } from './pitch';
-import { FORMATIONS, OUTFIELD, TEAM_SIZE } from './teams';
+import { INV_SQRT2 } from './geometry';
+import { FORMATIONS, TEAMS, OUTFIELD, TEAM_SIZE } from './teams';
 import { createTeamInput, type TeamInput } from './input';
-import { GK_LINE_DIST, createPlayers, stepPlayer, TACKLE_STEPS, type PlayerState } from './players';
+import { ATTR_SHOT_SPAN, GK_LINE_DIST, createPlayers, multForLevel, stepPlayer, TACKLE_STEPS, type PlayerState } from './players';
 import { LONG_PASS_VZ, createBall, givePossession, stickToOwner, type BallState } from './ball';
 import type { Rng } from './rng';
 import {
-  CONTROL_HYSTERESIS, GK_HOLD_STEPS, LONG_PASS_HOLD_STEPS, LONG_PASS_SPEED, MANUAL_SWITCH_POOL, SHORT_PASS_SPEED,
+  CONTROL_HYSTERESIS, GK_HOLD_STEPS, KEEPER_KICKING_SPAN, LONG_PASS_HOLD_STEPS, LONG_PASS_SPEED, MANUAL_SWITCH_POOL, SHORT_PASS_SPEED,
   SHOT_CHARGE_STEPS, SHOT_SPEED_MAX, SHOT_SPEED_MIN, STEAL_CHANCE, STEAL_CHANCE_VS_SPRINT, STEAL_RANGE,
-  TACKLE_MISS_DOWN_STEPS, aimPass, applyButtons, applyKeeperButtons, chargeFraction, createActionEvent, freestMateDir,
+  FOUL_FRONT_COS, TACKLE_BALL_REACH, TACKLE_FOUL_RADIUS, TACKLE_MISS_DOWN_STEPS, aimPass, applyButtons, applyKeeperButtons, chargeFraction,
+  contactIsFoul, createActionEvent, freestMateDir, keeperLongThrowSpeed,
   longPass, nextManualControl, pickPassTarget, releaseFromGoalkeeper, shoot, shortPass, shotSpeed, startTackle, steal,
   stepTackle, updateControlled,
   type ActionEvent,
@@ -19,7 +21,7 @@ const F = FORMATIONS[0];
 type World = { players: PlayerState[]; ball: BallState; out: ActionEvent; aim: { x: number; y: number } };
 
 function world(): World {
-  const players = createPlayers([F, F], PITCH);
+  const players = createPlayers([F, F], PITCH, [TEAMS[0].id, TEAMS[1].id]);
   // Everyone parked on the bottom touch line, spaced by id, so every test places its actors explicitly.
   for (const p of players) { p.x = 100 + p.id * 40; p.y = 1290; p.facingX = 1; p.facingY = 0; }
   return { players, ball: createBall(), out: createActionEvent(), aim: { x: 0, y: 0 } };
@@ -50,13 +52,19 @@ function speedOf(ball: BallState): number {
   return Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
 }
 
-describe('shotSpeed: 700 at a tap, 950 after one second of charge', () => {
+describe('shotSpeed: 700 at a tap, 950 after one second of charge (at shotMult 1)', () => {
   it('interpolates linearly and caps at SHOT_CHARGE_STEPS', () => {
-    expect(shotSpeed(0)).toBe(SHOT_SPEED_MIN);
-    expect(shotSpeed(30)).toBe((SHOT_SPEED_MIN + SHOT_SPEED_MAX) / 2);
-    expect(shotSpeed(SHOT_CHARGE_STEPS)).toBe(SHOT_SPEED_MAX);
-    expect(shotSpeed(SHOT_CHARGE_STEPS + 45)).toBe(SHOT_SPEED_MAX);
+    expect(shotSpeed(0, 1)).toBe(SHOT_SPEED_MIN);
+    expect(shotSpeed(30, 1)).toBe((SHOT_SPEED_MIN + SHOT_SPEED_MAX) / 2);
+    expect(shotSpeed(SHOT_CHARGE_STEPS, 1)).toBe(SHOT_SPEED_MAX);
+    expect(shotSpeed(SHOT_CHARGE_STEPS + 45, 1)).toBe(SHOT_SPEED_MAX);
     expect(SHOT_CHARGE_STEPS).toBe(60);
+  });
+  // G15-10: the shooter's shotMult scales the whole ramp, so a level-5 shooter's full
+  // charge is 5 % over SHOT_SPEED_MAX and a level-1 one 5 % under it.
+  it('the shooter\'s shotMult scales the whole ramp', () => {
+    expect(shotSpeed(SHOT_CHARGE_STEPS, multForLevel(5, ATTR_SHOT_SPAN))).toBeCloseTo(SHOT_SPEED_MAX * 1.05, 9);
+    expect(shotSpeed(0, multForLevel(1, ATTR_SHOT_SPAN))).toBeCloseTo(SHOT_SPEED_MIN * 0.95, 9);
   });
 });
 
@@ -67,7 +75,7 @@ describe('shoot / shortPass / longPass write the ball and the event', () => {
     givePossession(w.ball, p, 10);
     shoot(p, w.ball, 0.6, 0.8, 40, 10, w.out);
     expect(w.ball.owner).toBeNull();
-    expect(speedOf(w.ball)).toBeCloseTo(shotSpeed(40), 6);
+    expect(speedOf(w.ball)).toBeCloseTo(shotSpeed(40, p.shotMult), 6);
     expect(w.ball.vx / w.ball.vy).toBeCloseTo(0.75, 10);
     expect(w.ball.vz).toBeGreaterThan(0);
     expect(w.out).toMatchObject({ kind: 'shot', ok: true, foul: false, actorId: 5 });
@@ -194,10 +202,10 @@ describe('sliding tackle: three outcomes', () => {
     expect(w.out).toMatchObject({ kind: 'tackle', ok: true, foul: false });
     expect(p.downUntilStep).toBe(0);
   });
-  it('fouls a rival it touches and lies down for 1 s', () => {
+  it('fouls a rival it touches from the SIDE and lies down for 1 s', () => {
     const w = world();
     const p = at(w.players[4], 1000, 600);
-    const victim = at(w.players[14], 1000, 655);   // 55 u ahead, ball far away
+    const victim = at(w.players[14], 1000, 655, 1, 0);   // 55 u ahead, facing +x: the slide (0, 1) hits his side; ball far away
     w.ball.x = 300; w.ball.y = 300;
     startTackle(p, 0, 1, w.out);
     const endedAt = runTackle(w, p, TACKLE_STEPS + 5, 200);
@@ -253,6 +261,94 @@ describe('sliding tackle: three outcomes', () => {
   });
 });
 
+describe('G15-24: the ball is reachable before the body, and only a contact from behind or from the side is a foul', () => {
+  it('TACKLE_BALL_REACH is above TACKLE_FOUL_RADIUS, so a clean ball is taken before a body is touched', () => {
+    expect(TACKLE_BALL_REACH).toBe(28);
+    expect(TACKLE_BALL_REACH).toBeGreaterThan(TACKLE_FOUL_RADIUS);
+  });
+  it('a tackler sliding INTO the rival head on, without the ball, is a collision and NOT a foul', () => {
+    const w = world();
+    // Face to face: the tackler slides towards +x, the victim is facing -x.
+    const tackler = at(w.players[1], 400, 400, 1, 0);
+    at(w.players[TEAM_SIZE + 1], 400 + TACKLE_FOUL_RADIUS - 2, 400, -1, 0);
+    tackler.tackleStepsLeft = TACKLE_STEPS;
+    tackler.tackleDirX = 1;
+    tackler.tackleDirY = 0;
+    stepTackle(tackler, w.ball, w.players, 0, w.out);
+    expect(w.out.foul).toBe(false);
+    expect(tackler.tackleStepsLeft).toBe(0);      // the slide still ENDS: it is a collision
+    expect(tackler.downUntilStep).toBeGreaterThan(0);
+  });
+  it('the SAME contact from behind IS a foul', () => {
+    const w = world();
+    const tackler = at(w.players[1], 400, 400, 1, 0);
+    const victim = at(w.players[TEAM_SIZE + 1], 400 + TACKLE_FOUL_RADIUS - 2, 400, 1, 0);   // the victim is running AWAY
+    tackler.tackleStepsLeft = TACKLE_STEPS;
+    tackler.tackleDirX = 1;
+    tackler.tackleDirY = 0;
+    stepTackle(tackler, w.ball, w.players, 0, w.out);
+    expect(w.out.foul).toBe(true);
+    expect(w.out.victimId).toBe(victim.id);
+  });
+  it('a contact from the SIDE is a foul too (G15-24: "por detras o de lado")', () => {
+    const w = world();
+    const tackler = at(w.players[1], 400, 400, 0, 1);
+    at(w.players[TEAM_SIZE + 1], 400, 400 + TACKLE_FOUL_RADIUS - 2, 1, 0);   // the victim faces +x, hit from -y
+    tackler.tackleStepsLeft = TACKLE_STEPS;
+    tackler.tackleDirX = 0;
+    tackler.tackleDirY = 1;
+    stepTackle(tackler, w.ball, w.players, 0, w.out);
+    expect(w.out.foul).toBe(true);
+  });
+  it('the front cone is the pass assist\'s 45 deg cone: FOUL_FRONT_COS is INV_SQRT2', () => {
+    expect(FOUL_FRONT_COS).toBe(INV_SQRT2);
+  });
+  // The angle is taken from INV_SQRT2 (the spec's 45 deg), never from FOUL_FRONT_COS, so a
+  // drift of the constant moves the threshold and NOT the fixtures that pin it.
+  const FRONT_HALF_ANGLE = Math.acos(INV_SQRT2);
+  const ONE_DEG = Math.PI / 180;
+  // The victim faces +x at (400, 400); the tackler touches him from `angle` off his facing,
+  // on both sides of it (above and below the facing line).
+  function contactAt(angle: number, side: 1 | -1): boolean {
+    const w = world();
+    const victim = at(w.players[TEAM_SIZE + 1], 400, 400, 1, 0);
+    const r = TACKLE_FOUL_RADIUS - 2;
+    const tackler = at(w.players[1], 400 + r * Math.cos(angle), 400 + side * r * Math.sin(angle), -1, 0);
+    return contactIsFoul(tackler, victim);
+  }
+  it('a contact 44 deg off the victim\'s facing is inside the front cone: a clash, not a foul', () => {
+    expect(contactAt(FRONT_HALF_ANGLE - ONE_DEG, 1)).toBe(false);
+    expect(contactAt(FRONT_HALF_ANGLE - ONE_DEG, -1)).toBe(false);
+  });
+  it('a contact 46 deg off the victim\'s facing is outside the front cone: a foul', () => {
+    expect(contactAt(FRONT_HALF_ANGLE + ONE_DEG, 1)).toBe(true);
+    expect(contactAt(FRONT_HALF_ANGLE + ONE_DEG, -1)).toBe(true);
+  });
+  it('exactly 45 deg counts as the front (today\'s inclusive edge, like the pass assist\'s `< INV_SQRT2`): a clash', () => {
+    const w = world();
+    const victim = at(w.players[TEAM_SIZE + 1], 400, 400, 1, 0);
+    // (10, 10) off a +x facing is exactly 45 deg, and dot = 10 / sqrt(200) == INV_SQRT2 in doubles.
+    expect(contactIsFoul(at(w.players[1], 410, 410, -1, 0), victim)).toBe(false);
+    expect(contactIsFoul(at(w.players[1], 410, 390, -1, 0), victim)).toBe(false);
+  });
+  it('NEGATIVE CONTROL: the ball still wins over the body -- a clean slide onto the ball steals it even with a rival in the foul radius', () => {
+    const w = world();
+    const tackler = at(w.players[1], 400, 400, 1, 0);
+    at(w.players[TEAM_SIZE + 1], 400 + TACKLE_FOUL_RADIUS - 2, 400, 1, 0);   // from behind: would be a foul
+    tackler.tackleStepsLeft = TACKLE_STEPS;
+    tackler.tackleDirX = 1;
+    tackler.tackleDirY = 0;
+    w.ball.owner = null;
+    w.ball.x = 400 + TACKLE_BALL_REACH - 2;                   // but the ball is within reach
+    w.ball.y = 400;
+    w.ball.z = 0;
+    stepTackle(tackler, w.ball, w.players, 0, w.out);
+    expect(w.out.foul).toBe(false);
+    expect(w.out.ok).toBe(true);
+    expect(w.ball.owner).toBe(tackler.id);
+  });
+});
+
 describe('chargeFraction (deferred minor #13: one ramp for shotSpeed and shoot)', () => {
   it('is 0 at or below zero, linear in between, 1 at or beyond SHOT_CHARGE_STEPS', () => {
     expect(chargeFraction(-5)).toBe(0);
@@ -267,7 +363,7 @@ describe('chargeFraction (deferred minor #13: one ramp for shotSpeed and shoot)'
     givePossession(w.ball, p, 0);
     shoot(p, w.ball, 1, 0, -3, 0, w.out);
     expect(w.ball.vz).toBe(0);
-    expect(Math.sqrt(w.ball.vx ** 2 + w.ball.vy ** 2)).toBeCloseTo(shotSpeed(0), 6);
+    expect(Math.sqrt(w.ball.vx ** 2 + w.ball.vy ** 2)).toBeCloseTo(shotSpeed(0, p.shotMult), 6);
   });
 });
 
@@ -344,8 +440,9 @@ describe('releaseFromGoalkeeper', () => {
     releaseFromGoalkeeper(gk, w.ball, w.players, -1, PITCH, 100 + GK_HOLD_STEPS, w.aim, w.out);
     expect(w.ball.owner).toBeNull();
     const d = dist2(gk, target);
-    expect(w.ball.vx).toBeCloseTo(LONG_PASS_SPEED * (target.x - gk.x) / d, 6);
-    expect(w.ball.vy).toBeCloseTo(LONG_PASS_SPEED * (target.y - gk.y) / d, 6);
+    // G15-26: the release flies at the keeper's own keeperLongThrowSpeed (kicking level).
+    expect(w.ball.vx).toBeCloseTo(keeperLongThrowSpeed(gk) * (target.x - gk.x) / d, 6);
+    expect(w.ball.vy).toBeCloseTo(keeperLongThrowSpeed(gk) * (target.y - gk.y) / d, 6);
     expect(w.ball.vz).toBe(LONG_PASS_VZ);
     expect(w.out.kind).toBe('gk-release');
     expect(GK_HOLD_STEPS).toBe(120);
@@ -356,8 +453,22 @@ describe('releaseFromGoalkeeper', () => {
     for (let i = TEAM_SIZE + 1; i <= TEAM_SIZE + OUTFIELD; i++) at(w.players[i], 300 + i, centerY(PITCH));
     givePossession(w.ball, gk, 0);
     releaseFromGoalkeeper(gk, w.ball, w.players, -1, PITCH, GK_HOLD_STEPS, w.aim, w.out);
-    expect(w.ball.vx).toBeCloseTo(-LONG_PASS_SPEED, 6);
+    expect(w.ball.vx).toBeCloseTo(-keeperLongThrowSpeed(gk), 6);
     expect(w.ball.vy).toBe(0);
+  });
+  // G15-26, distribution = strength: the automatic release is LONG_PASS_SPEED scaled by the
+  // keeper's kicking, 1 - KEEPER_KICKING_SPAN at level 1 and 1 + it at level 5 (written from
+  // the definition, not through keeperLongThrowSpeed, so a lost multiplier shows up here).
+  it('G15-26: the automatic release is x(1 - span) at kicking 1 and x(1 + span) at kicking 5', () => {
+    for (const [level, factor] of [[1, 1 - KEEPER_KICKING_SPAN], [5, 1 + KEEPER_KICKING_SPAN]]) {
+      const w = world();
+      const gk = at(w.players[TEAM_SIZE], PITCH.width - GK_LINE_DIST, centerY(PITCH), -1, 0);
+      gk.keeperKicking = level;
+      for (let i = TEAM_SIZE + 1; i <= TEAM_SIZE + OUTFIELD; i++) at(w.players[i], 300 + i, centerY(PITCH));
+      givePossession(w.ball, gk, 0);
+      releaseFromGoalkeeper(gk, w.ball, w.players, -1, PITCH, GK_HOLD_STEPS, w.aim, w.out);
+      expect(speedOf(w.ball), `kicking ${level}`).toBeCloseTo(LONG_PASS_SPEED * factor, 6);
+    }
   });
   it('does nothing for an outfield player or a keeper without the ball', () => {
     const w = world();
@@ -428,11 +539,26 @@ describe('applyKeeperButtons (D4): the keeper holding the ball throws by button,
     applyKeeperButtons(s.gk, s.input, s.ball, s.players, -1, 101, s.aim, s.out);
     const u = unitTo(s.gk, far);
     expect(s.ball.owner).toBeNull();
-    expect(speedOf(s.ball)).toBeCloseTo(LONG_PASS_SPEED, 6);
+    expect(speedOf(s.ball)).toBeCloseTo(keeperLongThrowSpeed(s.gk), 6);   // G15-26: the keeper's kicking
     expect(s.ball.vz).toBe(LONG_PASS_VZ);
     expect(s.ball.vx / speedOf(s.ball)).toBeCloseTo(u.x, 10);
     expect(s.ball.vy / speedOf(s.ball)).toBeCloseTo(u.y, 10);
     expect(s.out).toMatchObject({ kind: 'long-pass', ok: true, actorId: TEAM_SIZE });
+  });
+  it('G15-26: the A throw is x(1 - span) at kicking 1 and x(1 + span) at kicking 5; the B hand throw keeps SHORT_PASS_SPEED', () => {
+    for (const [level, factor] of [[1, 1 - KEEPER_KICKING_SPAN], [5, 1 + KEEPER_KICKING_SPAN]]) {
+      for (const button of ['a', 'b'] as const) {
+        const s = holding();
+        s.gk.keeperKicking = level;
+        at(s.players[TEAM_SIZE + 1], s.gk.x - 200, s.gk.y + 50);
+        at(s.players[TEAM_SIZE + 2], s.gk.x - 500, s.gk.y - 100);
+        s.input.dx = -1;
+        s.input[button] = 'pressed';
+        applyKeeperButtons(s.gk, s.input, s.ball, s.players, -1, 101, s.aim, s.out);
+        const expected = button === 'a' ? LONG_PASS_SPEED * factor : SHORT_PASS_SPEED;
+        expect(speedOf(s.ball), `kicking ${level}, button ${button}`).toBeCloseTo(expected, 6);
+      }
+    }
   });
   it('a neutral d-pad opens the cone along attackDir (towards the rival half), not along the keeper\'s facing; the d-pad on +y opens it there', () => {
     const neutral = holding();
@@ -516,7 +642,7 @@ describe('applyButtons: press/hold semantics with and without the ball', () => {
     s.input.a = 'released';
     applyButtons(s.p, s.input, s.ball, s.players, rng, 40, s.aim, s.out);
     expect(s.out.kind).toBe('shot');
-    expect(speedOf(s.ball)).toBeCloseTo(shotSpeed(40), 6);
+    expect(speedOf(s.ball)).toBeCloseTo(shotSpeed(40, s.p.shotMult), 6);
     expect(s.ball.vy).toBeLessThan(0);
     expect(s.ball.vx).toBeCloseTo(0, 10);
     expect(s.p.chargeSteps).toBe(0);
@@ -552,7 +678,7 @@ describe('applyButtons: press/hold semantics with and without the ball', () => {
     s.input.a = 'released';
     applyButtons(s.p, s.input, s.ball, s.players, rng, 62, s.aim, s.out);
     expect(s.out.kind).toBe('shot');
-    expect(speedOf(s.ball)).toBeCloseTo(shotSpeed(1), 6);
+    expect(speedOf(s.ball)).toBeCloseTo(shotSpeed(1, s.p.shotMult), 6);
     expect(rng.calls).toBe(0);
   });
   it('a stale released, after the charge was dropped, fires nothing', () => {

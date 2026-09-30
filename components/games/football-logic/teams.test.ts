@@ -41,22 +41,27 @@ describe('the bank of twenty selections (spec step 7 + G15-9): the net closes on
     expect(teamById(TEAMS, 'brasil')).toMatchObject({ name: 'BRASIL', kit: { primary: '#ffdf00' } });
     expect(teamById(TEAMS, 'atlantis')).toBeUndefined();
   });
+  // V15-4 (G15-10): a TeamDef also carries its attrs now, so these identity checks match
+  // id, name and kit and leave the attributes to attributes.test.ts.
   it('the two stage-A teams keep their index, id, name and kit', () => {
-    expect(TEAMS[0]).toEqual({ id: 'espana', name: 'ESPAÑA', kit: { primary: '#d40000', secondary: '#ffcc00' } });
-    expect(TEAMS[1]).toEqual({ id: 'italia', name: 'ITALIA', kit: { primary: '#0044aa', secondary: '#ffffff' } });
+    expect(TEAMS[0]).toMatchObject({ id: 'espana', name: 'ESPAÑA', kit: { primary: '#d40000', secondary: '#ffcc00' } });
+    expect(TEAMS[1]).toMatchObject({ id: 'italia', name: 'ITALIA', kit: { primary: '#0044aa', secondary: '#ffffff' } });
   });
   it('G15-9: the four v1.5 selections are LAST, in Paco\'s order, and the first sixteen keep their index', () => {
     expect(TEAMS.slice(16).map((t) => t.id)).toEqual(['colombia', 'corea-del-sur', 'noruega', 'egipto']);
-    expect(TEAMS[16]).toEqual({ id: 'colombia', name: 'COLOMBIA', kit: { primary: '#fcd116', secondary: '#003893' } });
-    expect(TEAMS[17]).toEqual({ id: 'corea-del-sur', name: 'COREA DEL SUR', kit: { primary: '#c60c30', secondary: '#ffffff' } });
-    expect(TEAMS[18]).toEqual({ id: 'noruega', name: 'NORUEGA', kit: { primary: '#ba0c2f', secondary: '#00205b' } });
-    expect(TEAMS[19]).toEqual({ id: 'egipto', name: 'EGIPTO', kit: { primary: '#ce1126', secondary: '#ffffff' } });
+    expect(TEAMS[16]).toMatchObject({ id: 'colombia', name: 'COLOMBIA', kit: { primary: '#fcd116', secondary: '#003893' } });
+    expect(TEAMS[17]).toMatchObject({ id: 'corea-del-sur', name: 'COREA DEL SUR', kit: { primary: '#c60c30', secondary: '#ffffff' } });
+    expect(TEAMS[18]).toMatchObject({ id: 'noruega', name: 'NORUEGA', kit: { primary: '#ba0c2f', secondary: '#00205b' } });
+    expect(TEAMS[19]).toMatchObject({ id: 'egipto', name: 'EGIPTO', kit: { primary: '#ce1126', secondary: '#ffffff' } });
     // The v1 sixteen are byte for byte where they were: TEAMS index is an identity
     // (the selector cursor, flow.picked, the baked kit atlases) and must not shift.
-    expect(TEAMS[15]).toEqual({ id: 'estados-unidos', name: 'ESTADOS UNIDOS', kit: { primary: '#ffffff', secondary: '#0a3161' } });
+    expect(TEAMS[15]).toMatchObject({ id: 'estados-unidos', name: 'ESTADOS UNIDOS', kit: { primary: '#ffffff', secondary: '#0a3161' } });
   });
-  it('selections are identical on the pitch in v1: a TeamDef carries only id, name and kit', () => {
-    for (const t of TEAMS) expect(Object.keys(t).sort()).toEqual(['id', 'kit', 'name']);
+  it('since V15-4 (G15-10) a TeamDef carries id, name, kit and its five attributes, and nothing else', () => {
+    for (const t of TEAMS) {
+      expect(Object.keys(t).sort()).toEqual(['attrs', 'id', 'kit', 'name']);
+      expect(Object.keys(t.attrs).sort()).toEqual(['attack', 'counter', 'defence', 'passing', 'shooting']);
+    }
   });
 });
 
@@ -105,7 +110,7 @@ describe('every formation × formation × strategy × strategy × end combinatio
     let placements = 0;
     for (const f0 of FORMATIONS) {
       for (const f1 of FORMATIONS) {
-        const players = createPlayers([f0, f1], PITCH);
+        const players = createPlayers([f0, f1], PITCH, [TEAMS[0].id, TEAMS[1].id]);
         for (const s0 of STRATS) {
           for (const s1 of STRATS) {
             for (const attack of [[1, -1], [-1, 1]] as const) {

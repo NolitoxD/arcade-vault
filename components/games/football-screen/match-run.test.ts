@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { NORMAL_RULES, TRAINING_RULES } from '../football-logic/match';
+import { NORMAL_RULES, TRAINING_RULES, callSetPiece, isOpenPlay } from '../football-logic/match';
+import { PITCH, centerY } from '../football-logic/pitch';
 import { TEAMS } from '../football-logic/teams';
+import { profileFor } from '../football-logic/ai';
 import { CPU_SEED_SALT, MATCH_RUN_STEP_CAP, createMatchRun, finishMatchRun, stepMatchRun } from './match-run';
 
 const ESP = TEAMS[0];
@@ -14,8 +16,11 @@ describe('createMatchRun', () => {
     expect(run.match.profiles[0].shotErrorDeg).toBe(0);
     expect(run.match.profiles[0].passErrorDeg).toBe(0);
     expect(run.match.profiles[1].shotErrorDeg).toBeGreaterThan(0);
-    // The keeper and the penalty read use the SAME difficulty on both sides (D3).
-    expect(run.match.profiles[0].catchChance).toBe(run.match.profiles[1].catchChance);
+    // The keeper and the penalty read use the SAME difficulty on both sides (D3): the
+    // human's catch is the CPU formula for its own selection. Since V15-4 (G15-10) the
+    // two selections' defence bends catchChance, so ESP is compared with ESP, not ITA.
+    expect(run.match.profiles[0].catchChance).toBe(profileFor(ESP, 5).catchChance);
+    expect(run.match.profiles[0].penaltyReadChance).toBe(run.match.profiles[1].penaltyReadChance);
     expect(run.human).toEqual([true, false]);
   });
 
@@ -124,7 +129,19 @@ describe('a run with humans', () => {
     expect(run.match.players[controlled.id].x).toBe(x);
     expect(run.match.players[controlled.id].y).toBe(y);
     expect(run.match.stepCount).toBe(600);
-    // The control case: with normal rules the same seat DOES draw from the CPU stream.
+    // V15-4 rebuild of the control (the attributes of G15-10/G15-26 left this seed with NO
+    // tackle roll in a whole passive match, so no step window could hold it): the two runs
+    // are put in the SAME forced situation instead of waiting for one -- a penalty for team
+    // 1, on the spot it attacks, from open play. The CPU always draws the side of a penalty
+    // it takes (ai.ts, decideTeamInput), so the control no longer depends on the match.
+    const spotX = PITCH.penaltySpotDist;
+    const spotY = centerY(PITCH);
+    // The frozen run first: its throwing cpuRng is still in place, so a decision here throws.
+    expect(isOpenPlay(run.match.phase)).toBe(true);
+    expect(callSetPiece(run.match, 'penalty', 1, spotX, spotY)).toBe(true);
+    for (let i = 0; i < 10; i++) stepMatchRun(run);
+    // The control case: with normal rules the same seat, in the same situation, DOES draw
+    // from the CPU stream.
     const normal = createMatchRun(ESP, ITA, 1, 5, [true, false], NORMAL_RULES, [0, 0]);
     let draws = 0;
     const inner = normal.cpuRng;
@@ -132,15 +149,11 @@ describe('a run with humans', () => {
       draws++;
       return inner();
     };
-    // Measured against this exact seed/pairing: with team 0 fully passive (no real
-    // human input ever written) team 1 wins the ball once via the close-range STEAL_RANGE
-    // roll (actions.ts, resolved with matchRng, not this stream) right after kickoff and
-    // then never gives it back within a short window, so the far-range TACKLE_DIST
-    // willingness roll this assertion targets (ai.ts chase(), the only cpuRng consumer
-    // here) is not reached until step 6024 of this specific match. 600 steps (the brief's
-    // original figure) was too short for THIS seed; bumped with margin, not to a
-    // different assertion.
-    for (let i = 0; i < 7000; i++) stepMatchRun(normal);
-    expect(draws).toBeGreaterThan(0);
+    for (let i = 0; i < 2000 && !isOpenPlay(normal.match.phase); i++) stepMatchRun(normal);
+    expect(isOpenPlay(normal.match.phase)).toBe(true);
+    const before = draws;
+    expect(callSetPiece(normal.match, 'penalty', 1, spotX, spotY)).toBe(true);
+    for (let i = 0; i < 10; i++) stepMatchRun(normal);
+    expect(draws).toBeGreaterThan(before);
   });
 });

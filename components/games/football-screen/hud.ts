@@ -108,9 +108,11 @@ export function shootoutRoundLabel(sh: ShootoutState): string {
 // R33 (Paco, 07-sep), replacing the continuous bar of the first draft of S-SC4:
 // THREE notches, drawn next to the controlled player, not a bar in the HUD. The
 // thresholds are the engine's own ramp (actions.ts: shotSpeed goes 700 -> 950 over
-// SHOT_CHARGE_STEPS = 60), so a notch always means the same shot: 1 = tap (700),
-// 2 = half (~825), 3 = full (950). Reading SHOT_CHARGE_STEPS instead of a literal 60
-// is what keeps the notches and the shot from ever disagreeing.
+// SHOT_CHARGE_STEPS = 60, before the shooter's shotMult, which the notches do not
+// show -- G15-10, V15-4), so a notch always means the same CHARGE: 1 = tap (700),
+// 2 = half (~825), 3 = full (950), each x the shooter's 0.95..1.05. Reading
+// SHOT_CHARGE_STEPS instead of a literal 60 is what keeps the notches and the charge
+// from ever disagreeing.
 export const SHOT_CHARGE_SEGMENTS = 3;
 
 export function chargeSegments(chargeSteps: number): 0 | 1 | 2 | 3 {

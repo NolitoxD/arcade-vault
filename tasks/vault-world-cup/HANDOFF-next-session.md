@@ -1,6 +1,28 @@
-# HANDOFF — VAULT WORLD CUP · v1.5: V15-4 «Motor» DÍA 1 HECHO (11v11, sin commit) · siguiente día 2 (Tasks 2-4) · actualizado 2026-09-28
+# HANDOFF — VAULT WORLD CUP · v1.5: V15-4 «Motor» DÍAS 1-2 HECHOS (día 1 commiteado `1ecf01e`, día 2 sin commit) · siguiente día 3 · actualizado 2026-09-30
 
-Prompt para retomar: `/retomar tasks/vault-world-cup/HANDOFF-next-session.md` → SDD V15-4 día 2: Task 2 (atributos + porteros) → 3 (postes/larguero) → 4 (entradas + pausa 4 s). Ledger `.superpowers/sdd/2026-09-24-vault-world-cup-v15-4/progress.md` manda.
+Prompt para retomar: `/retomar tasks/vault-world-cup/HANDOFF-next-session.md` → PRIMERO corregir briefs de las Tasks 9 y 10 (ver §-19) → SDD día 3: Task 5 (lesiones) → 6 (tarjetas) → 7 (pantalla) → 8 (comentarios) → sonda → 9 (regrabado único) → 11 (cierre).
+
+## -19. 30-sep: V15-4 DÍA 2 (Tasks 2, 3, 4) EJECUTADO (sin commit)
+
+**Task 2 — atributos:** por selección (defensa, ataque, contraataque, chut, pase) y por jugador (velocidad, chut); porteros con reflejos,
+salidas y saque. Decisiones de Paco: **salidas = solo rapidez** (zonas de G12-3 intactas); **ataque y contraataque solo como dato**;
+**saque = fuerza y precisión**, error solo para la CPU. Ronda de arreglo: 3 conexiones del portero no tenían test que pudiera fallar.
+**Task 3 — postes y larguero** (`goal-frame.ts`, `ball.frameHit`): el diseño del plan dejaba los centros pegados al poste (6 de 7 golpes
+falsos) → solo cuenta si el balón va hacia la portería; `frameHit` se resetea cada paso en `stepMatch` (si no, sonido repetido en pausas).
+**Task 4 — entradas y pausa:** `TACKLE_BALL_REACH` 28, falta solo por detrás o de lado (`FOUL_FRONT_COS = 1/√2`), pausa de gol 4 s, y
+**G15-27** (nuevo, Paco): `SHOT_POST_MARGIN` 20 → 8 para que la CPU apunte al palo.
+**Sonda (40 partidos):** entradas limpias 33 % → 52 %; faltas/partido 7,4 → 5,5 (dif. 8) y 2,35 (dif. 5); goles 68 → 54 (−20 %);
+postes 7, largueros 0. **Paco acepta:** −20 % de goles (se juzga jugando); tarjetas y lesiones tal cual y se ajustan con la sonda;
+**larguero = cosa del chut cargado** (la sonda exige postes, no largueros).
+**G15-28 (principio de Paco):** partidos igualados y emocionantes, goleadas raras, **sin ayudas al que pierde**. Propuesta de bandas
+APROBADAS por Paco: ≥70 % empatados o por 1 gol; goleadas (≥4) ≤5 %; la mayor dificultad sigue ganando claramente más.
+**Estado:** 1448 passed | 5 skipped (1453), 86 ficheros; tsc limpio; red `engine-invariants` idéntica (md5 0845d50e); **marcas 5 de 7**.
+**ANTES de lanzar las Tasks 9 y 10, corregir sus briefs:** techo 7 marcas (no 5); marcas 4 (suelo de tiros) y 5 (gol de oro por uno) y la
+grabación de la semilla 14 NO se reescriben con el valor leído — si fallan, se para y decide Paco; bandas de la sonda sin larguero y con
+G15-28; y la **sonda va ANTES del regrabado** (G15-27 y el ajuste de tarjetas/lesiones dicen «ajustar antes de regrabar»).
+**Para Task 7:** solo una alineación válida (`checkLineup`) puede llegar a `createPlayers`; `crossbarDue` debe leer el flanco con
+`MatchWatch`, no el último paso.
+**Commit de punto de control (opcional, Paco):** `feat(world-cup): v15-4 day 2 — team/player/keeper attributes, posts and crossbar, directional fouls, 4 s goal pause, CPU aims at the post (G15-10/12/24/26/27)`
 
 ## -18. 28-sep: V15-4 DÍA 1 (Tasks 1a + 1b) EJECUTADO — once contra once en el motor (sin commit)
 

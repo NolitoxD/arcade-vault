@@ -2,10 +2,10 @@ import { TEAM_SIZE, type Formation, type Role, type TeamDef } from './teams';
 
 // G15-17 (v1.5), con la adenda de Paco del 23-sep: EIGHTEEN players per selection --
 // invented surnames that sound like the country (NEVER real footballers) and fixed
-// shirt numbers 1-18 with the two keepers on 1 and 2. Pure DATA: nothing in
-// football-logic/ imports this file in V15-3; the screen reads it through
-// football-screen/lineup.ts. Wiring a squad into the match (names on events,
-// per-player attributes) is V15-4/V15-5.
+// shirt numbers 1-18 with the two keepers on 1 and 2. Pure DATA. The screen reads it
+// through football-screen/lineup.ts and, since V15-4 (G15-10/G15-26, H12), the engine
+// reads it through players.ts ONLY -- a one-way data edge (this file never imports
+// players.ts) for the per-player and per-keeper attributes. Names on events are V15-5.
 //
 // The composition is not arbitrary. A squad has to field EVERY formation of today
 // (3-3-2, 3-2-3, 4-3-1) and every eleven-a-side formation of V15-4 (4-4-2, 4-3-3,
@@ -250,6 +250,106 @@ export function checkSquadCoversFormations(formations: readonly Formation[]): st
     if (fwd > squadRoleCount('fwd')) problems.push(`${f.id}: needs ${fwd} fwd, the squad has ${squadRoleCount('fwd')}`);
     else if (fwd === squadRoleCount('fwd')) problems.push(`${f.id}: no fwd on the bench`);
     if (f.slots.length + 1 > SQUAD_SIZE) problems.push(`${f.id}: needs ${f.slots.length + 1} players, the squad has ${SQUAD_SIZE}`);
+  }
+  return problems;
+}
+
+// ── Attributes (V15-4: G15-10 per player, G15-26 per keeper) ────────────────────
+
+// G15-26 (Paco, 23-sep): three 1-5 levels per KEEPER. reflexes feeds keeperCatch's
+// chance, rushing feeds how fast keeperStep comes out (on top of G12-3), kicking feeds
+// the strength and the accuracy of the keeper's long release. The two keepers of a
+// squad are never identical: that is what makes the substitute noticeable when he
+// comes on for an injury (G15-18). The number 1 is better than the number 2 in at
+// least one level in every selection.
+export type KeeperAttrs = { reflexes: number; rushing: number; kicking: number };
+
+export const KEEPER_ATTRS: Readonly<Record<string, readonly [KeeperAttrs, KeeperAttrs]>> = {
+  'espana': [{ reflexes: 4, rushing: 3, kicking: 4 }, { reflexes: 3, rushing: 4, kicking: 3 }],
+  'italia': [{ reflexes: 5, rushing: 3, kicking: 3 }, { reflexes: 4, rushing: 3, kicking: 4 }],
+  'brasil': [{ reflexes: 4, rushing: 4, kicking: 3 }, { reflexes: 3, rushing: 4, kicking: 4 }],
+  'argentina': [{ reflexes: 4, rushing: 4, kicking: 4 }, { reflexes: 3, rushing: 3, kicking: 4 }],
+  'alemania': [{ reflexes: 5, rushing: 4, kicking: 3 }, { reflexes: 4, rushing: 3, kicking: 3 }],
+  'francia': [{ reflexes: 4, rushing: 4, kicking: 4 }, { reflexes: 4, rushing: 3, kicking: 3 }],
+  'inglaterra': [{ reflexes: 4, rushing: 3, kicking: 3 }, { reflexes: 3, rushing: 4, kicking: 3 }],
+  'portugal': [{ reflexes: 4, rushing: 3, kicking: 4 }, { reflexes: 3, rushing: 3, kicking: 3 }],
+  'paises-bajos': [{ reflexes: 3, rushing: 4, kicking: 4 }, { reflexes: 3, rushing: 3, kicking: 4 }],
+  'belgica': [{ reflexes: 5, rushing: 3, kicking: 3 }, { reflexes: 3, rushing: 3, kicking: 4 }],
+  'croacia': [{ reflexes: 4, rushing: 3, kicking: 3 }, { reflexes: 3, rushing: 3, kicking: 4 }],
+  'uruguay': [{ reflexes: 4, rushing: 4, kicking: 3 }, { reflexes: 3, rushing: 4, kicking: 3 }],
+  'mexico': [{ reflexes: 4, rushing: 5, kicking: 3 }, { reflexes: 3, rushing: 3, kicking: 3 }],
+  'japon': [{ reflexes: 3, rushing: 3, kicking: 4 }, { reflexes: 3, rushing: 4, kicking: 3 }],
+  'marruecos': [{ reflexes: 4, rushing: 3, kicking: 3 }, { reflexes: 3, rushing: 3, kicking: 3 }],
+  'estados-unidos': [{ reflexes: 3, rushing: 4, kicking: 3 }, { reflexes: 3, rushing: 3, kicking: 4 }],
+  'colombia': [{ reflexes: 4, rushing: 3, kicking: 4 }, { reflexes: 3, rushing: 4, kicking: 3 }],
+  'corea-del-sur': [{ reflexes: 4, rushing: 3, kicking: 3 }, { reflexes: 3, rushing: 3, kicking: 3 }],
+  'noruega': [{ reflexes: 3, rushing: 3, kicking: 4 }, { reflexes: 3, rushing: 4, kicking: 3 }],
+  'egipto': [{ reflexes: 4, rushing: 3, kicking: 3 }, { reflexes: 3, rushing: 3, kicking: 4 }],
+};
+
+// Called only when a keeper is created (createPlayers) or comes on (a substitution),
+// never inside the step.
+export function keeperAttrsFor(teamId: string, squadIndex: number): KeeperAttrs {
+  const pair = KEEPER_ATTRS[teamId];
+  if (pair === undefined) throw new Error(`no keepers for ${teamId}`);
+  if (squadIndex !== 0 && squadIndex !== 1) throw new Error(`squad index ${squadIndex} is not a goalkeeper`);
+  return pair[squadIndex];
+}
+
+// G15-10, "por jugador SOLO velocidad y chut, derivados del rol con pequena variacion
+// por seleccion". DERIVED, not stored: a table of 360 pairs would be 360 more numbers
+// to keep in sync with SQUAD_ROLES. The role sets the base, and the selection shifts it
+// by a deterministic hash of (teamId, index) -- no Rng, no module state, same answer
+// for ever.
+const ROLE_SPEED: Readonly<Record<Role, number>> = { gk: 3, def: 3, mid: 4, fwd: 4 };
+const ROLE_SHOT: Readonly<Record<Role, number>> = { gk: 1, def: 2, mid: 3, fwd: 4 };
+
+function attrHash(teamId: string, index: number, salt: number): number {
+  let h = salt;
+  for (let i = 0; i < teamId.length; i++) h = Math.imul(h ^ teamId.charCodeAt(i), 0x01000193) >>> 0;
+  return Math.imul(h ^ index, 0x01000193) >>> 0;
+}
+
+function clampLevel(v: number): number {
+  return v < 1 ? 1 : v > 5 ? 5 : v;
+}
+
+// Returns a NEW object on purpose: it is called 22 times when the match is created and
+// once per substitution, NEVER inside stepMatch (criterion 20 is about the step).
+export function outfieldAttrsFor(teamId: string, index: number): { speed: number; shot: number } {
+  const role = squadRole(index);
+  const speedShift = (attrHash(teamId, index, 0x811c9dc5) % 3) - 1;   // -1, 0 or +1
+  const shotShift = (attrHash(teamId, index, 0x9e3779b9) % 3) - 1;
+  return { speed: clampLevel(ROLE_SPEED[role] + speedShift), shot: clampLevel(ROLE_SHOT[role] + shotShift) };
+}
+
+function checkLevel(problems: string[], where: string, name: string, v: number): void {
+  if (!Number.isInteger(v) || v < 1 || v > 5) problems.push(`${where}: ${name} ${v} out of 1..5`);
+}
+
+// The invariant net of the attributes (same shape as checkSquads: [] when it all holds).
+export function checkAttributes(teams: readonly TeamDef[]): string[] {
+  const problems: string[] = [];
+  for (const t of teams) {
+    const a = t.attrs;
+    checkLevel(problems, t.id, 'defence', a.defence);
+    checkLevel(problems, t.id, 'attack', a.attack);
+    checkLevel(problems, t.id, 'counter', a.counter);
+    checkLevel(problems, t.id, 'shooting', a.shooting);
+    checkLevel(problems, t.id, 'passing', a.passing);
+    const pair = KEEPER_ATTRS[t.id];
+    if (pair === undefined) {
+      problems.push(`${t.id}: no keeper attributes`);
+      continue;
+    }
+    for (let k = 0; k < pair.length; k++) {
+      checkLevel(problems, `${t.id}: keeper ${k}`, 'reflexes', pair[k].reflexes);
+      checkLevel(problems, `${t.id}: keeper ${k}`, 'rushing', pair[k].rushing);
+      checkLevel(problems, `${t.id}: keeper ${k}`, 'kicking', pair[k].kicking);
+    }
+    if (pair[0].reflexes === pair[1].reflexes && pair[0].rushing === pair[1].rushing && pair[0].kicking === pair[1].kicking) {
+      problems.push(`${t.id}: the two keepers are identical`);
+    }
   }
   return problems;
 }

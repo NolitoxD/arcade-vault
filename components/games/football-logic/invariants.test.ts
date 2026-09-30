@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { checkBank, checkFormation, checkFormations, checkGoalkeepersInBox, checkPitch, checkTeam, checkTeams } from './invariants';
 import { PITCH, centerX, type PitchDef } from './pitch';
-import { BANK_SIZE, FORMATION_COUNT, FORMATIONS, OUTFIELD, TEAM_SIZE, type Formation, type FormationSlot, type TeamDef } from './teams';
+import { BANK_SIZE, FORMATION_COUNT, FORMATIONS, TEAMS, OUTFIELD, TEAM_SIZE, type Formation, type FormationSlot, type TeamDef } from './teams';
 import { createPlayers } from './players';
 
 function pitch(over: Partial<PitchDef> = {}): PitchDef {
@@ -22,7 +22,7 @@ function legalFormation(over: Partial<Formation> = {}): Formation {
 }
 
 function team(over: Partial<TeamDef> = {}): TeamDef {
-  return { id: 'espana', name: 'ESPAÑA', kit: { primary: '#d40000', secondary: '#ffcc00' }, ...over };
+  return { id: 'espana', name: 'ESPAÑA', kit: { primary: '#d40000', secondary: '#ffcc00' }, attrs: { defence: 3, attack: 3, counter: 3, shooting: 3, passing: 3 }, ...over };
 }
 
 function legalBank(): TeamDef[] {
@@ -211,15 +211,15 @@ describe('checkTeams / checkBank', () => {
 
 describe('checkGoalkeepersInBox (criterion 9b)', () => {
   it('accepts freshly created players', () => {
-    expect(checkGoalkeepersInBox(createPlayers([FORMATIONS[0], FORMATIONS[0]], PITCH), [1, -1], PITCH)).toEqual([]);
+    expect(checkGoalkeepersInBox(createPlayers([FORMATIONS[0], FORMATIONS[0]], PITCH, [TEAMS[0].id, TEAMS[1].id]), [1, -1], PITCH)).toEqual([]);
   });
   it('rejects a goalkeeper wandering to midfield', () => {
-    const ps = createPlayers([FORMATIONS[0], FORMATIONS[0]], PITCH);
+    const ps = createPlayers([FORMATIONS[0], FORMATIONS[0]], PITCH, [TEAMS[0].id, TEAMS[1].id]);
     ps[TEAM_SIZE].x = centerX(PITCH);
     expect(checkGoalkeepersInBox(ps, [1, -1], PITCH).join(' ')).toContain(`goalkeeper ${TEAM_SIZE} outside big area`);
   });
   it('rejects a goalkeeper inside the WRONG box (its own box moves with attackDir)', () => {
-    const ps = createPlayers([FORMATIONS[0], FORMATIONS[0]], PITCH);
+    const ps = createPlayers([FORMATIONS[0], FORMATIONS[0]], PITCH, [TEAMS[0].id, TEAMS[1].id]);
     expect(checkGoalkeepersInBox(ps, [-1, 1], PITCH).join(' ')).toContain('goalkeeper 0 outside big area');
   });
 });

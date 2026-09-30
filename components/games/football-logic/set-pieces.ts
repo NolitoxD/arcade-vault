@@ -28,8 +28,8 @@ export const SET_PIECE_COUNTDOWN_SECONDS = 5;
 export const SET_PIECE_COUNTDOWN_STEPS = stepsFor(SET_PIECE_COUNTDOWN_SECONDS);
 export const SET_PIECE_CLEARANCE = 180;
 export const PENALTY_SIDE_OFFSET = 55;
-export const FREE_KICK_CHARGE_STEPS = stepsFor(0.4); // shotSpeed(24) = 800
-export const PENALTY_CHARGE_STEPS = stepsFor(0.6); // shotSpeed(36) = 850
+export const FREE_KICK_CHARGE_STEPS = stepsFor(0.4); // shotSpeed(24) = 800 at shotMult 1
+export const PENALTY_CHARGE_STEPS = stepsFor(0.6); // shotSpeed(36) = 850 at shotMult 1
 
 const scratch: Vec2 = { x: 0, y: 0 };
 

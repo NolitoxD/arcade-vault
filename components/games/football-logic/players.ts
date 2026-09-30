@@ -3,6 +3,10 @@ import { centerX, centerY, clampToBigArea, goalLineX, type PitchDef, type Side }
 import { OUTFIELD, STRATEGIES, TEAM_SIZE, type Formation, type FormationSlot, type Role, type Strategy } from './teams';
 import type { Axis } from './input';
 import { perStep, stepsFor } from './clock';
+// V15-4 (G15-10/G15-26, H12): the ONE engine edge into squads.ts, opened on purpose.
+// It is data only and one-way (squads.ts never imports this file): defaultSquadIndexFor
+// needs the role table, applySquadAttrs the per-player and per-keeper levels.
+import { SQUAD_SIZE, keeperAttrsFor, outfieldAttrsFor, squadRole } from './squads';
 
 export type PlayerState = {
   id: number; // own id, not "defender #2": what will make substitutions possible in v1.5
@@ -29,6 +33,15 @@ export type PlayerState = {
   wantX: number;
   wantY: number;
   wantSprint: boolean;
+  // G15-10 / G15-26 (V15-4): which player of the squad this is. The multipliers and the
+  // keeper levels are DERIVED from it once, at creation (applySquadAttrs; again on a
+  // substitution), and never recomputed inside the step: the step only multiplies.
+  squadIndex: number;
+  speedMult: number;        // 1 +- ATTR_SPEED_SPAN from the per-player speed level; 1 for a keeper
+  shotMult: number;         // 1 +- ATTR_SHOT_SPAN from the per-player shot level; 1 for a keeper
+  keeperReflexes: number;   // 1-5 for a keeper, 0 for an outfield player
+  keeperRushing: number;    // 1-5 for a keeper, 0 for an outfield player
+  keeperKicking: number;    // 1-5 for a keeper, 0 for an outfield player
 };
 
 export const PLAYER_SPEED = 180;
@@ -50,6 +63,23 @@ export const TACKLE_STEPS = stepsFor(TACKLE_SECONDS);
 // the distance/duration constants above and the slide stepPlayer performs with it.
 const TACKLE_SPEED = TACKLE_DIST / TACKLE_SECONDS;
 
+// G15-10, "ajuste fisico pequeno (+-5 %)". Level 3 is 1.0; each level away from it is
+// half of the span, so level 1 is 0.95 and level 5 is 1.05.
+export const ATTR_SPEED_SPAN = 0.05;
+export const ATTR_SHOT_SPAN = 0.05;
+// G15-26: the keeper's rushing scales his speed (level 1: 0.92, level 5: 1.08).
+export const KEEPER_RUSHING_SPAN = 0.08;
+
+export function multForLevel(level: number, span: number): number {
+  return 1 + ((level - 3) / 2) * span;
+}
+
+// The keeper's own top speed: GK_SPEED bent by his rushing level. movePlayer moves him
+// at it and keeperStep steers with it, so the exact-arrival of steerTo still holds.
+export function keeperSpeed(gk: PlayerState): number {
+  return GK_SPEED * multForLevel(gk.keeperRushing, KEEPER_RUSHING_SPAN);
+}
+
 // Scratch for direction math inside the step; never holds state between calls.
 const scratchDir: Vec2 = { x: 0, y: 0 };
 
@@ -65,7 +95,7 @@ export function anchorFor(slot: FormationSlot, strategy: Strategy, attackDir: 1 
   out.y = slot.y * pitch.height;
 }
 
-function createPlayer(id: number, team: 0 | 1, role: Role, slot: number, attackDir: 1 | -1): PlayerState {
+function createPlayer(id: number, team: 0 | 1, role: Role, slot: number, attackDir: 1 | -1, squadIndex: number): PlayerState {
   return {
     id, team, role, slot,
     x: 0, y: 0, vx: 0, vy: 0,
@@ -74,21 +104,72 @@ function createPlayer(id: number, team: 0 | 1, role: Role, slot: number, attackD
     chargeSteps: 0, chargeButton: 'none',
     tackleStepsLeft: 0, tackleDirX: 0, tackleDirY: 0,
     wantX: 0, wantY: 0, wantSprint: false,
+    squadIndex, speedMult: 1, shotMult: 1, keeperReflexes: 0, keeperRushing: 0, keeperKicking: 0,
   };
 }
 
-// 18 players created once: ids 0..8 are team 0 (0 = goalkeeper), 9..17 team 1.
-// players[i].id === i always, so players[ball.owner] is O(1).
-export function createPlayers(formations: readonly [Formation, Formation], pitch: PitchDef): PlayerState[] {
+// The default squad index of a formation slot (-1 = the keeper): the lowest index of
+// that slot's role not already used by an earlier slot, keeper first -- so the number
+// 1 starts in goal. The SAME rule as football-screen/lineup.ts's defaultLineup, written
+// again here because the engine may not import the screen (H17); attributes.test.ts
+// checks that the two agree for every formation.
+export function defaultSquadIndexFor(formation: Formation, slot: number): number {
+  const role: Role = slot < 0 ? 'gk' : formation.slots[slot].role;
+  let skip = 0;
+  for (let s = 0; s < slot; s++) if (formation.slots[s].role === role) skip++;
+  for (let i = 0; i < SQUAD_SIZE; i++) {
+    if (squadRole(i) !== role) continue;
+    if (skip === 0) return i;
+    skip--;
+  }
+  return -1;   // unreachable while checkSquadCoversFormations(FORMATIONS) is [] (squads.test.ts)
+}
+
+// G15-10 / G15-26: the five derived values of a player, from p.squadIndex and p.role.
+// Runs at creation and on a substitution, never inside the step.
+export function applySquadAttrs(p: PlayerState, teamId: string): void {
+  if (p.role === 'gk') {
+    const k = keeperAttrsFor(teamId, p.squadIndex);
+    p.speedMult = 1;
+    p.shotMult = 1;
+    p.keeperReflexes = k.reflexes;
+    p.keeperRushing = k.rushing;
+    p.keeperKicking = k.kicking;
+    return;
+  }
+  const a = outfieldAttrsFor(teamId, p.squadIndex);
+  p.speedMult = multForLevel(a.speed, ATTR_SPEED_SPAN);
+  p.shotMult = multForLevel(a.shot, ATTR_SHOT_SPAN);
+  p.keeperReflexes = 0;
+  p.keeperRushing = 0;
+  p.keeperKicking = 0;
+}
+
+// 22 players created once: ids 0..10 are team 0 (0 = goalkeeper), 11..21 team 1.
+// players[i].id === i always, so players[ball.owner] is O(1). `starters`, when given,
+// is the squad index per lineup POSITION (0 = the keeper, p = formation slot p - 1),
+// exactly football-screen/lineup.ts's Lineup.starters; without it every team fields
+// defaultSquadIndexFor's eleven. This signature is fixed for the whole of V15-4 (H9).
+export function createPlayers(
+  formations: readonly [Formation, Formation],
+  pitch: PitchDef,
+  teamIds: readonly [string, string],
+  starters?: readonly [readonly number[], readonly number[]],
+): PlayerState[] {
   const players: PlayerState[] = [];
   for (const team of [0, 1] as const) {
     const attackDir: 1 | -1 = team === 0 ? 1 : -1;
     const base = team * TEAM_SIZE;
-    players.push(createPlayer(base, team, 'gk', -1, attackDir));
+    const f = formations[team];
+    const gk = createPlayer(base, team, 'gk', -1, attackDir, starters === undefined ? defaultSquadIndexFor(f, -1) : starters[team][0]);
+    applySquadAttrs(gk, teamIds[team]);
+    players.push(gk);
     for (let s = 0; s < OUTFIELD; s++) {
-      players.push(createPlayer(base + 1 + s, team, formations[team].slots[s].role, s, attackDir));
+      const p = createPlayer(base + 1 + s, team, f.slots[s].role, s, attackDir, starters === undefined ? defaultSquadIndexFor(f, s) : starters[team][s + 1]);
+      applySquadAttrs(p, teamIds[team]);
+      players.push(p);
     }
-    placeByFormation(players, team, formations[team], 'neutral', attackDir, pitch);
+    placeByFormation(players, team, f, 'neutral', attackDir, pitch);
   }
   return players;
 }
@@ -240,7 +321,8 @@ function movePlayer(p: PlayerState, fx: number, fy: number, factor: number, want
     return;
   }
   const sprinting = tickSprint(p, p.role === 'gk' ? false : wantSprint);
-  let speed = p.role === 'gk' ? GK_SPEED : hasBall ? PLAYER_SPEED_WITH_BALL : PLAYER_SPEED;
+  let speed = p.role === 'gk' ? keeperSpeed(p) : hasBall ? PLAYER_SPEED_WITH_BALL : PLAYER_SPEED;
+  speed *= p.speedMult;   // G15-10: 1 for a keeper, whose rushing is already in keeperSpeed
   if (sprinting) speed *= SPRINT_MULT;
   if (fx === 0 && fy === 0) {
     p.vx = 0;

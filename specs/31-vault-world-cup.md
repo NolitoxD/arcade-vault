@@ -956,4 +956,13 @@ La v1 es el MVP; la v1.5 es el producto fino. Lo apuntado en el grill del 04-sep
       densidad por jugador que en 9 v 9; +15 % daría MÁS espacio que hoy).      Escalan campo, áreas, círculo central y **punto de penalti** (210 → 231); la **portería NO** escala. Portero expulsado o lesionado
       → entra el segundo portero (el equipo pierde un jugador de campo); sin portero disponible, la roja es solo rótulo. La ventana
       LESIONADO para el reloj y elige sola al suplente de la posición si el humano no decide. `ai.ts` (CPU entra de frente) no se toca.
+    - **G15-27 · La CPU apunta más ajustado al palo (Paco, 2026-09-30)** (V15-4, mismo regrabado): `SHOT_POST_MARGIN` 20 → 8. Con 20
+      (mayor que el radio del poste, 11) la CPU nunca rozaba el marco: 1 poste y 0 larguero en 40 partidos. Los postes NO se engordan.
+      Ajuste fino con la sonda de 40 partidos de V15-4, siempre antes del regrabado.    - **Tras la sonda de V15-4 (Paco, 2026-09-30):** se aceptan −20 % de goles por la nueva regla de faltas (se juzga jugando);
+      tarjetas y lesiones se implementan tal cual y se ajustan con la sonda antes del regrabado; el **larguero es cosa del chut cargado**
+      del jugador (la CPU chuta raso), así que la sonda exige postes y no largueros.
+    - **G15-28 · Partidos igualados y emocionantes (Paco, 2026-09-30):** la mayoría de partidos deben estar vivos hasta el final, pero
+      sin ayudas escondidas al que va perdiendo (nada de rubber-banding). Bandas que valida la sonda de 40 partidos ANTES del regrabado:
+      **≥70 %** de partidos empatados o por un gol; **goleadas (≥4 de diferencia) ≤5 %**; y la mayor dificultad sigue ganando claramente
+      más. Si la sonda sale fuera, se ajusta con atributos, faltas o puntería de la CPU, nunca con una ayuda al que pierde.
 

@@ -1,16 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import { PITCH, centerY, goalLineX } from './pitch';
-import { FORMATIONS, TEAM_SIZE } from './teams';
+import { FORMATIONS, TEAMS, TEAM_SIZE } from './teams';
 import {
   BALL_GROUND_DECEL, CONTROL_DIST, KICK_LOCK_STEPS, LONG_PASS_VZ, POSSESSION_RADIUS, canPickUp,
   createBall, givePossession, kickBall, stepBall, stickToOwner,
 } from './ball';
 import { PLAYER_HEIGHT, createPlayers, type PlayerState } from './players';
+import { CROSSBAR_THICKNESS, postCentreY, type FrameHit } from './goal-frame';
+import { createRefereeCall, judgeBall } from './referee';
+import type { AttackDirs } from './step';
 
 const F = FORMATIONS[0];
 
 function world(): { players: PlayerState[]; ball: ReturnType<typeof createBall> } {
-  const players = createPlayers([F, F], PITCH);
+  const players = createPlayers([F, F], PITCH, [TEAMS[0].id, TEAMS[1].id]);
   // Park everyone far from the action so proximity pickups are explicit in each test.
   for (const p of players) { p.x = 50 + p.id * 10; p.y = 1250; }
   return { players, ball: createBall() };
@@ -210,5 +213,58 @@ describe('pickup by proximity', () => {
     expect(ball.owner).toBeNull();
     stepBall(ball, players, 55, PITCH);   // the down player is up again, the lock expired: lowest id (2) wins the tie at 6 u
     expect(ball.owner).toBe(2);
+  });
+});
+
+// G15-12 (V15-4-3): the frame lives inside stepBall, so these run the ball through the
+// real step and hand each position to the real referee. Team 0 shoots at side 1.
+describe('G15-12: the goal frame inside stepBall, judged by judgeBall', () => {
+  const ATTACK: AttackDirs = [1, -1];
+  // Rolls a shot at `side`'s goal line for up to 30 steps and reports what the frame did
+  // and what the referee called first (or 'none' if the ball stayed in play). Side 1 is
+  // attacked by team 0, side 0 by team 1.
+  function shootAtGoal(y: number, z: number, side: 0 | 1 = 1): { hits: number; lastHit: FrameHit; call: string; ball: ReturnType<typeof createBall> } {
+    const { players, ball } = world();
+    const inward = side === 1 ? -1 : 1;
+    ball.x = goalLineX(PITCH, side) + inward * 40; ball.y = y; ball.z = z; ball.vx = -inward * 600;
+    ball.lastTouchTeam = side === 1 ? 0 : 1; ball.lastTouchId = side === 1 ? 5 : TEAM_SIZE + 5;
+    const out = createRefereeCall();
+    let hits = 0;
+    let lastHit: FrameHit = 'none';
+    for (let s = 1; s <= 30; s++) {
+      stepBall(ball, players, s, PITCH);
+      if (ball.frameHit !== 'none') { hits++; lastHit = ball.frameHit; }
+      judgeBall(ball, ATTACK, PITCH, out);
+      if (out.kind !== 'none') break;
+    }
+    return { hits, lastHit, call: out.kind, ball };
+  }
+
+  it('a shot at the post from inside the pitch bounces back into play: no goal, no goal kick', () => {
+    const r = shootAtGoal(postCentreY(PITCH, 1), 0);
+    expect(r.lastHit).toBe('post');
+    expect(r.hits).toBe(1);
+    expect(r.call).toBe('none');
+    expect(r.ball.x).toBeLessThan(goalLineX(PITCH, 1));
+    expect(r.ball.vx).toBeLessThan(0);
+  });
+  // Fix round 1 (review-3 I1): the same flight at the other goal.
+  it('side 0: a shot at the post bounces back into play, once, with no call', () => {
+    const r = shootAtGoal(postCentreY(PITCH, 0), 0, 0);
+    expect(r.lastHit).toBe('post');
+    expect(r.hits).toBe(1);
+    expect(r.call).toBe('none');
+    expect(r.ball.x).toBeGreaterThan(goalLineX(PITCH, 0));
+    expect(r.ball.vx).toBeGreaterThan(0);
+  });
+  it('a shot between the posts is still a goal: the frame never touches it', () => {
+    const r = shootAtGoal(centerY(PITCH), 0);
+    expect(r.hits).toBe(0);
+    expect(r.call).toBe('goal');
+  });
+  it('a ball over the crossbar is still OUT for the referee (G15-12: "por encima = fuera")', () => {
+    const r = shootAtGoal(centerY(PITCH), PITCH.crossbarHeight + CROSSBAR_THICKNESS + 20);
+    expect(r.hits).toBe(0);
+    expect(r.call).toBe('goal-kick');
   });
 });

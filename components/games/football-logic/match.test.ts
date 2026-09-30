@@ -4,7 +4,7 @@ import { FORMATIONS, TEAMS, TEAM_SIZE, OUTFIELD as OUTFIELD_COUNT, type Formatio
 import { dist } from './geometry';
 import { createTeamInput, copyTeamInput, toAxis, type ButtonState, type TeamInput } from './input';
 import { STEP_MS, stepsFor } from './step';
-import { GK_LINE_DIST, TACKLE_DIST, TACKLE_STEPS, isSprinting, type PlayerState } from './players';
+import { GK_LINE_DIST, TACKLE_DIST, TACKLE_STEPS, isSprinting, multForLevel, type PlayerState } from './players';
 import { createBall, givePossession, type BallState } from './ball';
 import { createRng, type Rng } from './rng';
 import { checkGoalkeepersInBox } from './invariants';
@@ -22,7 +22,7 @@ import {
   GK_HOLD_STEPS, MANUAL_SWITCH_LOCK_STEPS, MANUAL_SWITCH_SPRINT_HOLD_STEPS, SHORT_PASS_SPEED, STEAL_CHANCE,
   STEAL_CHANCE_VS_SPRINT, freestMateDir, shotSpeed,
 } from './actions';
-import { applyKickError, createAiState, decideTeamInput, humanProfile, profileFor, type AiProfile } from './ai';
+import { KEEPER_KICKING_ERROR_SPAN, applyKickError, createAiState, decideTeamInput, humanProfile, profileFor, type AiProfile } from './ai';
 
 const TEAM_PAIR: [TeamDef, TeamDef] = [TEAMS[0], TEAMS[1]];
 const CY = centerY(PITCH);
@@ -63,7 +63,7 @@ describe('constants', () => {
     expect(HALF_SECONDS).toBe(90);
     expect(HALF_SECONDS).toBeLessThanOrEqual(HALF_SECONDS_MAX);
     expect(HALF_STEPS).toBe(5400);
-    expect(GOAL_PAUSE_STEPS).toBe(stepsFor(2));
+    expect(GOAL_PAUSE_STEPS).toBe(stepsFor(4));
     expect(HALF_TIME_PAUSE_STEPS).toBe(stepsFor(3));
     expect(EXTRA_TIME_SECONDS).toBe(60);
     expect(EXTRA_TIME_STEPS).toBe(3600);
@@ -497,10 +497,13 @@ describe('a judged foul is consumed, not re-judged after the set piece (fix C1)'
     expect(dist(foulX, foulY, PITCH.width - PITCH.penaltySpotDist, centerY(PITCH))).toBeGreaterThan(100);
     const victim = m.players[5];
     victim.x = foulX; victim.y = foulY; victim.downUntilStep = 0;
+    // G15-24: only a contact from behind or from the side is a foul. On this very step
+    // the victim runs back towards his formation slot (towards -x, so he FACES -x), so
+    // the slide comes in from +x, i.e. from behind him; from -x it would be head on.
     const offender = m.players[TEAM_SIZE + 1];
-    offender.x = foulX - 20; offender.y = foulY;
+    offender.x = foulX + 20; offender.y = foulY;
     offender.tackleStepsLeft = 10;
-    offender.tackleDirX = 1; offender.tackleDirY = 0;
+    offender.tackleDirX = -1; offender.tackleDirY = 0;
     const rng = createRng(1);
     stepMatch(m, IDLE, rng);
     expect(m.phase).toBe('set-piece');
@@ -785,6 +788,8 @@ describe('full match with recorded inputs (criterion 1)', () => {
   // covers the seven phases (no single policy reaches all seven).
   const visitedFirst = new Set<MatchPhase>();
   const visitedGolden = new Set<MatchPhase>();
+  // The final score of the second recording, written by it (-1 = it has not run).
+  const goldenFinalScore: [number, number] = [-1, -1];
 
   it('run A ends over with at least one goal, run B replays it identically step by step, run C diverges on the seed', () => {
     const a = fresh();
@@ -957,13 +962,18 @@ describe('full match with recorded inputs (criterion 1)', () => {
     }
     expect(a.phase).toBe('over');
     // Anti-coincidence: 'golden-goal' could also be reached and left by a forced phase --
-    // here it is the engine's own route, so the half marker and the score shape are
-    // pinned too. half 3 is the terminal marker of a golden goal (endHalf sets it, and
-    // scoreGoal in half 3 goes straight to 'over'), and a golden goal can only ever be
-    // won by exactly one goal.
+    // here it is the engine's own route, so the half marker and (in the marked `it` below,
+    // V15-4-2) the score shape are pinned too. half 3 is the terminal marker of a golden
+    // goal (endHalf sets it, and scoreGoal in half 3 goes straight to 'over'), and a
+    // golden goal can only ever be won by exactly one goal.
     expect(visited, 'the second recording never reached the golden goal: the score was not level at full time').toContain('golden-goal');
     expect(a.half).toBe(3);
-    expect(Math.abs(a.score[0] - a.score[1])).toBe(1);
+    // The "won by exactly one goal" shape is in the marked `it` right below (V15-4-2). What
+    // needs no measured number stays live: a match that walks into half 3 is decided either
+    // IN the golden goal, by exactly one goal, or by the shootout -- never any other way.
+    expect(visited.has('shootout') || Math.abs(a.score[0] - a.score[1]) === 1, 'half 3 ended neither by one golden goal nor in the shootout').toBe(true);
+    goldenFinalScore[0] = a.score[0];
+    goldenFinalScore[1] = a.score[1];
     // Anti-coincidence: this is what makes the golden goal real rather than a phase the
     // match happened to pass through -- the score WAS level on the step the second half
     // ended. `null` (half 3 never reached) fails this too.
@@ -995,6 +1005,15 @@ describe('full match with recorded inputs (criterion 1)', () => {
         `phase ${phase} was visited by neither recording`,
       ).toBe(true);
     }
+  });
+  // PENDING_REBASELINE (Task V15-4-9): the G15-10/G15-26 attributes move this recording: it
+  // still reaches the golden goal from a level full time (both asserted live above), but the
+  // extra time now ends level and the match goes to the shootout. ONLY that measured shape
+  // is here (mark-3 technique); `goldenFinalScore` is written by the test above, so
+  // un-skipping this replays nothing.
+  it.skip('the second recording is decided IN the golden goal, by exactly one goal (not by the shootout)', () => {
+    expect(goldenFinalScore[0], 'the second recording did not run').toBeGreaterThanOrEqual(0);
+    expect(Math.abs(goldenFinalScore[0] - goldenFinalScore[1])).toBe(1);
   });
 });
 
@@ -1041,9 +1060,22 @@ describe('D4: a catch is possession, not a set piece; the team throws by button 
     expect(rng.calls).toBe(0);                               // steal() refuses a keeper owner before rolling
     expect(m.phase).toBe('play');
   });
-  it('(b) B on the 10th step of the hold throws a SHORT pass to the nearest mate in the d-pad cone; A throws a LONG one to the farthest — by the keeper, exact, no rng', () => {
+  // G15-26 (V15-4, Paco 30-sep): a keeper's throw is no longer exact. It carries ONE
+  // kick-error draw: the team profile's pass error scaled by the keeper's kicking (0 for a
+  // human side, R10). The keeper is set to kicking 1 so the kicking term is not neutral,
+  // and the expected direction is re-derived from the formula (not through
+  // keeperThrowErrorDeg) with the SAME seeded draw the engine makes: the first of rng(3).
+  function thrownDir(ux: number, uy: number, keeperKicking: number): { x: number; y: number } {
+    const expected = createBall();
+    expected.vx = ux;
+    expected.vy = uy;
+    applyKickError(expected, PROFILES[1].passErrorDeg * multForLevel(6 - keeperKicking, KEEPER_KICKING_ERROR_SPAN), createRng(3));
+    return { x: expected.vx, y: expected.vy };
+  }
+  it('(b) B on the 10th step of the hold throws a SHORT pass to the nearest mate in the d-pad cone; A throws a LONG one to the farthest — by the keeper, with ONE kick-error draw (G15-26)', () => {
     for (const button of ['b', 'a'] as const) {
       const { m, keeper } = caught();
+      keeper.keeperKicking = 1;
       const rng = countingRng(3);
       for (let i = 0; i < 9; i++) stepMatch(m, IDLE, rng);
       expect(m.ball.owner).toBe(TEAM_SIZE);
@@ -1062,14 +1094,18 @@ describe('D4: a catch is possession, not a set piece; the team throws by button 
       expect(m.ball.owner).toBeNull();
       expect(m.ball.kickerId).toBe(TEAM_SIZE);
       expect(m.scratch.events[TEAM_SIZE]).toMatchObject({ kind: button === 'b' ? 'short-pass' : 'long-pass', ok: true, actorId: TEAM_SIZE });
-      expect(m.ball.vy / m.ball.vx).toBeCloseTo(uy / ux, 6);  // exact aim: a keeper's throw carries no angular error
+      const thrown = thrownDir(ux, uy, keeper.keeperKicking);
+      expect(m.ball.vy / m.ball.vx).toBeCloseTo(thrown.y / thrown.x, 6);   // the aim, bent by the one draw
+      // Anti-coincidence: the draw really bent it (an exact throw would fail the line above).
+      expect(Math.abs(m.ball.vy / m.ball.vx - uy / ux)).toBeGreaterThan(1e-3);
       if (button === 'a') expect(m.ball.z).toBeGreaterThan(0); else expect(m.ball.z).toBe(0);
       expect(m.phase).toBe('play');
-      expect(rng.calls).toBe(0);                             // ten steps of a held ball and a throw: not one draw
+      expect(rng.calls).toBe(1);                             // ten steps of a held ball: no draw; the throw: exactly one
     }
   });
   it('(c) with nobody pressing, the automatic release fires on exactly the GK_HOLD_STEPS-th step after the catch, a long pass at the freest own-half mate, and not one step before', () => {
     const { m, keeper } = caught();
+    keeper.keeperKicking = 1;
     const rng = countingRng(3);
     for (let i = 0; i < GK_HOLD_STEPS - 1; i++) stepMatch(m, IDLE, rng);
     expect(m.ball.owner).toBe(TEAM_SIZE);
@@ -1080,10 +1116,12 @@ describe('D4: a catch is possession, not a set piece; the team throws by button 
     stepMatch(m, IDLE, rng);
     expect(m.ball.owner).toBeNull();
     expect(m.scratch.events[TEAM_SIZE]).toMatchObject({ kind: 'gk-release', ok: true, actorId: TEAM_SIZE });
-    expect(m.ball.vy / m.ball.vx).toBeCloseTo(expected.y / expected.x, 6);
+    const thrown = thrownDir(expected.x, expected.y, keeper.keeperKicking);
+    expect(m.ball.vy / m.ball.vx).toBeCloseTo(thrown.y / thrown.x, 6);   // G15-26: the aim, bent by the one draw
+    expect(Math.abs(m.ball.vy / m.ball.vx - expected.y / expected.x)).toBeGreaterThan(1e-3);
     expect(m.ball.z).toBeGreaterThan(0);                     // a long pass: airborne
     expect(m.phase).toBe('play');
-    expect(rng.calls).toBe(0);                               // the whole hold and the release: no draw (no error on a keeper's kick)
+    expect(rng.calls).toBe(1);                               // the whole hold: no draw; the release: exactly one (G15-26)
     expect(GK_HOLD_STEPS).toBe(stepsFor(2));
     // Pre-flight H4: the five steps after the throw. The ball is 9-46 u from the keeper, moving
     // and free -- inside GK_CATCH_RADIUS for four of them -- and keeperCatch must NOT roll for
@@ -1093,7 +1131,7 @@ describe('D4: a catch is possession, not a set piece; the team throws by button 
       expect(m.ball.owner).toBeNull();
       expect(m.scratch.events[TEAM_SIZE].kind).not.toBe('gk-catch');
     }
-    expect(rng.calls).toBe(0);
+    expect(rng.calls).toBe(1);                               // the five steps after it: no catch roll on its own throw
   });
   it('(e) while the keeper holds the ball the d-pad and the sprint do not move the field controlled: the AI places it, identically with and without input; with a free ball the same d-pad does move it', () => {
     const a = caught().m;
@@ -1182,7 +1220,7 @@ describe("applyTeamInput wires the profile's kick error into a field player's sh
     stepMatch(m, inputs, rng);
     expect(rng.calls).toBe(1);               // exactly one draw for the kick, on top of the zero above
     expect(m.scratch.events[id]).toMatchObject({ kind: 'shot', ok: true, actorId: id });
-    const pre = shotSpeed(1);                // chargeSteps === 1: one 'pressed' step before release
+    const pre = shotSpeed(1, m.players[id].shotMult);   // chargeSteps === 1: one 'pressed' step before release
     const expected = createBall();
     expected.vx = pre * AIM_X;
     expected.vy = pre * AIM_Y;

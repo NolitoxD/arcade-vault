@@ -2,6 +2,7 @@ import { dist } from './geometry';
 import type { PitchDef } from './pitch';
 import { PLAYER_HEIGHT, isPlayerDown, type PlayerState } from './players';
 import { perStep, stepsFor } from './clock';
+import { bounceOffFrame, frameHitFor, type FrameHit } from './goal-frame';
 
 export type BallState = {
   x: number;
@@ -16,6 +17,8 @@ export type BallState = {
   lastTouchId: number | null;
   kickerId: number | null;
   kickLockUntilStep: number;
+  // G15-12: what the frame did to the ball THIS step ('none' on every other step).
+  frameHit: FrameHit;
 };
 
 const GRAVITY = 900;
@@ -36,6 +39,7 @@ export function createBall(): BallState {
     owner: null, ownerSinceStep: 0,
     lastTouchTeam: null, lastTouchId: null,
     kickerId: null, kickLockUntilStep: 0,
+    frameHit: 'none',
   };
 }
 
@@ -134,10 +138,20 @@ function pickUp(ball: BallState, players: readonly PlayerState[], stepCount: num
 }
 
 export function stepBall(ball: BallState, players: readonly PlayerState[], stepCount: number, pitch: PitchDef): void {
+  ball.frameHit = 'none';
   if (ball.owner !== null) {
     stickToOwner(ball, players[ball.owner]);
     return;
   }
   flyAndRoll(ball);
+  // G15-12: the frame BEFORE the pickup and, through it, before the referee
+  // (stepOpenPlay judges after stepPhysics): a ball that hits the post must never be
+  // judged a goal or a goal kick first. One level, reset at the top of every step, so
+  // the screen reads it exactly like scratch.call -- on the edge.
+  const hit = frameHitFor(ball, pitch);
+  if (hit !== 'none') {
+    bounceOffFrame(ball, pitch, hit);
+    ball.frameHit = hit;
+  }
   pickUp(ball, players, stepCount, pitch);
 }

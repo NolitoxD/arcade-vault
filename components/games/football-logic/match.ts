@@ -12,7 +12,7 @@ import {
   createActionEvent, nextManualControl, releaseFromGoalkeeper, stepTackle, updateControlled, updateTeamControl,
   type ActionEvent,
 } from './actions';
-import { applyKickError, keeperCatch, keeperStep, positionTeam, type AiProfile } from './ai';
+import { applyKickError, keeperCatch, keeperCatchChance, keeperStep, keeperThrowErrorDeg, positionTeam, type AiProfile } from './ai';
 import {
   clearRefereeCall, createRefereeCall, judgeBall, judgeFoul,
   type RefereeCall, type RestartKind, type SetPieceKind,
@@ -83,7 +83,7 @@ export type MatchState = {
 
 export { HALF_SECONDS, HALF_SECONDS_MAX, HALF_STEPS, EXTRA_TIME_SECONDS, EXTRA_TIME_STEPS };
 export type { ShootoutState };
-const GOAL_PAUSE_SECONDS = 2;
+const GOAL_PAUSE_SECONDS = 4;   // G15-4 (v1.5): room for the hug celebration, which is V15-5
 export const GOAL_PAUSE_STEPS = stepsFor(GOAL_PAUSE_SECONDS);
 const HALF_TIME_PAUSE_SECONDS = 3;
 export const HALF_TIME_PAUSE_STEPS = stepsFor(HALF_TIME_PAUSE_SECONDS);
@@ -136,7 +136,7 @@ export function createMatch(
 ): MatchState {
   const match: MatchState = {
     teams,
-    players: createPlayers([formationTable[0], formationTable[0]], pitch),
+    players: createPlayers([formationTable[0], formationTable[0]], pitch, [teams[0].id, teams[1].id]),
     ball: createBall(),
     score: [0, 0],
     half: 1,
@@ -305,7 +305,9 @@ function isRestart(kind: RefereeCall['kind']): kind is RestartKind {
   return kind !== 'none' && kind !== 'goal';
 }
 
-function keeperOf(match: MatchState, team: 0 | 1): PlayerState {
+// Exported since V15-4 (H17): the attribute tests read the live keeper through it. The
+// body does not change (Paco's resolution 6): the keeper is always slot 0 of the team.
+export function keeperOf(match: MatchState, team: 0 | 1): PlayerState {
   return match.players[team * TEAM_SIZE];
 }
 
@@ -317,10 +319,11 @@ function liveControlledFor(match: MatchState, team: 0 | 1): number {
 }
 
 // One rng draw at most, only when a roll is actually possible (keeperCatch). A catch
-// is possession -- no set piece, no early return: the step goes on.
+// is possession -- no set piece, no early return: the step goes on. G15-26: the chance
+// is the team's, bent by the reflexes of the keeper who is on the pitch.
 function keeperCatchFor(match: MatchState, team: 0 | 1, rng: Rng): void {
   const gk = keeperOf(match, team);
-  keeperCatch(gk, match.ball, match.profiles[team].catchChance, match.catchRolled, rng, match.pitch, match.stepCount, match.scratch.events[gk.id]);
+  keeperCatch(gk, match.ball, keeperCatchChance(match.profiles[team].catchChance, gk), match.catchRolled, rng, match.pitch, match.stepCount, match.scratch.events[gk.id]);
 }
 
 function runTeamAi(match: MatchState, team: 0 | 1): void {
@@ -354,18 +357,24 @@ function dropFrozenPickup(match: MatchState): void {
   match.ball.owner = null;
 }
 
-// D4 routing. Keeper holding the ball: the TeamInput is the keeper's (throw by button,
-// exact) and, failing that, the automatic release at GK_HOLD_STEPS -- both write the
-// keeper's own slot and neither draws. Otherwise the field controlled gets the
-// buttons (steal draw inside) and its kick gets the profile's angular error (one draw).
+// D4 routing. Keeper holding the ball: the TeamInput is the keeper's (throw by button)
+// and, failing that, the automatic release at GK_HOLD_STEPS -- both write the keeper's
+// own slot; since V15-4 (G15-26) a throw that got away gets ONE kick-error draw, from
+// the profile's pass error scaled by the keeper's kicking (0 for the human, R10).
+// Otherwise the field controlled gets the buttons (steal draw inside) and its kick gets
+// the profile's angular error (one draw).
 // Team 0 acts first: a simultaneous steal by both resolves in its favour, same
 // lowest-id rule as everywhere; QA item, criterion 14.
 function applyTeamInput(match: MatchState, team: 0 | 1, input: TeamInput, rng: Rng): void {
   const { players, ball, scratch } = match;
   const gk = keeperOf(match, team);
   if (ball.owner === gk.id) {
-    applyKeeperButtons(gk, input, ball, players, match.attackDir[team], match.stepCount, scratch.aim, scratch.events[gk.id]);
-    releaseFromGoalkeeper(gk, ball, players, match.attackDir[team], match.pitch, match.stepCount, scratch.aim, scratch.events[gk.id]);
+    const gkEv = scratch.events[gk.id];
+    applyKeeperButtons(gk, input, ball, players, match.attackDir[team], match.stepCount, scratch.aim, gkEv);
+    releaseFromGoalkeeper(gk, ball, players, match.attackDir[team], match.pitch, match.stepCount, scratch.aim, gkEv);
+    if (gkEv.ok && (gkEv.kind === 'gk-release' || gkEv.kind === 'long-pass' || gkEv.kind === 'short-pass')) {
+      applyKickError(ball, keeperThrowErrorDeg(match.profiles[team].passErrorDeg, gk), rng);
+    }
     return;
   }
   // Fix round 1 (G9-1 review, Important): a frozen outfield player must never
@@ -619,6 +628,12 @@ function stepShootout(match: MatchState, inputs: readonly [TeamInput, TeamInput]
 // Ruling R7: this lives in match.ts, not in step.ts as the spec's file table says --
 // step.ts keeps stepPhysics only, so match.ts can import it without an ESM cycle.
 export function stepMatch(match: MatchState, inputs: readonly [TeamInput, TeamInput], rng: Rng): void {
+  // G15-12 (review-3 I2): stepBall only runs in open play and on the shootout's resolve
+  // steps, so a frame hit on the step that changes phase would otherwise stay set for
+  // the whole kickoff/set-piece/goal/half-time pause (or forever once 'over'). Reset it
+  // on EVERY step, before the 'over' early return: it is output only, nothing in the
+  // engine reads it. stepBall keeps its own reset for callers that step the ball directly.
+  match.ball.frameHit = 'none';
   if (match.phase === 'over') return;
   // Final review Important #1: this used to run only inside stepOpenPlay, so a
   // foul (or any other event) judged on the last open-play step before a

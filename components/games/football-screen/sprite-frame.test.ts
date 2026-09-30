@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { PITCH } from '../football-logic/pitch';
 import { createPlayers, type PlayerState } from '../football-logic/players';
-import { FORMATIONS } from '../football-logic/teams';
+import { FORMATIONS, TEAMS } from '../football-logic/teams';
 import { DIVE_PEAK, GESTURE_IDLE, GK_DIVE_STEPS } from './gestures';
 import {
   OCTANT_COUNT, OCTANT_E, OCTANT_N, OCTANT_NE, OCTANT_NW, OCTANT_S, OCTANT_SE, OCTANT_SW, OCTANT_W,
@@ -14,7 +14,7 @@ import {
 
 // A real outfield player from the engine's own factory (id 1, team 0, facing east).
 function outfielder(): PlayerState {
-  return createPlayers([FORMATIONS[0], FORMATIONS[0]], PITCH)[1];
+  return createPlayers([FORMATIONS[0], FORMATIONS[0]], PITCH, [TEAMS[0].id, TEAMS[1].id])[1];
 }
 
 describe('facingOctant', () => {

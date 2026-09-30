@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { PITCH } from './pitch';
-import { FORMATIONS } from './teams';
+import { FORMATIONS, TEAMS } from './teams';
 import { createTeamInput, toAxis, type TeamInput } from './input';
 import { createPlayers, PLAYER_SPEED, type PlayerState } from './players';
 import { createBall, givePossession, kickBall, LONG_PASS_VZ, type BallState } from './ball';
@@ -28,7 +28,7 @@ const KICK_TARGET_ID = 7;
 type World = { players: PlayerState[]; ball: BallState };
 
 function createWorld(): World {
-  const players = createPlayers([F, F], PITCH);
+  const players = createPlayers([F, F], PITCH, [TEAMS[0].id, TEAMS[1].id]);
   const ball = createBall();
   givePossession(ball, players[4], 0);
   return { players, ball };

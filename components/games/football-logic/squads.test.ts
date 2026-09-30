@@ -134,7 +134,7 @@ describe('the twenty squads of eighteen (G15-17 + Paco 23-sep)', () => {
     const lower = [...SQUAD_NAMES.brasil];
     lower[2] = 'minusculas';
     expect(checkSquad('brasil', lower).join(' ')).toContain('brasil[2]');
-    expect(checkSquads([...TEAMS, { id: 'atlantida', name: 'ATLÁNTIDA', kit: { primary: '#123456', secondary: '#abcdef' } }]).join(' '))
+    expect(checkSquads([...TEAMS, { ...TEAMS[0], id: 'atlantida', name: 'ATLÁNTIDA', kit: { primary: '#123456', secondary: '#abcdef' } }]).join(' '))
       .toContain('no squad for atlantida');
     expect(() => squadName('atlantida', 0)).toThrow();
     expect(squadName('espana', 0)).toBe(SQUAD_NAMES.espana[0]);

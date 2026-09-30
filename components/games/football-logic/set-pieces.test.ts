@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { PITCH, centerY, goalLineX, isInsideBigArea } from './pitch';
-import { FORMATIONS, OUTFIELD, TEAM_SIZE, type Formation, type Strategy } from './teams';
+import { FORMATIONS, TEAMS, OUTFIELD, TEAM_SIZE, type Formation, type Strategy } from './teams';
 import { dist } from './geometry';
 import { createTeamInput, type TeamInput } from './input';
 import { GK_LINE_DIST, createPlayers, type PlayerState } from './players';
@@ -37,7 +37,7 @@ type W = { players: PlayerState[]; ball: BallState; sp: SetPieceState; input: Te
 
 function world(): W {
   return {
-    players: createPlayers(FORMS, PITCH), ball: createBall(), sp: createSetPieceState(),
+    players: createPlayers(FORMS, PITCH, [TEAMS[0].id, TEAMS[1].id]), ball: createBall(), sp: createSetPieceState(),
     input: createTeamInput(), aim: { x: 0, y: 0 }, out: createActionEvent(),
   };
 }
@@ -167,7 +167,7 @@ describe('beginSetPiece', () => {
     //   5-3-2 → id 7: the central mid sits at (968, 715), 32 u away -- no contest.
     for (const [fi, expectedId] of [[0, KICKOFF_TAKER_ID], [1, 6], [2, 7]] as const) {
       const f = FORMATIONS[fi];
-      const w = { ...world(), players: createPlayers([f, f], PITCH) };
+      const w = { ...world(), players: createPlayers([f, f], PITCH, [TEAMS[0].id, TEAMS[1].id]) };
       beginSetPiece(w.sp, 'kickoff', 0, SPOT_X, CY, w.players, w.ball, [f, f], STRATS, ATTACK, PITCH, 0);
       expect(w.sp.takerId).toBe(expectedId);
       expect(w.players[w.sp.takerId].role).not.toBe('gk');
@@ -241,8 +241,8 @@ describe('automatic execution by kind', () => {
     begin(w, 'free-kick', 0, 1500, 500);
     run(w, SET_PIECE_COUNTDOWN_STEPS);
     expect(w.out.kind).toBe('shot');
-    expect(speedOf(w.ball)).toBeCloseTo(shotSpeed(FREE_KICK_CHARGE_STEPS), 6);
-    expect(shotSpeed(FREE_KICK_CHARGE_STEPS)).toBe(800);
+    expect(speedOf(w.ball)).toBeCloseTo(shotSpeed(FREE_KICK_CHARGE_STEPS, w.players[w.sp.takerId].shotMult), 6);
+    expect(shotSpeed(FREE_KICK_CHARGE_STEPS, 1)).toBe(800);
   });
 });
 
@@ -266,8 +266,8 @@ describe('penalty', () => {
   it('the keeper guesses wrong when rng() >= penaltyReadChance and the ball flies at shotSpeed(PENALTY_CHARGE_STEPS)', () => {
     const w = penalty(1, fixedRng([0.61, 0.3])); // not read; second roll picks the lower of the other sides (-1)
     expect(w.ball.owner).toBeNull();
-    expect(speedOf(w.ball)).toBeCloseTo(shotSpeed(PENALTY_CHARGE_STEPS), 6);
-    expect(shotSpeed(PENALTY_CHARGE_STEPS)).toBe(850);
+    expect(speedOf(w.ball)).toBeCloseTo(shotSpeed(PENALTY_CHARGE_STEPS, w.players[w.sp.takerId].shotMult), 6);
+    expect(shotSpeed(PENALTY_CHARGE_STEPS, 1)).toBe(850);
     expect(w.ball.vy).toBeGreaterThan(0); // aimed at centerY + 55
     expect(w.ball.vx).toBeGreaterThan(0);
     expect(w.players[TEAM_SIZE].y).toBeCloseTo(CY - PENALTY_SIDE_OFFSET, 6);

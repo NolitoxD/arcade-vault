@@ -1,7 +1,7 @@
 import { dist, normalizeInto, INV_SQRT2, type Vec2 } from './geometry';
 import type { PitchDef } from './pitch';
 import { isDown, type TeamInput } from './input';
-import { PLAYER_HEIGHT, PLAYER_RADIUS, TACKLE_STEPS, isPlayerDown, isSprinting, type PlayerState } from './players';
+import { PLAYER_HEIGHT, PLAYER_RADIUS, TACKLE_STEPS, isPlayerDown, isSprinting, multForLevel, type PlayerState } from './players';
 import { LONG_PASS_VZ, givePossession, kickBall, type BallState } from './ball';
 import { stepsFor } from './step';
 import type { Rng } from './rng';
@@ -64,8 +64,14 @@ export const STEAL_RANGE = 28;
 export const STEAL_CHANCE = 0.65;
 // Stage A addition, not in the spec — review in QA
 export const STEAL_CHANCE_VS_SPRINT = 0.35;
-export const TACKLE_BALL_REACH = 20;
+export const TACKLE_BALL_REACH = 28;   // G15-24 (Paco, QA de V15-2): above TACKLE_FOUL_RADIUS
 export const TACKLE_FOUL_RADIUS = 2 * PLAYER_RADIUS; // 24
+// G15-24: "falta solo si el contacto llega por detras o de lado; de frente sin tocar
+// balon = choque, no falta". "From the front" is measured against the VICTIM's facing:
+// the contact comes from the front when the vector victim -> tackler points the same way
+// the victim is looking. cos 45deg = INV_SQRT2 is the same cone the pass assist uses, so
+// the game has ONE definition of "in front of me" and not two.
+export const FOUL_FRONT_COS = INV_SQRT2;
 const TACKLE_MISS_DOWN_SECONDS = 1;
 export const TACKLE_MISS_DOWN_STEPS = stepsFor(TACKLE_MISS_DOWN_SECONDS); // 60
 export const CONTROL_HYSTERESIS = 40;
@@ -78,6 +84,15 @@ export const CONTROL_HYSTERESIS = 40;
 export const MANUAL_SWITCH_POOL = 3;
 export const MANUAL_SWITCH_LOCK_STEPS = stepsFor(0.6); // 36
 export const MANUAL_SWITCH_SPRINT_HOLD_STEPS = stepsFor(0.25); // 15
+// G15-26: the keeper's kicking level scales the speed of his LONG releases (the
+// automatic one and the A throw): level 1 is 0.90, level 5 is 1.10. The hand throw (B)
+// keeps SHORT_PASS_SPEED. The accuracy half of kicking is keeperThrowErrorDeg (ai.ts).
+export const KEEPER_KICKING_SPAN = 0.1;
+
+export function keeperLongThrowSpeed(gk: PlayerState): number {
+  return LONG_PASS_SPEED * multForLevel(gk.keeperKicking, KEEPER_KICKING_SPAN);
+}
+
 const GK_HOLD_SECONDS = 2;
 export const GK_HOLD_STEPS = stepsFor(GK_HOLD_SECONDS); // 120
 
@@ -86,13 +101,14 @@ export function chargeFraction(chargeSteps: number): number {
   return chargeSteps >= SHOT_CHARGE_STEPS ? 1 : chargeSteps <= 0 ? 0 : chargeSteps / SHOT_CHARGE_STEPS;
 }
 
-// 700 -> 950 linear, capped at SHOT_CHARGE_STEPS.
-export function shotSpeed(chargeSteps: number): number {
-  return SHOT_SPEED_MIN + (SHOT_SPEED_MAX - SHOT_SPEED_MIN) * chargeFraction(chargeSteps);
+// 700 -> 950 linear, capped at SHOT_CHARGE_STEPS, at shotMult 1. G15-10 (V15-4): the
+// shooter's shotMult (1 +- ATTR_SHOT_SPAN, players.ts) scales the whole ramp.
+export function shotSpeed(chargeSteps: number, shotMult: number): number {
+  return (SHOT_SPEED_MIN + (SHOT_SPEED_MAX - SHOT_SPEED_MIN) * chargeFraction(chargeSteps)) * shotMult;
 }
 
 export function shoot(p: PlayerState, ball: BallState, dirX: number, dirY: number, chargeSteps: number, stepCount: number, out: ActionEvent): void {
-  kickBall(ball, p, dirX, dirY, shotSpeed(chargeSteps), SHOT_VZ_MAX * chargeFraction(chargeSteps), stepCount);
+  kickBall(ball, p, dirX, dirY, shotSpeed(chargeSteps, p.shotMult), SHOT_VZ_MAX * chargeFraction(chargeSteps), stepCount);
   setEvent(out, 'shot', true, p.id);
 }
 
@@ -131,6 +147,17 @@ export function startTackle(p: PlayerState, dirX: number, dirY: number, out: Act
   setEvent(out, 'tackle', false, p.id);
 }
 
+export function contactIsFoul(tackler: PlayerState, victim: PlayerState): boolean {
+  const dx = tackler.x - victim.x;
+  const dy = tackler.y - victim.y;
+  const d = Math.sqrt(dx * dx + dy * dy);
+  if (d === 0) return true;                        // exactly on top of him: never "from the front"
+  const facing = Math.sqrt(victim.facingX * victim.facingX + victim.facingY * victim.facingY);
+  if (facing === 0) return true;                   // a victim facing nowhere cannot see it coming
+  const dot = (dx / d) * (victim.facingX / facing) + (dy / d) * (victim.facingY / facing);
+  return dot < FOUL_FRONT_COS;
+}
+
 function ballIsTakeable(ball: BallState, p: PlayerState, players: readonly PlayerState[]): boolean {
   if (ball.z > PLAYER_HEIGHT) return false;
   if (ball.owner === null) return true;
@@ -139,7 +166,9 @@ function ballIsTakeable(ball: BallState, p: PlayerState, players: readonly Playe
 }
 
 // Called every step AFTER the slide (stepPlayer) for any player with tackleStepsLeft > 0.
-// Ball before body: sliding in from the front steals, sliding in from behind fouls.
+// Ball before body: a slide that reaches the ball first steals it. Otherwise the first
+// rival body it touches ends the slide: from behind or from the side it is a foul, from
+// the front (within the FOUL_FRONT_COS cone of the victim's facing) it is a clash (G15-24).
 export function stepTackle(p: PlayerState, ball: BallState, players: readonly PlayerState[], stepCount: number, out: ActionEvent): void {
   if (p.tackleStepsLeft <= 0) return;
   setEvent(out, 'tackle', false, p.id);
@@ -149,13 +178,16 @@ export function stepTackle(p: PlayerState, ball: BallState, players: readonly Pl
     out.ok = true;
     return;
   }
-  // Foul rule (R11): touching ANY rival not on the ground counts, not only the owner.
+  // Contact rule (R11): touching ANY rival not on the ground ends the slide, not only the owner.
   for (let i = 0; i < players.length; i++) {
     const q = players[i];
     if (q.team === p.team || isPlayerDown(q, stepCount)) continue;
     if (dist(p.x, p.y, q.x, q.y) < TACKLE_FOUL_RADIUS) {
       p.tackleStepsLeft = 0;
       p.downUntilStep = stepCount + TACKLE_MISS_DOWN_STEPS;
+      // G15-24: the slide always ENDS on a contact (the tackler goes down either way);
+      // what the direction decides is whether the referee blows.
+      if (!contactIsFoul(p, q)) return;
       out.foul = true;
       out.victimId = q.id;
       out.x = q.x;
@@ -253,7 +285,9 @@ export function freestMateDir(gk: PlayerState, players: readonly PlayerState[], 
 // Spec goalkeeper rule 4 (D4), the AUTOMATIC release: once GK_HOLD_STEPS have
 // passed since the keeper took the ball (caught or picked up, one path through
 // givePossession/ownerSinceStep) and nobody released it by button, a long pass at
-// the freest own-half mate, else straight along attackDir. Exact: no error, no rng.
+// the freest own-half mate, else straight along attackDir, at the keeper's own
+// keeperLongThrowSpeed. No rng here: the kick error of a throw is applied by the caller
+// (match.ts, applyTeamInput) from the team profile and the keeper's kicking.
 // `aim` is the caller's scratch Vec2 (no module state, no allocation), exactly as
 // applyButtons receives it; match.ts passes scratch.aim. Unlike applyButtons it
 // does NOT clear `out` on its no-op paths: stepOpenPlay wipes every slot at the top
@@ -267,7 +301,7 @@ export function releaseFromGoalkeeper(gk: PlayerState, ball: BallState, players:
   }
   gk.facingX = aim.x;
   gk.facingY = aim.y;
-  kickBall(ball, gk, aim.x, aim.y, LONG_PASS_SPEED, LONG_PASS_VZ, stepCount);
+  kickBall(ball, gk, aim.x, aim.y, keeperLongThrowSpeed(gk), LONG_PASS_VZ, stepCount);
   setEvent(out, 'gk-release', true, gk.id);
 }
 
@@ -277,7 +311,8 @@ export function releaseFromGoalkeeper(gk: PlayerState, ball: BallState, players:
 // along the keeper's facing (S-GK.1). B 'pressed' = hand throw = assisted short
 // pass (nearest outfield mate in the 45deg cone, aimPass, ruling R10); A 'pressed' =
 // assisted long pass (farthest mate in the cone); nobody in the cone = straight.
-// A throw is a set piece in spirit: exact, no rng, no angular error. Only 'pressed'
+// A throw is a set piece in spirit: no rng here (the caller applies the kick error,
+// G15-26), and the long one flies at keeperLongThrowSpeed. Only 'pressed'
 // fires (S-GK.2), A wins a double press (S-GK.3), and nothing fires on the very step
 // the keeper took the ball (S-GK.4), so a catch (before the buttons) and a pickUp
 // (after them, in the physics) both release from the next step on. Like
@@ -294,8 +329,12 @@ export function applyKeeperButtons(gk: PlayerState, input: TeamInput, ball: Ball
   aimPass(gk, players, aim.x, aim.y, longOne, stepCount, aim);
   gk.facingX = aim.x;
   gk.facingY = aim.y;
-  if (longOne) longPass(gk, ball, aim.x, aim.y, stepCount, out);
-  else shortPass(gk, ball, aim.x, aim.y, stepCount, out);
+  if (longOne) {
+    kickBall(ball, gk, aim.x, aim.y, keeperLongThrowSpeed(gk), LONG_PASS_VZ, stepCount);
+    setEvent(out, 'long-pass', true, gk.id);
+  } else {
+    shortPass(gk, ball, aim.x, aim.y, stepCount, out);
+  }
 }
 
 // The three buttons with press/hold, for the controlled player of one team.
