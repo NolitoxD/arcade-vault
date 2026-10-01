@@ -68,7 +68,7 @@ export function atlasCellY(pose: number): number {
   return pose * SPRITE_SIZE;
 }
 
-// The letters that do not come from the kit: the same for all eighteen players.
+// The letters that do not come from the kit: the same for all twenty-two players.
 export const SPRITE_OUTLINE = '#141414';
 export const SPRITE_HAIR = '#3b2416';
 export const SPRITE_SKIN = '#f1c27d';

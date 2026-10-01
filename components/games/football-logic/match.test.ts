@@ -27,10 +27,15 @@ import { KEEPER_KICKING_ERROR_SPAN, applyKickError, createAiState, decideTeamInp
 const TEAM_PAIR: [TeamDef, TeamDef] = [TEAMS[0], TEAMS[1]];
 const CY = centerY(PITCH);
 const PHASES: readonly MatchPhase[] = ['kickoff', 'play', 'set-piece', 'goal', 'half-time', 'golden-goal', 'shootout', 'over'];
-// Ruling R26's union assertion runs over the phases a recorded match can reach: the two
-// recordings decide the match before the extra time runs out, so neither can reach the
-// shootout. The shootout has its own recordings (Task 7b-2).
-const RECORDED_PHASES: readonly MatchPhase[] = PHASES.filter((p) => p !== 'shootout');
+// Ruling R26's union assertion runs over the phases a recorded match can reach: the
+// first recording is decided in regulation and the second reaches the golden goal level
+// and, since V15-4 (Paco, 01-oct-2026, option a of Task V15-4-9), goes on to the
+// shootout -- so the union now covers every phase in PHASES, the shootout included ('injury'
+// is not in PHASES: no recording freezes the clock on a LESIONADO window, and discipline.test.ts
+// covers that phase on its own). (Old value,
+// before V15-4: the second recording ended IN the golden goal and the shootout was
+// dropped from the union, covered only by the recordings of Task 7b-2.)
+const RECORDED_PHASES: readonly MatchPhase[] = PHASES;
 const IDLE: readonly [TeamInput, TeamInput] = [createTeamInput(), createTeamInput()];
 const PROFILES: readonly [AiProfile, AiProfile] = [profileFor(TEAMS[0], 5), profileFor(TEAMS[1], 5)];
 
@@ -381,13 +386,14 @@ describe('a same-team tackle no longer clobbers another same-team tackle (fix ro
     const m = fresh();
     resumePlay(m);
     // Ball at rest, far from both tacklers and the foul spot: nobody here is
-    // close enough to pick it up instead of fouling or sliding clean (TACKLE_BALL_REACH is 20).
+    // close enough to pick it up instead of fouling or sliding clean (TACKLE_BALL_REACH).
     m.ball.x = 1000; m.ball.y = CY; m.ball.z = 0;
     m.ball.vx = 0; m.ball.vy = 0; m.ball.vz = 0;
     m.ball.owner = null;
-    // Player 1 (team 0, lower id): mid-tackle, about to slide into player 10's
-    // body (team 1) -- a foul. y = 50 is outside the big-area y-band [265, 1035]
-    // for BOTH ends of the pitch, so this is a free kick, never a penalty,
+    // Player 1 (team 0, lower id): mid-tackle, about to slide into the body of player
+    // TEAM_SIZE + 1 (team 1) -- a foul. y = 50 is outside the big-area y-band
+    // [CY - bigAreaWidth / 2, CY + bigAreaWidth / 2] for BOTH ends of the pitch, so this
+    // is a free kick, never a penalty,
     // regardless of x (ruling R14 is judged by judgeFoul, not re-derived here).
     const foulTaker = m.players[1];
     foulTaker.tackleStepsLeft = 10;
@@ -401,8 +407,9 @@ describe('a same-team tackle no longer clobbers another same-team tackle (fix ro
     victim.downUntilStep = 0;
     // Player 2 (team 0, higher id): mid-tackle in an empty stretch of the pitch,
     // well clear of the ball and every rival -- not merely outside
-    // TACKLE_FOUL_RADIUS, but 275+ u from the nearest formation slot and 600 u
-    // from the ball, so this is unambiguously a clean slide.
+    // TACKLE_FOUL_RADIUS, but over 200 u from the nearest rival's formation slot
+    // (at 4-4-2 on this pitch) and 535 u (CY to y = 1250) from the ball, so this is
+    // unambiguously a clean slide.
     const cleanSlider = m.players[2];
     cleanSlider.tackleStepsLeft = 10;
     cleanSlider.tackleDirX = 1;
@@ -466,7 +473,7 @@ describe('the set piece never runs twice', () => {
   });
 });
 
-// Whole-stage review C1: the 18 ActionEvent slots were only ever cleared for the
+// Whole-stage review C1: the 22 ActionEvent slots were only ever cleared for the
 // two controlled players (applyButtons), so a foul stayed in scratch.events[i]
 // and stepOpenPlay judged it AGAIN the moment the set piece handed play back --
 // one fresh penalty every SET_PIECE_COUNTDOWN_STEPS until the half ran out.
@@ -529,7 +536,7 @@ describe('a judged foul is consumed, not re-judged after the set piece (fix C1)'
   });
 });
 
-// Final review Important #1: the 18-slot sweep used to live only at the top of
+// Final review Important #1: the 22-slot sweep used to live only at the top of
 // stepOpenPlay, so a foul judged on the step play stops (which hands the phase
 // to 'set-piece') stayed in its slot untouched through every countdown step
 // that follows -- those steps run stepMatch's 'set-piece' branch, never
@@ -541,7 +548,7 @@ describe('scratch.events is swept every step, not only in open play (final revie
     const m = fresh();
     resumePlay(m);
     // Same free-ball / offender-into-victim shape as the C1 fixture above, but
-    // at x = 900 -- outside BOTH big areas ([0,320] and [1680,2000]) -- so this
+    // at x = 900 -- outside BOTH big areas ([0, bigAreaDepth] and [width - bigAreaDepth, width]) -- so this
     // is a free kick, not a penalty: the countdown that follows is what is
     // under test, not the kick kind.
     m.ball.owner = null;
@@ -562,7 +569,7 @@ describe('scratch.events is swept every step, not only in open play (final revie
     expect(m.setPiece?.kind).toBe('free-kick');
     expect(m.scratch.events[offender.id]).toMatchObject({ kind: 'tackle', foul: true, victimId: victim.id });
     // Step N+1: a countdown step (stepSetPiece returns false without touching
-    // `out` while stepsLeft > 0), phase still 'set-piece'. Every one of the 18
+    // `out` while stepsLeft > 0), phase still 'set-piece'. Every one of the 22
     // slots must have been swept back to 'none' -- the foul already happened.
     stepMatch(m, IDLE, rng);
     expect(m.phase).toBe('set-piece');
@@ -785,11 +792,13 @@ describe('full match with recorded inputs (criterion 1)', () => {
   const seedA = seedWhere((v) => v < STEAL_CHANCE_VS_SPRINT);
   const seedC = seedWhere((v) => v >= STEAL_CHANCE);
   // Ruling R26: each recording fills its own set and the second test asserts the union
-  // covers the seven phases (no single policy reaches all seven).
+  // covers every phase in PHASES (no single policy reaches all of them; 'injury' is not in PHASES).
   const visitedFirst = new Set<MatchPhase>();
   const visitedGolden = new Set<MatchPhase>();
-  // The final score of the second recording, written by it (-1 = it has not run).
-  const goldenFinalScore: [number, number] = [-1, -1];
+  // How the second recording ended, written by it (score -1 = it has not run).
+  const goldenOutcome: { score: [number, number]; levelAtShootout: boolean | null; winner: number; kicks: number } = {
+    score: [-1, -1], levelAtShootout: null, winner: -1, kicks: 0,
+  };
 
   it('run A ends over with at least one goal, run B replays it identically step by step, run C diverges on the seed', () => {
     const a = fresh();
@@ -829,19 +838,25 @@ describe('full match with recorded inputs (criterion 1)', () => {
     expect(a.phase).toBe('over');
     expect(a.score[0] + a.score[1]).toBeGreaterThanOrEqual(1);
     expect(a.half).toBeGreaterThanOrEqual(2);
-    // Not vacuous: the run drove the phase machine, not just `play`. Measured once and
-    // reported, never tuned (stage B, with all 16 outfield players alive): 11 325 steps,
-    // 0-2, decided at the end of the second half, visiting six phases and five set-piece
-    // kinds (kickoff, free-kick, goal-kick, throw-in, penalty), with run C first diverging
-    // at step 1171. Change the policy, the AI or the formation and these move; measure the
-    // new values and report them, never edit them away.
+    // Not vacuous: the run drove the phase machine, not just `play`. Re-measured ONCE in
+    // V15-4 (01-oct-2026, eleven a side + 2200 x 1430 pitch + attributes + goal frame +
+    // directional tackles + cards + injuries, probe-tuned SHOT_POST_MARGIN 4), reported,
+    // never tuned: 12 854 steps, 3-2 (2-0 at half time), decided at the end of the second
+    // half, visiting seven phases (kickoff, play, injury, set-piece, goal, half-time, over --
+    // the six asserted below plus 'injury'), four set-piece kinds (kickoff, free-kick,
+    // corner, goal-kick), 112 rng draws, with run C first diverging at step 364. (Old value,
+    // stage B, with all 16 outfield players alive: 11 325 steps, 0-2, decided at the end of
+    // the second half, visiting six phases and five set-piece kinds (kickoff, free-kick,
+    // goal-kick, throw-in, penalty), with run C first diverging at step 1171.) Change the
+    // policy, the AI or the formation and these move; measure the new values and report
+    // them, never edit them away.
     // Ruling R26: six, not seven. This policy gives team 1 no shooting branch, so only
     // team 0 can be ahead on merit and the score is never level at full time -- which is
     // the only door into 'golden-goal' (endHalf sends a level match to half 3). In stage A,
     // with the mates frozen, a level score happened by coincidence; with the live AI it
-    // did not, and a coincidence is not something to restore. That NEGATIVE now lives in
-    // the `it` right below, because V15-4 made it come true; the seventh phase used to be
-    // covered by the second recording below.
+    // did not, and a coincidence is not something to restore. That NEGATIVE lives in the
+    // `it` right below since V15-4-1b, where it briefly stopped holding (it holds again on
+    // the final V15-4 engine); the seventh phase is covered by the second recording below.
     for (const phase of ['kickoff', 'play', 'set-piece', 'goal', 'half-time', 'over'] as const) {
       expect(visited, `phase ${phase} was never visited in the recorded match`).toContain(phase);
     }
@@ -887,16 +902,31 @@ describe('full match with recorded inputs (criterion 1)', () => {
   // towards the rival goal. Both halves are needed: with A alone suppressed the carrier
   // still scored six times by simply dribbling over the line (measured: 6-0, no shot
   // involved), so a "no shooting" policy has to take the carrier's heading too. Movement,
-  // chasing and passes are untouched. From half 3 on the policy IS the first recording's,
-  // team 0 shoots again and one golden goal ends the match.
+  // chasing and passes are untouched. From half 3 on the policy IS the first recording's
+  // and team 0 shoots again.
   //
-  // Measured once and reported, never tuned: 13 376 steps, 0-0 at full time, the golden
-  // goal opening at step 10 979 and team 0 winning it 1-0; six phases visited (kickoff,
-  // play, half-time, golden-goal, set-piece, over -- 'goal' cannot appear here because the
-  // only goal of the match is the golden one, and scoreGoal in half 3 goes straight to
-  // 'over'), three set-piece kinds (kickoff, free-kick, goal-kick), 527 rng draws and run C
-  // first diverging at step 360. Change the policy, the AI or the formation and these move;
-  // measure the new values and report them, never edit them away.
+  // INVERTED in V15-4 (Paco, 01-oct-2026, option a of Task V15-4-9): with eleven a side and
+  // the G15-10/G15-26 attributes, the golden goal of this recording no longer produces a
+  // goal, the extra time ends level and the match goes to the penalty shootout. So this
+  // recording now covers "extra time without a goal -> shootout" with the live AI, which is
+  // what its tests assert (structure only: golden goal reached level, extra time ended
+  // level, shootout entered, shootout won by somebody). "A golden goal ends the match by
+  // exactly one goal" is no longer this recording's job; it stays covered by two live tests
+  // of this file: 'a golden goal ends the match at once, and endHalf is refused in half 3'
+  // and 'a goal on the last step of the extra time is a golden goal, not a shootout'.
+  //
+  // Re-measured ONCE in V15-4 (01-oct-2026, eleven a side + 2200 x 1430 pitch + attributes
+  // + goal frame + directional tackles + cards + injuries, probe-tuned SHOT_POST_MARGIN 4),
+  // reported, never tuned: 17 050 steps, 0-0 at full time, the golden goal opening at step
+  // 10 979 and ending 0-0, the shootout won by team 0 3-1 after four kicks each (no sudden
+  // death); seven phases visited (kickoff, play, half-time, golden-goal, set-piece,
+  // shootout, over), six set-piece kinds (kickoff, free-kick, corner, goal-kick, throw-in,
+  // penalty), 539 rng draws and run C first diverging at step 405. (Old value, stage B:
+  // 13 376 steps, 0-0 at full time, the golden goal opening at step 10 979 and team 0
+  // winning it 1-0; six phases visited (kickoff, play, half-time, golden-goal, set-piece,
+  // over), three set-piece kinds (kickoff, free-kick, goal-kick), 527 rng draws and run C
+  // first diverging at step 360.) Change the policy, the AI or the formation and these
+  // move; measure the new values and report them, never edit them away.
   function goldenPolicy(match: MatchState, team: 0 | 1, out: TeamInput): void {
     if (match.half === 3) {
       policy(match, team, out);
@@ -920,19 +950,23 @@ describe('full match with recorded inputs (criterion 1)', () => {
     if (step % 30 === team * 15) out.b = 'pressed';
   }
 
-  // PENDING_REBASELINE (Task V15-4-9): eleven a side + a 10 % bigger pitch with x1.1 areas
-  // change where this recording ends, and it now DOES reach the golden goal -- which is
-  // exactly what this assertion's own message asks somebody to come back and re-read. It is
-  // the only measured thing the recording above asserts, so it is isolated HERE instead of
-  // skipping that whole test: everything else in it (run B identical, run C diverging, the
-  // six phases, the foul chain) is green and stays green. `visitedFirst` is the set that
-  // test fills, so this replays nothing.
-  it.skip('the first recording does NOT reach the golden goal (Ruling R26: only team 0 shoots, so full time is never level)', () => {
+  // The only measured thing the recording above asserts, isolated HERE so that everything
+  // else in it (run B identical, run C diverging, the six phases, the foul chain) never
+  // depends on it. `visitedFirst` is the set that test fills, so this replays nothing.
+  // Re-measured ONCE in V15-4 (01-oct-2026, eleven a side + 2200 x 1430 pitch + attributes
+  // + goal frame + directional tackles + cards + injuries, probe-tuned SHOT_POST_MARGIN 4):
+  // the recording does NOT reach the golden goal -- 3-2 at full time, so the negative below
+  // holds as written. On the bare eleven-a-side engine of V15-4-1b (no attributes yet) it
+  // DID reach it, which is why it was parked; the attributes moved it back. Team 1 has no
+  // shooting branch but still scores (2 of the 5 goals): "never level" is a measurement of
+  // this recording, not a theorem of the policy. The day it reaches the golden goal again,
+  // re-read this, measure and report -- never edit the assertion away.
+  it('the first recording does NOT reach the golden goal (Ruling R26: only team 0 shoots, so full time is never level)', () => {
     expect(visitedFirst.size, 'the first recording did not run').toBeGreaterThan(0);
     expect(visitedFirst, 'this recording reached the golden goal: the score was level at full time with a policy in which only team 0 shoots').not.toContain('golden-goal');
   });
 
-  it('golden goal with live AI (criterion 1, second recording)', () => {
+  it('golden goal reached from a level full time, then the shootout, with live AI (criterion 1, second recording)', () => {
     const a = fresh();
     const b = fresh();
     const c = fresh();
@@ -942,6 +976,7 @@ describe('full match with recorded inputs (criterion 1)', () => {
     const live: [TeamInput, TeamInput] = [createTeamInput(), createTeamInput()];
     const visited = new Set<MatchPhase>();
     let fullTimeLevel: boolean | null = null;
+    let levelAtShootout: boolean | null = null;
     let firstMismatchB = -1;
     let firstMismatchC = -1;
     let steps = 0;
@@ -956,24 +991,26 @@ describe('full match with recorded inputs (criterion 1)', () => {
       stepMatch(c, frame, rngC);
       visited.add(a.phase);
       if (fullTimeLevel === null && a.half === 3) fullTimeLevel = a.score[0] === a.score[1];
+      if (levelAtShootout === null && a.phase === 'shootout') levelAtShootout = a.score[0] === a.score[1];
       if (firstMismatchB < 0 && !sameMatch(a, b)) firstMismatchB = steps;
       if (firstMismatchC < 0 && !sameMatch(a, c)) firstMismatchC = steps;
       steps++;
     }
     expect(a.phase).toBe('over');
     // Anti-coincidence: 'golden-goal' could also be reached and left by a forced phase --
-    // here it is the engine's own route, so the half marker and (in the marked `it` below,
-    // V15-4-2) the score shape are pinned too. half 3 is the terminal marker of a golden
-    // goal (endHalf sets it, and scoreGoal in half 3 goes straight to 'over'), and a
-    // golden goal can only ever be won by exactly one goal.
+    // here it is the engine's own route, so the half marker and (in the `it` below) the
+    // shootout that follows a level extra time are pinned too. half 3 is the terminal
+    // marker of a golden goal (endHalf sets it; endExtraTime keeps it for the shootout).
     expect(visited, 'the second recording never reached the golden goal: the score was not level at full time').toContain('golden-goal');
     expect(a.half).toBe(3);
-    // The "won by exactly one goal" shape is in the marked `it` right below (V15-4-2). What
-    // needs no measured number stays live: a match that walks into half 3 is decided either
-    // IN the golden goal, by exactly one goal, or by the shootout -- never any other way.
+    // Structural, whatever this recording's outcome: a match that walks into half 3 is
+    // decided either IN the golden goal, by exactly one goal, or by the shootout -- never
+    // any other way.
     expect(visited.has('shootout') || Math.abs(a.score[0] - a.score[1]) === 1, 'half 3 ended neither by one golden goal nor in the shootout').toBe(true);
-    goldenFinalScore[0] = a.score[0];
-    goldenFinalScore[1] = a.score[1];
+    goldenOutcome.score = [a.score[0], a.score[1]];
+    goldenOutcome.levelAtShootout = levelAtShootout;
+    goldenOutcome.winner = winnerOf(a);
+    goldenOutcome.kicks = (a.shootout?.taken[0] ?? 0) + (a.shootout?.taken[1] ?? 0);
     // Anti-coincidence: this is what makes the golden goal real rather than a phase the
     // match happened to pass through -- the score WAS level on the step the second half
     // ended. `null` (half 3 never reached) fails this too.
@@ -985,7 +1022,7 @@ describe('full match with recorded inputs (criterion 1)', () => {
     expect(sameMatch(a, b)).toBe(true);
     expect(b.score).toEqual(a.score);
     // Anti-coincidence: sameMatch could in principle be blind to a field it does not read,
-    // so the 18 final positions are compared here on their own, id by id.
+    // so the 22 final positions are compared here on their own, id by id.
     expect(a.players.length).toBe(TEAM_SIZE * 2);
     for (let i = 0; i < a.players.length; i++) {
       expect([b.players[i].x, b.players[i].y], `player ${i} ended somewhere else in run B`).toEqual([a.players[i].x, a.players[i].y]);
@@ -998,7 +1035,7 @@ describe('full match with recorded inputs (criterion 1)', () => {
     // This runs after the first recording (vitest runs a file's tests in order), which is
     // what the guard below states out loud.
     expect(visitedFirst.size, 'the first recording did not run: this assertion is the union of both recordings').toBeGreaterThan(0);
-    // Ruling R26 + stage B2: the union of both recordings covers every phase a recorded match can reach; 'shootout' is covered by the recordings of Task 7b-2.
+    // Ruling R26 + stage B2: the union of both recordings covers every phase in PHASES -- since V15-4 the shootout too (this recording reaches it); 'injury' is not in PHASES.
     for (const phase of RECORDED_PHASES) {
       expect(
         visitedFirst.has(phase) || visitedGolden.has(phase),
@@ -1006,14 +1043,19 @@ describe('full match with recorded inputs (criterion 1)', () => {
       ).toBe(true);
     }
   });
-  // PENDING_REBASELINE (Task V15-4-9): the G15-10/G15-26 attributes move this recording: it
-  // still reaches the golden goal from a level full time (both asserted live above), but the
-  // extra time now ends level and the match goes to the shootout. ONLY that measured shape
-  // is here (mark-3 technique); `goldenFinalScore` is written by the test above, so
-  // un-skipping this replays nothing.
-  it.skip('the second recording is decided IN the golden goal, by exactly one goal (not by the shootout)', () => {
-    expect(goldenFinalScore[0], 'the second recording did not run').toBeGreaterThanOrEqual(0);
-    expect(Math.abs(goldenFinalScore[0] - goldenFinalScore[1])).toBe(1);
+  // Inverted in V15-4 (Paco, 01-oct-2026, option a of Task V15-4-9; it used to assert that
+  // this recording is decided IN the golden goal by exactly one goal). Structure only, no
+  // measured number: the extra time ends level, the match goes to the shootout and the
+  // shootout produces a winner. "A golden goal wins by exactly one goal" is covered by the
+  // two live tests named in the comment above goldenPolicy. `goldenOutcome` is written by
+  // the test above, so this replays nothing.
+  it('the second recording\'s extra time ends level and the penalty shootout decides it, with a winner', () => {
+    expect(goldenOutcome.score[0], 'the second recording did not run').toBeGreaterThanOrEqual(0);
+    expect(visitedGolden, 'the second recording never reached the shootout').toContain('shootout');
+    expect(goldenOutcome.levelAtShootout, 'the shootout started without a level score').toBe(true);
+    expect(goldenOutcome.score[0], 'the score moved after the extra time').toBe(goldenOutcome.score[1]);
+    expect(goldenOutcome.kicks, 'the shootout ended without a single kick').toBeGreaterThanOrEqual(2);
+    expect([0, 1], 'the shootout ended without a winner').toContain(goldenOutcome.winner);
   });
 });
 
@@ -1533,8 +1575,8 @@ describe('a shootout kick that leaves the field or never arrives is a miss', () 
     const m = atShootout();
     const rng = shootoutRng(['goal']);
     kickAway(m, rng);
-    // Parked where nobody can pick it up: the fifteen are on the centre grid, at y
-    // CY - 80 at the nearest, and POSSESSION_RADIUS is 22 u.
+    // Parked where nobody can pick it up: the nineteen are on the centre grid, whose
+    // top row is at y = CY - 120 (4 rows, 80 u apart), and POSSESSION_RADIUS is 22 u.
     m.ball.x = centerX(PITCH);
     m.ball.y = 300;
     m.ball.z = 0;
@@ -1645,11 +1687,12 @@ describe('nothing and nobody moves during a shootout except the ball and the div
     }
     expect(m.phase).toBe('over');
     expect(winnerOf(m)).toBe(1);   // team 0's 11th kick is the miss (Stage B2 finding H2)
-    // Ruling R26, completed. RECORDED_PHASES drops exactly one phase from the union the
-    // two full-match recordings assert, because neither of them can reach it -- and the
-    // promise written there was that the shootout would be covered by the recordings of
-    // this task. This deterministic eleven-kick recording is that coverage.
-    expect(PHASES.filter((p) => !RECORDED_PHASES.includes(p))).toEqual(['shootout']);
+    // Ruling R26, completed. RECORDED_PHASES used to drop exactly one phase, the shootout,
+    // from the union the two full-match recordings assert, with the promise that the
+    // recordings of this task would cover it. Since V15-4 (option a of Task V15-4-9) the
+    // second full-match recording reaches the shootout with live AI, so the union drops
+    // nothing; this deterministic eleven-kick recording remains the scripted coverage.
+    expect(PHASES.filter((p) => !RECORDED_PHASES.includes(p))).toEqual([]);
     expect(visited.has('shootout'), 'the shootout recording never visited the shootout phase').toBe(true);
     expect(visited.has('over'), 'the shootout recording never reached the end of the match').toBe(true);
   });

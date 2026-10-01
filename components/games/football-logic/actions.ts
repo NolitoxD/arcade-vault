@@ -5,6 +5,8 @@ import { PLAYER_HEIGHT, PLAYER_RADIUS, TACKLE_STEPS, isPlayerDown, isSprinting, 
 import { LONG_PASS_VZ, givePossession, kickBall, type BallState } from './ball';
 import { stepsFor } from './step';
 import type { Rng } from './rng';
+// G15-13: isActive is the one definition of "on the pitch" (sent off or injured = not).
+import { isActive } from './discipline';
 
 // exported for Task 8: the component reads the step's events to fire sound and HUD; today only actions.ts uses it
 export type ActionKind = 'none' | 'shot' | 'short-pass' | 'long-pass' | 'steal' | 'tackle' | 'gk-release' | 'gk-catch';
@@ -24,7 +26,7 @@ export function createActionEvent(): ActionEvent {
 }
 
 // Exported again (undoing half of ruling R5, whole-stage review C1): stepMatch
-// wipes all 18 slots at the top of every step (final review Important #1: moved
+// wipes all 22 slots at the top of every step (final review Important #1: moved
 // there from stepOpenPlay so non-open-play steps start clean too) so "the events
 // of this step" is a property by construction. Since D4 only applyButtons still
 // resets its own slot in place before deciding; releaseFromGoalkeeper and
@@ -128,7 +130,7 @@ export function steal(p: PlayerState, ball: BallState, players: readonly PlayerS
   setEvent(out, 'steal', false, p.id);
   if (ball.owner === null) return;
   const owner = players[ball.owner];
-  if (owner.team === p.team || owner.role === 'gk') return;
+  if (owner.team === p.team || owner.role === 'gk' || !isActive(p)) return;   // a sent-off player does not steal
   if (dist(p.x, p.y, owner.x, owner.y) >= STEAL_RANGE) return;
   out.victimId = owner.id;
   const chance = isSprinting(owner) ? STEAL_CHANCE_VS_SPRINT : STEAL_CHANCE;
@@ -181,7 +183,7 @@ export function stepTackle(p: PlayerState, ball: BallState, players: readonly Pl
   // Contact rule (R11): touching ANY rival not on the ground ends the slide, not only the owner.
   for (let i = 0; i < players.length; i++) {
     const q = players[i];
-    if (q.team === p.team || isPlayerDown(q, stepCount)) continue;
+    if (q.team === p.team || !isActive(q) || isPlayerDown(q, stepCount)) continue;   // no foul on who no longer plays
     if (dist(p.x, p.y, q.x, q.y) < TACKLE_FOUL_RADIUS) {
       p.tackleStepsLeft = 0;
       p.downUntilStep = stepCount + TACKLE_MISS_DOWN_STEPS;
@@ -224,7 +226,7 @@ export function pickPassTarget(p: PlayerState, players: readonly PlayerState[], 
   let bestDist = farthest ? -1 : Infinity;
   for (let i = 0; i < players.length; i++) {
     const mate = players[i];
-    if (mate.id === p.id || mate.team !== p.team || mate.role === 'gk') continue;
+    if (mate.id === p.id || mate.team !== p.team || mate.role === 'gk' || !isActive(mate)) continue;
     if (isPlayerDown(mate, stepCount)) continue;
     const d = dist(p.x, p.y, mate.x, mate.y);
     if (d === 0) continue;
@@ -262,13 +264,13 @@ export function freestMateDir(gk: PlayerState, players: readonly PlayerState[], 
   let bestFree = -1;
   for (let i = 0; i < players.length; i++) {
     const mate = players[i];
-    if (mate.team !== gk.team || mate.role === 'gk') continue;
+    if (mate.team !== gk.team || mate.role === 'gk' || !isActive(mate)) continue;
     const inOwnHalf = attackDir === 1 ? mate.x < halfX : mate.x > halfX;
     if (!inOwnHalf) continue;
     let nearestRival = Infinity;
     for (let j = 0; j < players.length; j++) {
       const q = players[j];
-      if (q.team === gk.team) continue;
+      if (q.team === gk.team || !isActive(q)) continue;
       const d = dist(mate.x, mate.y, q.x, q.y);
       if (d < nearestRival) nearestRival = d;
     }
@@ -398,8 +400,11 @@ export function applyButtons(p: PlayerState, input: TeamInput, ball: BallState, 
   if (input.b === 'pressed') steal(p, ball, players, rng, stepCount, out);
 }
 
+// G15-13: a sent-off (or injured) player stops being a candidate, so updateTeamControl
+// hands the cursor to the next nearest on the very step he leaves -- "si es el
+// controlado, control al siguiente mas cercano" -- with no rule of its own.
 function isControllable(p: PlayerState, team: 0 | 1): boolean {
-  return p.team === team && p.role !== 'gk';
+  return p.team === team && p.role !== 'gk' && isActive(p);
 }
 
 // Exported for G15-5: match.ts calls it team by team, with the manual lock on top.

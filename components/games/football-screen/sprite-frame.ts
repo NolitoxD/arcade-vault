@@ -12,7 +12,7 @@ import {
 // speed, and the keeper's two dive frames from gestures.ts's own reach curve.
 //
 // The priorities copy the exclusions drawPlayer already had (stage B2 §8 and its
-// Minor 2): a diving keeper first, then the parked fifteen of the shootout (standing,
+// Minor 2): a diving keeper first, then the parked nineteen of the shootout (standing,
 // whatever the engine left in their slide/floor fields), then lying down (never during
 // the shootout, taker included), then sliding, then running or standing still.
 

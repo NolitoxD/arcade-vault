@@ -21,16 +21,19 @@ const FORMS: readonly [Formation, Formation] = [F, F];
 const STRATS: readonly [Strategy, Strategy] = ['neutral', 'neutral'];
 const ATTACK: AttackDirs = [1, -1];
 const CY = centerY(PITCH);
-// The kickoff spot every test below uses. NOT centerX(PITCH): on the exact centre line
-// the 4-4-2's slots at y = 0.38 and y = 0.62 are equidistant from it to the last bit, so
-// the taker would be decided by nearestOutfield's strict `<` and nothing else.
+// The kickoff spot every test below uses: a round number near the middle of the pitch
+// (centerX(PITCH) is 1100), kept from the nine-a-side tests. It is NOT load-bearing: the
+// 4-4-2's central midfielders at y = 0.38 and y = 0.62 are symmetric about CY, so the tie
+// described below exists at ANY x on the centre line, centerX(PITCH) included (the taker
+// is id 6 at either).
 const SPOT_X = 1000;
 // Hand-derived for the 4-4-2 of G15-16 on the 2200 x 1430 pitch: team 0 attacking +x
 // puts its midfielders at x = 0.45 * 2200 = 990, and the two central ones at
 // y = 0.38 * 1430 = 543.4 and y = 0.62 * 1430 = 886.6 -- both exactly 171.6 u from
 // CY = 715, so both are 171.891 u from (1000, 715). That IS an exact tie, and
 // nearestOutfield keeps the first one it sees, the lower id: slot 5, i.e. id 6. Every
-// other outfield player is at least 489 u away, so the tie is only between these two.
+// other outfield player is at least 500.6 u away (the outer midfielders), so the tie is
+// only between these two.
 const KICKOFF_TAKER_ID = 6;
 
 type W = { players: PlayerState[]; ball: BallState; sp: SetPieceState; input: TeamInput; aim: { x: number; y: number }; out: ActionEvent };
@@ -75,7 +78,7 @@ describe('beginSetPiece', () => {
     expect(rival.x).toBe(1234 - SET_PIECE_CLEARANCE);
     expect(rival.y).toBe(567);
   });
-  it('kickoff: everyone by formation, the nearest outfield player of the team takes it from the centre facing attackDir', () => {
+  it('kickoff: everyone by formation, the nearest outfield player of the team takes it from the kickoff spot facing attackDir', () => {
     const w = world();
     w.players[3].x = 1700; // moved away: kickoff must reset it
     begin(w, 'kickoff', 0, SPOT_X, CY);
@@ -130,7 +133,7 @@ describe('beginSetPiece', () => {
   it('pushing the rival keeper past SET_PIECE_CLEARANCE clamps it back inside its own box', () => {
     // Fix for the review finding on the corner test above: that test never
     // actually drives the rival keeper through pushRivalsAway's push-then-clamp
-    // path (its formation spot at (1975, 650) is ~650 u from the corner spot,
+    // path (its formation spot at (2175, 715) is ~715 u from the corner spot,
     // far past SET_PIECE_CLEARANCE=180, so it is simply skipped). This test
     // places the keeper close enough to be pushed, and picks a push direction
     // that lands it outside its own big area, so clampToBigArea has to act.
@@ -159,7 +162,7 @@ describe('beginSetPiece', () => {
     begin(w, 'free-kick', 0, 1200, 400);
     expect(w.players[3].y).toBe(900);
   });
-  it('the kickoff taker is the outfield player nearest the centre spot in EVERY formation (ids differ, the rule does not)', () => {
+  it('the kickoff taker is the outfield player nearest the kickoff spot in EVERY formation (ids differ, the rule does not)', () => {
     // Hand-computed on the 2200 x 1430 pitch of G15-16, spot (1000, 715):
     //   4-4-2 → id 6: mids at x = 990; the two central ones (y = 543.4 and y = 886.6) are
     //           exactly tied at 171.891 u, and nearestOutfield keeps the lower id.
@@ -354,7 +357,7 @@ describe('shootout kick', () => {
   // Stage B2 finding H7: placeByFormation (all beginSetPiece does to the keepers)
   // resets vx/vy/want*/facing but not a slide, a tackle or a charge -- so without this,
   // a keeper whose extra time ended mid-tackle would stay frozen in that pose for the
-  // whole shootout, the same artefact S-PK10 already fixes for the fifteen outfield
+  // whole shootout, the same artefact S-PK10 already fixes for the nineteen outfield
   // players parked around the centre spot.
   it('S-PK10 also clears a slide, a tackle or a charge left on either keeper', () => {
     const w = world();

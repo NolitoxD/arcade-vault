@@ -41,8 +41,8 @@ export function kitsClash(a: string, b: string): boolean {
 // wears once the match starts. Never mutates `home` or `away`.
 //
 // If the inverted away kit still clashes with home.primary, it is returned anyway:
-// no third option exists in v1. Verified empirically for the real 16-team bank in
-// kits.test.ts (a bank-wide property over all 240 ordered pairs) -- report any
+// no third option exists in v1. Verified empirically for the real 20-team bank in
+// kits.test.ts (a bank-wide property over all 380 ordered pairs) -- report any
 // failing pair rather than silently weakening that test.
 export function resolveMatchKits(home: Kit, away: Kit): readonly [Kit, Kit] {
   if (!kitsClash(home.primary, away.primary)) return [home, away];

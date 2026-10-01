@@ -10,7 +10,7 @@ const PUBLIC_FILES = new Set(readdirSync(join(process.cwd(), 'public')));
 const ALL: VaultWorldCupSfx[] = [
   'whistle_start', 'whistle_end', 'whistle_foul',
   'goal_net', 'goal_shout', 'goal_crowd',
-  'kick', 'pass', 'crowd', 'chants_victory',
+  'kick', 'pass', 'crowd', 'chants_victory', 'crossbar',
 ];
 
 describe('SFX_FILES', () => {
@@ -55,6 +55,14 @@ describe('VaultWorldCupSFX without an Audio global', () => {
     sfx.init();
     sfx.dispose();
     expect(() => sfx.play('kick')).not.toThrow();
+  });
+});
+
+// ── V15-4-7 (G15-12): the post and the crossbar share one recorded file ─────────
+describe('the frame sound', () => {
+  it('names vault-futbol-crossbar.mp3, which is in public/', () => {
+    expect(SFX_FILES.crossbar).toBe('/vault-futbol-crossbar.mp3');
+    expect(PUBLIC_FILES.has('vault-futbol-crossbar.mp3')).toBe(true);
   });
 });
 

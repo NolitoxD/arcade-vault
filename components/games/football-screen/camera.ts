@@ -2,8 +2,9 @@ import { clamp } from '../football-logic/geometry';
 import type { PitchDef } from '../football-logic/pitch';
 import type { MatchState } from '../football-logic/match';
 
-// The spec's numbers: a 2000 x 1300 pitch seen through an 800 x 500 window -- 40 % of
-// the pitch, and the same canvas size the other thirteen games use.
+// The spec's numbers: a 2000 x 1300 pitch (2200 x 1430 since V15-4, Paco 24-sep) seen
+// through an 800 x 500 window -- 36 % of the pitch's length today, 40 % in the spec --
+// and the same canvas size the other thirteen games use.
 export const VIEW_W = 800;
 export const VIEW_H = 500;
 // S-SC6: how much dead ground around the pitch the camera may show, so the two goals
@@ -73,7 +74,7 @@ export function toScreenY(cam: Camera, worldY: number): number {
   return worldY - cam.y;
 }
 
-// Culling for the eighteen players and the ball: nothing is drawn off the window.
+// Culling for the twenty-two players and the ball: nothing is drawn off the window.
 export function isOnScreen(cam: Camera, worldX: number, worldY: number, margin: number): boolean {
   const sx = worldX - cam.x;
   const sy = worldY - cam.y;

@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { NORMAL_RULES, TRAINING_RULES, callSetPiece, isOpenPlay } from '../football-logic/match';
 import { PITCH, centerY } from '../football-logic/pitch';
-import { TEAMS } from '../football-logic/teams';
+import { FORMATIONS, TEAMS, TEAM_SIZE } from '../football-logic/teams';
+import { defaultSquadIndexFor } from '../football-logic/players';
+import { keeperAttrsFor, squadRole } from '../football-logic/squads';
+import { applySwap, checkLineup, createLineup, defaultLineup, lineupRoleAt } from './lineup';
 import { profileFor } from '../football-logic/ai';
 import { CPU_SEED_SALT, MATCH_RUN_STEP_CAP, createMatchRun, finishMatchRun, stepMatchRun } from './match-run';
 
@@ -155,5 +158,61 @@ describe('a run with humans', () => {
     expect(callSetPiece(normal.match, 'penalty', 1, spotX, spotY)).toBe(true);
     for (let i = 0; i < 10; i++) stepMatchRun(normal);
     expect(draws).toBeGreaterThan(before);
+  });
+});
+
+// V15-4-7: the last piece of V15-3 -- the eleven the human leaves on ALINEACIÓN are the
+// eleven createPlayers builds, each in the role of HIS formation's position; the CPU side
+// keeps the engine's default (defaultSquadIndexFor, 4-4-2).
+describe('the lineup reaches the pitch', () => {
+  it('the eleven the human edited are the eleven that play, in the roles of the chosen formation', () => {
+    const f = FORMATIONS[1];                         // 4-3-3
+    const l = createLineup();
+    defaultLineup(f, l);
+    expect(applySwap(f, l, 0, 1)).toBe(true);        // the number 2 in goal
+    let fwdPos = -1;
+    for (let p = 1; p < l.starters.length; p++) if (lineupRoleAt(f, p) === 'fwd') fwdPos = p;
+    let benchFwd = -1;
+    for (const i of l.reserves) if (squadRole(i) === 'fwd') benchFwd = i;
+    expect(applySwap(f, l, fwdPos, benchFwd)).toBe(true);
+    expect(checkLineup(f, l)).toEqual([]);
+    const run = createMatchRun(ESP, ITA, 1, 5, [true, false], NORMAL_RULES, [1, 0], [l, null]);
+    for (let p = 0; p < TEAM_SIZE; p++) {
+      expect(run.match.players[p].squadIndex, `position ${p}`).toBe(l.starters[p]);
+      expect(run.match.players[p].role, `position ${p}`).toBe(lineupRoleAt(f, p));
+    }
+    expect(run.match.players[0].keeperReflexes).toBe(keeperAttrsFor('espana', 1).reflexes);
+    expect(run.match.formationIndex).toEqual([1, 0]);
+    // The CPU side: the engine's own default eleven of the 4-4-2.
+    expect(run.match.players[TEAM_SIZE].squadIndex).toBe(defaultSquadIndexFor(FORMATIONS[0], -1));
+    for (let s = 0; s < TEAM_SIZE - 1; s++) {
+      expect(run.match.players[TEAM_SIZE + 1 + s].squadIndex).toBe(defaultSquadIndexFor(FORMATIONS[0], s));
+    }
+  });
+
+  // Review-2 carry: keeperAttrsFor throws unless the keeper is squad index 0 or 1, so a
+  // lineup that fails checkLineup must never reach createPlayers.
+  it('a lineup that fails checkLineup never reaches createPlayers: the side fields the default eleven', () => {
+    const f = FORMATIONS[0];
+    const l = createLineup();
+    defaultLineup(f, l);
+    l.starters[0] = 5;                               // a defender in goal
+    expect(checkLineup(f, l)).not.toEqual([]);
+    const run = createMatchRun(ESP, ITA, 1, 5, [true, false], NORMAL_RULES, [0, 0], [l, null]);
+    expect(run.match.players[0].squadIndex).toBe(defaultSquadIndexFor(f, -1));
+    for (let s = 0; s < TEAM_SIZE - 1; s++) {
+      expect(run.match.players[1 + s].squadIndex).toBe(defaultSquadIndexFor(f, s));
+    }
+  });
+
+  it('with no lineup at all, createMatchRun builds both sides in the 4-4-2 with the default eleven', () => {
+    const run = createMatchRun(ESP, ITA, 1, 5, [true, false], NORMAL_RULES, [2, 1]);
+    for (let t = 0; t < 2; t++) {
+      for (let s = 0; s < TEAM_SIZE - 1; s++) {
+        const p = run.match.players[t * TEAM_SIZE + 1 + s];
+        expect(p.squadIndex).toBe(defaultSquadIndexFor(FORMATIONS[0], s));
+        expect(p.role).toBe(FORMATIONS[0].slots[s].role);
+      }
+    }
   });
 });

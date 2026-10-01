@@ -17,13 +17,19 @@ export type TeamInput = {
   c: ButtonState;
   formation: number; // index into FORMATIONS
   strategy: Strategy;
+  // G15-18 (v1.5, V15-4): the substitution the team asks for, as a SQUAD index; -1 for
+  // "nothing". It rides inside the TeamInput and not in a call of its own because
+  // criterion 1 says the replay is seed + TeamInput: a substitution decided outside
+  // would not replay. It is read ONLY while the match is in phase 'injury' for that
+  // team, and ignored everywhere else.
+  sub: number;
 };
 
 const BUTTON_STATES: readonly ButtonState[] = ['up', 'pressed', 'held', 'released'];
 const STRATEGY_NAMES: readonly Strategy[] = ['attack', 'neutral', 'defend'];
 
 export function createTeamInput(): TeamInput {
-  return { dx: 0, dy: 0, a: 'up', b: 'up', c: 'up', formation: 0, strategy: 'neutral' };
+  return { dx: 0, dy: 0, a: 'up', b: 'up', c: 'up', formation: 0, strategy: 'neutral', sub: -1 };
 }
 
 export function copyTeamInput(from: TeamInput, to: TeamInput): void {
@@ -34,6 +40,7 @@ export function copyTeamInput(from: TeamInput, to: TeamInput): void {
   to.c = from.c;
   to.formation = from.formation;
   to.strategy = from.strategy;
+  to.sub = from.sub;
 }
 
 export function isDown(b: ButtonState): boolean {
@@ -50,7 +57,11 @@ function isAxis(v: number): boolean {
   return v === -1 || v === 0 || v === 1;
 }
 
-export function checkTeamInput(input: TeamInput, formationCount: number): string[] {
+// `squadSize` is a parameter (callers pass squads.ts's SQUAD_SIZE) so this file does not
+// depend on the squad data. It is optional only for the callers written before V15-4
+// (engine-invariants.test.ts must stay byte-identical): without it `sub` is still checked
+// to be an integer >= -1, just not against the top of the squad.
+export function checkTeamInput(input: TeamInput, formationCount: number, squadSize?: number): string[] {
   const problems: string[] = [];
   if (!isAxis(input.dx)) problems.push('bad dx');
   if (!isAxis(input.dy)) problems.push('bad dy');
@@ -61,5 +72,8 @@ export function checkTeamInput(input: TeamInput, formationCount: number): string
     problems.push(`formation ${input.formation} out of range`);
   }
   if (!STRATEGY_NAMES.includes(input.strategy)) problems.push('bad strategy');
+  if (!Number.isInteger(input.sub) || input.sub < -1 || (squadSize !== undefined && input.sub >= squadSize)) {
+    problems.push(`sub ${input.sub} out of range`);
+  }
   return problems;
 }

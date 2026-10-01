@@ -1,15 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { EXTRA_TIME_STEPS, HALF_STEPS, STEPS_PER_SECOND } from '../football-logic/clock';
-import { createMatch, TRAINING_RULES, type MatchState } from '../football-logic/match';
+import { createMatch, substitute, TRAINING_RULES, type MatchState } from '../football-logic/match';
+import { SQUAD_SIZE } from '../football-logic/squads';
 import { PITCH } from '../football-logic/pitch';
 import { FORMATIONS, TEAMS, TEAM_SIZE } from '../football-logic/teams';
 import { humanProfile, profileFor } from '../football-logic/ai';
 import { SHOT_CHARGE_STEPS } from '../football-logic/actions';
 import { SHOOTOUT_ROUNDS, createShootoutState } from '../football-logic/set-pieces';
 import {
-  SHOT_CHARGE_SEGMENTS, buttonsIdle, chargeSegments, clockSeconds, clockSteps, clockText,
-  countdownSeconds, cursorPlayerId, halfCapSteps, halfLabel, keeperHoldsBall, shootoutKicksTaken,
-  shootoutRoundLabel, smallNumber, sprintBarFraction,
+  INJURY_TITLE, SHOT_CHARGE_SEGMENTS, buttonsIdle, chargeSegments, clockSeconds, clockSteps, clockText,
+  countdownSeconds, cursorPlayerId, halfCapSteps, halfLabel, idleHint, injuryWindowTeam, keeperHoldsBall,
+  reserveCanComeOn, shootoutKicksTaken, shootoutRoundLabel, smallNumber, sprintBarFraction,
 } from './hud';
 
 function newMatch(): MatchState {
@@ -154,7 +155,8 @@ describe('the cursor', () => {
 describe('buttonsIdle (gate 4)', () => {
   it('is true in every phase where stepSetPiece swallows A and B', () => {
     const m = newMatch();
-    for (const phase of ['kickoff', 'set-piece', 'shootout', 'goal', 'half-time'] as const) {
+    // G15-18 (V15-4): the LESIONADO window ('injury') stops the match too.
+    for (const phase of ['kickoff', 'set-piece', 'shootout', 'goal', 'half-time', 'injury'] as const) {
       m.phase = phase;
       expect(buttonsIdle(m)).toBe(true);
     }
@@ -165,6 +167,80 @@ describe('buttonsIdle (gate 4)', () => {
     for (const phase of ['play', 'golden-goal', 'over'] as const) {
       m.phase = phase;
       expect(buttonsIdle(m)).toBe(false);
+    }
+  });
+});
+
+// V15-4-7 (controller addition 3): during the LESIONADO window buttonsIdle stays true --
+// the match is stopped -- but A confirms the reserve, so the bottom line must not say
+// "the buttons do nothing". idleHint is the exhaustive switch that picks which line.
+describe('idleHint', () => {
+  it('is the aim hint where stepSetPiece swallows A and B, and the injury hint in the LESIONADO window', () => {
+    const m = newMatch();
+    for (const phase of ['kickoff', 'set-piece', 'shootout', 'goal', 'half-time'] as const) {
+      m.phase = phase;
+      expect(idleHint(m)).toBe('aim');
+    }
+    m.phase = 'injury';
+    expect(idleHint(m)).toBe('injury');
+    for (const phase of ['play', 'golden-goal', 'over'] as const) {
+      m.phase = phase;
+      expect(idleHint(m)).toBe('none');
+    }
+  });
+});
+
+describe('the LESIONADO window (G15-18)', () => {
+  it('is titled LESIONADO', () => {
+    expect(INJURY_TITLE).toBe('LESIONADO');
+  });
+
+  it('opens for a HUMAN team with an injured player waiting, in the injury phase', () => {
+    const m = newMatch();
+    m.phase = 'injury';
+    m.pendingInjury[1] = TEAM_SIZE + 5;
+    m.injuryStepsLeft[1] = 100;
+    expect(injuryWindowTeam(m, [false, true])).toBe(1);
+    expect(injuryWindowTeam(m, [true, false])).toBe(-1);   // the CPU's own change: no window
+  });
+
+  // Controller addition 2: injuryStepsLeft keeps its last value after the window closes
+  // (review-5 minor 4), so it can never be what decides whether the window is drawn.
+  it('is closed once the phase leaves injury, whatever injuryStepsLeft still says', () => {
+    const m = newMatch();
+    m.phase = 'set-piece';
+    m.pendingInjury[0] = -1;
+    m.injuryStepsLeft[0] = 479;
+    expect(injuryWindowTeam(m, [true, false])).toBe(-1);
+    m.phase = 'injury';
+    expect(injuryWindowTeam(m, [true, false])).toBe(-1);   // nobody of team 0 waiting
+  });
+
+  // The picker offers exactly what the engine's substitute accepts: a reserve of the
+  // right kind (keeper for keeper, outfield for outfield), not on the pitch and who has
+  // not left it.
+  it('reserveCanComeOn agrees with substitute for every squad index, outfield and keeper', () => {
+    for (const outId of [3, 0]) {
+      const m = newMatch();
+      m.phase = 'injury';
+      m.pendingInjury[0] = outId;
+      m.players[outId].injured = true;
+      m.leftPitch[0] = 1 << 17;      // squad index 17 (a bench forward) has already left
+      const out = m.players[outId];
+      let offered = 0;
+      for (let i = 0; i < SQUAD_SIZE; i++) {
+        const probe = newMatch();
+        probe.phase = 'injury';
+        probe.pendingInjury[0] = outId;
+        probe.players[outId].injured = true;
+        probe.leftPitch[0] = 1 << 17;
+        expect(reserveCanComeOn(m, 0, out.role, i), `out ${outId}, squad index ${i}`).toBe(substitute(probe, 0, i));
+        if (reserveCanComeOn(m, 0, out.role, i)) offered++;
+      }
+      // Default 4-4-2 bench: keeper 2, defenders 7-8, midfielders 13-14, forwards 17-18
+      // (shirts; squad indices one lower). The keeper is replaced only by the keeper, an
+      // outfield player by any of the outfield five minus the one who already left.
+      expect(offered, `out ${outId}`).toBe(outId === 0 ? 1 : 5);
     }
   });
 });

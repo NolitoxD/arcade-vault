@@ -5,15 +5,20 @@ import {
 } from '../football-logic/match';
 import { sideIsHuman, type HumanSide } from '../football-logic/mode';
 import type { CallKind } from '../football-logic/referee';
+import type { FrameHit } from '../football-logic/goal-frame';
 
 // Spec: the seven captions of the v1 (INICIO, FALTA, PENALTI, FUERA, CÓRNER, GOL,
 // FINAL), plus the two the 06-sep decision added (PRÓRROGA, PENALTIS), plus the pair
 // that closes a match (GANADOR / ELIMINADO -- a caption over the pitch, never a
 // screen of its own; the victory screens are Task 9). No referee is drawn in the v1.
+// V15-4-7: the two cards of G15-13 ("rótulo tarjeta + nombre") and the injury of G15-18.
+// The name goes on a second line the component composes on the event; the kind only
+// says which caption it is.
 export type CaptionKind =
   | 'kickoff' | 'foul' | 'penalty' | 'out' | 'corner' | 'goal'
   | 'half-time' | 'extra-time' | 'shootout' | 'shootout-goal' | 'shootout-miss'
-  | 'full-time' | 'winner' | 'eliminated' | 'draw';
+  | 'full-time' | 'winner' | 'eliminated' | 'draw'
+  | 'card-yellow' | 'card-red' | 'injury';
 
 // What the caption band is showing right now: one of the kinds, or nothing.
 export type ShowingCaption = CaptionKind | 'none';
@@ -42,6 +47,9 @@ export const CAPTION_TEXT: Readonly<Record<CaptionKind, string>> = {
   // ends here too. Nothing else in this ruleset draws (S-PK5: sudden death always
   // produces a winner).
   draw: 'EMPATE',
+  'card-yellow': 'TARJETA AMARILLA',
+  'card-red': 'TARJETA ROJA',
+  injury: 'LESIÓN',
 };
 
 const SHORT_CAPTION_STEPS = stepsFor(1.5);
@@ -65,11 +73,17 @@ export const CAPTION_STEPS: Readonly<Record<CaptionKind, number>> = {
   winner: RESULT_CAPTION_STEPS,
   eliminated: RESULT_CAPTION_STEPS,
   draw: RESULT_CAPTION_STEPS,
+  // G15-13 "sin pausa extra": the cards are only queued, they never stop the game, so
+  // they last what a FALTA lasts. The injury caption too: for the human, the LESIONADO
+  // window is what stays on screen, not the caption.
+  'card-yellow': SHORT_CAPTION_STEPS,
+  'card-red': SHORT_CAPTION_STEPS,
+  injury: SHORT_CAPTION_STEPS,
 };
 
 // Four is enough for the worst chain the engine can produce in one step: a golden
 // goal is GOL + FINAL + GANADOR, and a shootout kick that ends the match is
-// GOL + FINAL + GANADOR too.
+// GOL + FINAL + GANADOR too. A foul that cards and injures is FALTA + TARJETA + LESIÓN.
 export const CAPTION_QUEUE_MAX = 4;
 
 export type CaptionState = {
@@ -131,6 +145,15 @@ export type MatchWatch = {
   // stepOpenPlay and stepShootout. Remembering it here is what turns it into the
   // one-step edge the screen and the audio both assume it already is.
   call: CallKind;
+  // V15-4-7. `step`: the match.stepCount the watch last looked at. match.lastCard and
+  // ball.frameHit are flanks the engine sets for ONE step and clears at the top of the
+  // next stepMatch; a flank counts only on a step the watch has not seen yet, so the
+  // viewport guard (updateWatch + abandon + collectCaptions with no step in between)
+  // never reads one twice. `injuries0/1`: match.injuriesUsed, which only ever grows --
+  // the injury is read from the counter, never from the one-step lastInjury.
+  step: number;
+  injuries0: number;
+  injuries1: number;
 };
 
 export function createMatchWatch(): MatchWatch {
@@ -138,7 +161,26 @@ export function createMatchWatch(): MatchWatch {
     started: false, phase: 'kickoff', half: 1,
     score0: 0, score1: 0, taken0: 0, taken1: 0, scored0: 0, scored1: 0,
     call: 'none',
+    step: -1, injuries0: 0, injuries1: 0,
   };
+}
+
+// G15-13: the card registerFoul showed on a step the watch has not seen yet.
+export function cardShownThisStep(match: MatchState, w: MatchWatch): boolean {
+  return match.lastCard.card !== 'none' && match.stepCount !== w.step;
+}
+
+// G15-18: the team the match has just injured (0, 1 or -1), from the counter. A foul
+// injures at most one player, so at most one team per step.
+export function injuredTeamThisStep(match: MatchState, w: MatchWatch): 0 | 1 | -1 {
+  if (match.injuriesUsed[0] > w.injuries0) return 0;
+  if (match.injuriesUsed[1] > w.injuries1) return 1;
+  return -1;
+}
+
+// G15-12: the one-step flank of a post or crossbar hit, on a step the watch has not seen.
+export function frameHitThisStep(match: MatchState, w: MatchWatch): FrameHit {
+  return match.stepCount !== w.step ? match.ball.frameHit : 'none';
 }
 
 // `human` is who the keyboard drives (mode.ts HumanSide): 0 or 1 in a solo mode and in
@@ -218,6 +260,11 @@ export function collectCaptions(
     }
   }
 
+  // 4b. G15-13 + G15-18 (V15-4-7): the card and the injury of the foul, AFTER its FALTA
+  //     or PENALTI -- they come from the same step, and the whistle is the foul's.
+  if (cardShownThisStep(match, w)) pushCaption(cs, match.lastCard.card === 'red' ? 'card-red' : 'card-yellow');
+  if (injuredTeamThisStep(match, w) !== -1) pushCaption(cs, 'injury');
+
   // 5. The end. winnerOf is the ONE reader of the winner (stage B2 §8) and it can
   //    return -1 with the match over -- abandon() at a level score, the only draw this
   //    ruleset has (S-PK5). S-SC12: FINAL always whistles; then EMPATE on an abandon,
@@ -250,6 +297,9 @@ export function updateWatch(match: MatchState, w: MatchWatch): void {
   w.scored0 = sh === null ? 0 : sh.scored[0];
   w.scored1 = sh === null ? 0 : sh.scored[1];
   w.call = match.scratch.call.kind;
+  w.step = match.stepCount;
+  w.injuries0 = match.injuriesUsed[0];
+  w.injuries1 = match.injuriesUsed[1];
 }
 
 // Task 9-7: a new match on the same screen (no remount) reuses the queue and the watch.
@@ -270,4 +320,7 @@ export function resetMatchWatch(w: MatchWatch): void {
   w.scored0 = 0;
   w.scored1 = 0;
   w.call = 'none';
+  w.step = -1;
+  w.injuries0 = 0;
+  w.injuries1 = 0;
 }

@@ -23,7 +23,8 @@ export const SELECT_HINT_Y = 480;
 export const FORMATION_LABEL_X0 = 140;
 export const FORMATION_LABEL_DX = 150;
 // G15-9: the mini pitch to the RIGHT of the formation row. 150 x 97 keeps the
-// 2000 x 1300 ratio of the pitch, so the schematic is not stretched.
+// 2200 x 1430 ratio of the pitch (the old 2000 x 1300 ratio, unchanged), so the
+// schematic is not stretched.
 export const TEAM_PREVIEW_X = 612;
 export const TEAM_PREVIEW_Y = 366;
 export const TEAM_PREVIEW_W = 150;
@@ -119,9 +120,9 @@ export const VICTORY_FIGURE_Y = 320;
 export const VICTORY_HINT_Y = VIEW_H - 32;
 
 // ── ALINEACIÓN (G15-17): the mini pitch on the left, the bench on the right ──────
-// 430 x 280 keeps the 2000 x 1300 ratio. The bench rows are 30 apart from 108: NINE
-// reserves (a squad of eighteen with nine on the pitch, today) reach 378 and the
-// seven of V15-4 reach 318 -- both clear the status line at 412.
+// 430 x 280 keeps the 2200 x 1430 ratio. The bench rows are 30 apart from 108: the
+// SEVEN reserves of a squad of eighteen with eleven on the pitch reach 318, clear of
+// the status line at 412 (the nine reserves of nine-a-side reached 378).
 export const LINEUP_PITCH_X = 30;
 export const LINEUP_PITCH_Y = 92;
 export const LINEUP_PITCH_W = 430;

@@ -64,5 +64,26 @@ export type FrameMode = 'full' | 'captions-only' | 'frozen';
 export function frameMode(phase: MatchPhase, paused: boolean, blocked: boolean): FrameMode {
   if (blocked) return 'captions-only';
   if (paused) return 'frozen';
-  return phase === 'over' ? 'captions-only' : 'full';
+  // H5 (V15-4): exhaustive over MatchPhase, so a new phase fails to compile here
+  // instead of falling silently into 'full'.
+  switch (phase) {
+    case 'over':
+      return 'captions-only';
+    case 'injury':
+      // G15-18: the LESIONADO window is drawn in full -- the pitch stays on screen
+      // under it (Task V15-4-7 paints the window); the engine's own clock is what stops.
+      return 'full';
+    case 'kickoff':
+    case 'play':
+    case 'set-piece':
+    case 'goal':
+    case 'half-time':
+    case 'golden-goal':
+    case 'shootout':
+      return 'full';
+    default: {
+      const _exhaustive: never = phase;
+      return _exhaustive;
+    }
+  }
 }

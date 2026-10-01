@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { EXTRA_TIME_STEPS, HALF_STEPS } from '../football-logic/clock';
 import { createRng } from '../football-logic/rng';
-import { GOAL_PAUSE_STEPS, createMatch, type MatchState } from '../football-logic/match';
-import { PITCH } from '../football-logic/pitch';
+import { GOAL_PAUSE_STEPS, createMatch, resumePlay, stepMatch, type MatchState } from '../football-logic/match';
+import { PITCH, goalLineX } from '../football-logic/pitch';
+import { postCentreY } from '../football-logic/goal-frame';
+import { createTeamInput, type TeamInput } from '../football-logic/input';
 import { FORMATIONS, TEAMS } from '../football-logic/teams';
 import { humanProfile, profileFor } from '../football-logic/ai';
 import { createShootoutState } from '../football-logic/set-pieces';
@@ -10,7 +12,7 @@ import type { CaptionKind, ShowingCaption } from './captions';
 import { CAPTION_TEXT, createMatchWatch, updateWatch } from './captions';
 import {
   AMBIENCE_MAX, AMBIENCE_MIN, ambienceDue, ambienceSeedFor, createAmbienceMarks,
-  captionSfxOnEdge, goalCrowdDue, goalNetDue, halfEndWhistleDue, planAmbience, sfxForCaption,
+  captionSfxOnEdge, crossbarDue, goalCrowdDue, goalNetDue, halfEndWhistleDue, planAmbience, sfxForCaption,
   shortPassFiredThisStep, shotFiredThisStep, CHANTS_LOW_GAIN, victoryChantGain,
 } from './sfx-map';
 
@@ -87,6 +89,14 @@ describe('sfxForCaption', () => {
     expect(sfxForCaption('draw')).toBe('none');
   });
 
+  // G15-13 "sin pausa extra" and G15-18: the foul that gives the card or the injury has
+  // already whistled (FALTA / PENALTI), so these three captions add no sound of their own.
+  it('the card and injury captions are silent: the foul whistle has already sounded', () => {
+    expect(sfxForCaption('card-yellow')).toBe('none');
+    expect(sfxForCaption('card-red')).toBe('none');
+    expect(sfxForCaption('injury')).toBe('none');
+  });
+
   it('has an answer for every caption kind', () => {
     for (const key of Object.keys(CAPTION_TEXT) as CaptionKind[]) {
       expect(typeof sfxForCaption(key)).toBe('string');
@@ -100,7 +110,7 @@ describe('shotFiredThisStep', () => {
     expect(shotFiredThisStep(m)).toBe(false);
   });
 
-  it('is true when any of the eighteen slots holds a shot that got away', () => {
+  it('is true when any of the twenty-two slots holds a shot that got away', () => {
     const m = newMatch();
     m.scratch.events[7].kind = 'shot';
     m.scratch.events[7].ok = true;
@@ -127,7 +137,7 @@ describe('shortPassFiredThisStep', () => {
     expect(shortPassFiredThisStep(m)).toBe(false);
   });
 
-  it('is true when any of the eighteen slots holds a short pass that got away', () => {
+  it('is true when any of the twenty-two slots holds a short pass that got away', () => {
     const m = newMatch();
     m.scratch.events[3].kind = 'short-pass';
     m.scratch.events[3].ok = true;
@@ -185,6 +195,62 @@ describe('goalNetDue', () => {
     updateWatch(m, w);
     m.scratch.call.kind = 'goal';
     expect(goalNetDue(m, w)).toBe(true);
+  });
+});
+
+// G15-12 (V15-4-7): the post / crossbar SFX. ball.frameHit is a one-step flank that
+// stepMatch resets on every step; crossbarDue reads it against the watch, so the sound
+// rings once per hit and a second look at the same step (the viewport guard) rings nothing.
+describe('crossbarDue', () => {
+  it('fires for a post and for a crossbar on a step the watch has not seen yet', () => {
+    const m = newMatch();
+    const w = createMatchWatch();
+    updateWatch(m, w);
+    m.stepCount++;
+    m.ball.frameHit = 'post';
+    expect(crossbarDue(m, w)).toBe(true);
+    m.ball.frameHit = 'crossbar';
+    expect(crossbarDue(m, w)).toBe(true);
+    m.ball.frameHit = 'none';
+    expect(crossbarDue(m, w)).toBe(false);
+  });
+
+  it('does NOT fire twice for the same step: a second look without a step in between is silent', () => {
+    const m = newMatch();
+    const w = createMatchWatch();
+    updateWatch(m, w);
+    m.stepCount++;
+    m.ball.frameHit = 'post';
+    expect(crossbarDue(m, w)).toBe(true);
+    updateWatch(m, w);          // the watch has seen this step
+    expect(crossbarDue(m, w)).toBe(false);
+  });
+
+  // Through the real engine, the way runStep reads it: crossbarDue after every step,
+  // then updateWatch. A free ball rolling at side 1's post (the goal-frame.test.ts
+  // fixture) hits it once and bounces back into play.
+  it('the frame rings ONCE per hit, not on every step of the bounce', () => {
+    const m = newMatch();
+    const idle: [TeamInput, TeamInput] = [createTeamInput(), createTeamInput()];
+    const rng = createRng(1);
+    const w = createMatchWatch();
+    resumePlay(m);
+    updateWatch(m, w);
+    m.ball.owner = null;
+    m.ball.x = goalLineX(PITCH, 1) - 12; m.ball.y = postCentreY(PITCH, 1); m.ball.z = 0;
+    m.ball.vx = 600; m.ball.vy = 0; m.ball.vz = 0;
+    m.ball.lastTouchTeam = 0; m.ball.lastTouchId = 5;
+    m.ball.kickerId = -1; m.ball.kickLockUntilStep = 0;
+    let rings = 0;
+    let hits = 0;
+    for (let i = 0; i < 48; i++) {
+      stepMatch(m, idle, rng);
+      if (m.ball.frameHit !== 'none') hits++;
+      if (crossbarDue(m, w)) rings++;
+      updateWatch(m, w);
+    }
+    expect(rings).toBe(1);
+    expect(hits).toBe(1);
   });
 });
 

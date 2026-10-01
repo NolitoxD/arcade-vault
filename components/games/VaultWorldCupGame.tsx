@@ -3,6 +3,8 @@
 import React, { useEffect, useRef } from 'react';
 
 import { stepsFor } from './football-logic/clock';
+import { isActive } from './football-logic/discipline';
+import { isDown } from './football-logic/input';
 import { resolveMatchKits } from './football-logic/kits';
 import { NORMAL_RULES, abandon, isOpenPlay, type MatchRules } from './football-logic/match';
 import {
@@ -14,7 +16,7 @@ import { PITCH } from './football-logic/pitch';
 import { PLAYER_RADIUS, isSprinting, type PlayerState } from './football-logic/players';
 import { createRng, type Rng } from './football-logic/rng';
 import { SHOOTOUT_RESOLVE_STEPS } from './football-logic/set-pieces';
-import { SQUAD_SIZE } from './football-logic/squads';
+import { SQUAD_SIZE, squadName } from './football-logic/squads';
 import {
   FORMATIONS, TEAM_SIZE, TEAMS, teamById, type Formation, type Kit, type Strategy, type TeamDef,
 } from './football-logic/teams';
@@ -28,14 +30,14 @@ import {
   followCamera, isOnScreen, toScreenX, toScreenY, type Camera,
 } from './football-screen/camera';
 import {
-  CAPTION_TEXT, collectCaptions, createCaptionState, createMatchWatch, pushCaption, resetCaptionState, resetMatchWatch,
-  stepCaption, updateWatch, type ShowingCaption,
+  CAPTION_TEXT, cardShownThisStep, collectCaptions, createCaptionState, createMatchWatch, injuredTeamThisStep, pushCaption,
+  resetCaptionState, resetMatchWatch, stepCaption, updateWatch, type ShowingCaption,
 } from './football-screen/captions';
-import { CONTROL_HINTS, TWO_PLAYER_SCHEME_NOTE, keeperHintFor } from './football-screen/control-hints';
+import { CONTROL_HINTS, TWO_PLAYER_SCHEME_NOTE, injuryHintFor, keeperHintFor } from './football-screen/control-hints';
 import {
   BRACKET_CHOICE_COUNT, MODE_BLURBS, MODE_LIST, MODE_NAMES, createFlowState, flowAfterModeBuilt, flowBuildMode,
   flowCaptionsDrained, flowConfirmBracket, flowConfirmDraw, flowConfirmLineup, flowConfirmMode, flowConfirmTeam,
-  flowContinue, flowCpuPair, flowExitMatch, flowHumanCount, flowLineupBeginEdit, flowLineupCancelChoice,
+  flowContinue, flowCpuPair, flowExitMatch, flowHasLineup, flowHumanCount, flowLineupBeginEdit, flowLineupCancelChoice,
   flowLineupChoose, flowLineupEndEdit, flowLineupMove, flowMatchOver, flowMoveBracketChoice, flowMoveMode,
   flowMoveTeam, flowPickingHuman, flowRecordCpuResult, flowSetFormation, flowSetKeyScheme, flowSkipSpectate,
   flowSpectateOver, flowToggleKeyScheme, phaseGroup, type PhaseGroup,
@@ -57,8 +59,9 @@ import {
   GRASS_TILE_H, GRASS_TILE_W, forEachGrassCell, grassTileOffset,
 } from './football-screen/grass';
 import {
-  SHOT_CHARGE_SEGMENTS, buttonsIdle, chargeSegments, clockText, countdownSeconds, cursorPlayerId,
-  halfLabel, keeperHoldsBall, shootoutRoundLabel, smallNumber, sprintBarFraction,
+  INJURY_TITLE, SHOT_CHARGE_SEGMENTS, chargeSegments, clockText, countdownSeconds, cursorPlayerId,
+  halfLabel, idleHint, injuryWindowTeam, keeperHoldsBall, reserveCanComeOn, shootoutRoundLabel, smallNumber,
+  sprintBarFraction,
 } from './football-screen/hud';
 import {
   ARROWS_SOLO, KEY_SCHEME_STORAGE_KEY, SOLO_TABLES_BY_SCHEME, TWO_PLAYER_P1, TWO_PLAYER_P2, TWO_PLAYER_TABLES,
@@ -66,8 +69,8 @@ import {
   padFormationChoice, padKeyFor, padToTeamInput, padUp, saveKeyScheme, type KeyTable, type PadKey, type PadState,
 } from './football-screen/keyboard';
 import {
-  GK_POSITION, applySwap, canSwap, createLineup, lineupBackspace, lineupEndEdit, lineupName, lineupTypeChar,
-  loadLineup, saveLineup, type Lineup,
+  GK_POSITION, applySwap, canSwap, checkLineup, createLineup, lineupBackspace, lineupEndEdit, lineupName, lineupTypeChar,
+  loadLineup, parseLineup, saveLineup, type Lineup,
 } from './football-screen/lineup';
 import { SPECTATE_SPEED, createStepBudget } from './football-screen/loop';
 import { createFramePlan, planFrame, planHalfAmbience } from './football-screen/match-loop';
@@ -77,7 +80,7 @@ import {
 } from './football-screen/minimap';
 import { FX_COLORS, createParticlePool, fxSeedFor, startFx, stepFx } from './football-screen/particles';
 import {
-  ambienceDue, captionSfxOnEdge, createAmbienceMarks, goalCrowdDue, goalNetDue, halfEndWhistleDue,
+  ambienceDue, captionSfxOnEdge, createAmbienceMarks, crossbarDue, goalCrowdDue, goalNetDue, halfEndWhistleDue,
   shortPassFiredThisStep, shotFiredThisStep, victoryChantGain,
 } from './football-screen/sfx-map';
 import { SLIDE_TILT_COS, SLIDE_TILT_SIN, choosePlayerSprite, createSpriteChoice } from './football-screen/sprite-frame';
@@ -160,8 +163,11 @@ const MINIMAP_BG = 'rgba(0,0,0,0.6)';
 const MINIMAP_FRAME = 'rgba(255,255,255,0.6)';
 const CAPTION_BG = 'rgba(0,0,0,0.65)';
 const BLOCKED_BG = 'rgba(0,0,0,0.78)';
+// G15-13: the two card captions are written in the colour of the card.
+const CARD_YELLOW = '#ffd400';
+const CARD_RED = '#ff3b30';
 const PENALTY_MARK = 'rgba(255,255,255,0.8)';
-// G12-1: the goalkeeper is reserved out of the sixteen teams' kit space entirely, so
+// G12-1: the goalkeeper is reserved out of the twenty teams' kit space entirely, so
 // it never coincides with either side's colours -- fluor green body, black
 // ring/collar/head trim, in EVERY mode (training statues and shootout included).
 const GK_KIT_PRIMARY = '#39ff14';
@@ -175,6 +181,19 @@ const CAPTION_H = 96;
 // the EMPATE that the same event queues stays readable above it.
 const BLOCKED_Y = CAPTION_Y + CAPTION_H;
 const BLOCKED_H = 104;
+// A card or injury caption carries the player's name on a second line (G15-13 "rótulo
+// tarjeta + nombre"): the title goes up, the name under it.
+const CAPTION_TITLE_DY = 38;
+const CAPTION_NAME_DY = 76;
+// G15-18: the LESIONADO window, UNDER the caption band (so the FALTA / TARJETA /
+// LESIÓN of the same foul stay readable above it) and between the formation legend
+// (bottom left) and the minimap (bottom right). Seven reserves fit: 300 + 40 + 7 * 18 + 26.
+const INJURY_W = 360;
+const INJURY_X = (VIEW_W - INJURY_W) / 2;
+const INJURY_Y = CAPTION_Y + CAPTION_H + 4;
+const INJURY_HEAD_H = 40;
+const INJURY_ROW_H = 18;
+const INJURY_FOOT_H = 26;
 const BAR_W = 34;
 const BAR_H = 5;
 // R33: the three charge notches drawn next to the controlled player, above the cursor
@@ -282,6 +301,7 @@ const FONT_COUNTDOWN = 'bold 40px monospace';
 const FONT_CAPTION = 'bold 48px monospace';
 const FONT_BLOCKED_TITLE = 'bold 26px monospace';
 const FONT_BLOCKED_HINT = 'bold 16px monospace';
+const FONT_INJURY_COUNTDOWN = 'bold 22px monospace';
 
 // Eighteen shirt numbers as text, built once at module load: not even a String(n)
 // runs on an event (criterion 20).
@@ -463,7 +483,25 @@ function VaultWorldCupGame({
     window.addEventListener('gamepaddisconnected', handleGamepadDisconnected);
     let tables: readonly [KeyTable, KeyTable] = SOLO_TABLES_BY_SCHEME[flow.keyScheme];
     const runFormations: [number, number] = [0, 0];
+    // V15-4-7: the Lineup each TEAM plays with (null = the engine's default eleven, a CPU
+    // side), handed to createMatchRun and kept for the names of the captions and the
+    // LESIONADO window. Written by fillRunLineups on startHumanMatch, never per frame.
+    const runLineups: [Lineup | null, Lineup | null] = [null, null];
     const cursorIds: [number, number] = [-1, -1];
+    // G15-18: the LESIONADO window, built ONCE per window by refreshInjuryView (the
+    // refreshLineupView pattern): the title, one label per legal reserve, and the squad
+    // index each label stands for. -1 = no window on screen.
+    let injuryViewTeam: 0 | 1 | -1 = -1;
+    let injuryTitle = '';
+    const injuryLabels: string[] = ['', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''];
+    const injuryChoices: number[] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    let injuryChoiceCount = 0;
+    let injuryCursor = 0;
+    let injuryLastDir = 0;
+    let injuryALatched = false;
+    // G15-13 / G15-18: the name under the card and injury captions, composed on the event.
+    let cardName = '';
+    let injuryName = '';
 
     const cam: Camera = createCamera();
     const budget = createStepBudget();
@@ -479,7 +517,7 @@ function VaultWorldCupGame({
     const gestures = createGestureTimers();
     const spriteChoice = createSpriteChoice();
     // V15-1 (G15-2): the three sprite atlases. The keeper's is baked once and for all
-    // (G12-1: the same fluor green and black for the sixteen keepers); home and away
+    // (G12-1: the same fluor green and black for the twenty keepers); home and away
     // are re-baked by bakeMatchAtlases on every startMatch, from the RESOLVED kits.
     const spritePalette = createSpritePalette();
     const atlasHome = createAtlasCanvas();
@@ -611,8 +649,11 @@ function VaultWorldCupGame({
     function startMatch(
       home: TeamDef, away: TeamDef, seedForMatch: number, difficulty: number, rules: Readonly<MatchRules>,
       side: HumanSide, formations: readonly [number, number], screen: boolean,
+      teamLineups: readonly [Lineup | null, Lineup | null] | undefined,
     ): void {
-      run = createMatchRun(home, away, seedForMatch, difficulty, [sideIsHuman(side, 0), sideIsHuman(side, 1)], rules, formations);
+      run = createMatchRun(
+        home, away, seedForMatch, difficulty, [sideIsHuman(side, 0), sideIsHuman(side, 1)], rules, formations, teamLineups,
+      );
       matchKits = resolveMatchKits(home.kit, away.kit);
       bakeMatchAtlases();
       humanSide = side;
@@ -646,6 +687,10 @@ function VaultWorldCupGame({
       reportedClock = '';
       keeperHoldSteps = 0;
       keeperHoldTeam = -1;
+      injuryViewTeam = -1;
+      injuryChoiceCount = 0;
+      cardName = '';
+      injuryName = '';
     }
 
     // The formation each TEAM starts with: the human's pick for a human team (J1's for
@@ -658,12 +703,32 @@ function VaultWorldCupGame({
       runFormations[1] = sideIsHuman(side, 1) ? flow.formation[side === 'both' ? 1 : 0] : 0;
     }
 
+    // V15-4-7, the last piece of V15-3: the lineup each HUMAN team plays with -- J1's for
+    // the first human, J2's for the second, exactly like fillRunFormations -- made valid
+    // for the formation it starts in. A mode without ALINEACIÓN (the training) never
+    // loaded one, so it plays the default eleven with the squad's own names; so would a
+    // lineup that does not pass checkLineup (createMatchRun's gate keeps it away from
+    // createPlayers anyway). After this the screen's Lineup IS the engine's eleven, which
+    // is what lets the LESIONADO window list Lineup.reserves (H10). On an event.
+    function readyLineup(who: 0 | 1, formation: number): Lineup {
+      const l = lineups[who];
+      const f = FORMATIONS[formation];
+      if (!flowHasLineup(flow) || checkLineup(f, l).length !== 0) parseLineup(null, f, l);
+      return l;
+    }
+
+    function fillRunLineups(side: HumanSide): void {
+      runLineups[0] = sideIsHuman(side, 0) ? readyLineup(0, runFormations[0]) : null;
+      runLineups[1] = sideIsHuman(side, 1) ? readyLineup(side === 'both' ? 1 : 0, runFormations[1]) : null;
+    }
+
     function startHumanMatch(): void {
       const side = modeHumanSide(mode);
       fillRunFormations(side);
+      fillRunLineups(side);
       startMatch(
         teamOf(modeHomeId(mode)), teamOf(modeAwayId(mode)), modeMatchSeed(mode, runSeed), modeDifficulty(mode),
-        modeRules(mode), side, runFormations, modeVictoryScreen(mode),
+        modeRules(mode), side, runFormations, modeVictoryScreen(mode), runLineups,
       );
       reportStatus(modeMatchLabel(mode));
     }
@@ -675,9 +740,11 @@ function VaultWorldCupGame({
       const pair = flowCpuPair(mode);
       if (wc === null || pair === -1) return false;
       spectatePair = pair;
+      runLineups[0] = null;
+      runLineups[1] = null;
       startMatch(
         teamOf(pairHomeId(wc, pair)), teamOf(pairAwayId(wc, pair)), cpuMatchSeed(wc, pair),
-        currentDifficulty(wc), NORMAL_RULES, 'none', ZERO_FORMATIONS, false,
+        currentDifficulty(wc), NORMAL_RULES, 'none', ZERO_FORMATIONS, false, undefined,
       );
       return true;
     }
@@ -917,6 +984,73 @@ function VaultWorldCupGame({
       else if (action === 'play') startHumanMatch();
     }
 
+    // The name the screen gives a footballer of THIS match: the one the human typed on
+    // ALINEACIÓN for a human team, the squad's own for a CPU side. A lookup, no string built.
+    function playerName(team: 0 | 1, squadIndex: number): string {
+      const teamId = run.match.teams[team].id;
+      const l = runLineups[team];
+      return l === null ? squadName(teamId, squadIndex) : lineupName(l, teamId, squadIndex);
+    }
+
+    // G15-13: the name under TARJETA AMARILLA / ROJA, on the step the card is shown. From
+    // lastCard.squadIndex, never from the slot: after a keeper's red the slot (playerId)
+    // already holds the keeper who came on (review-6).
+    function refreshCardView(): void {
+      const card = run.match.lastCard;
+      cardName = playerName(run.match.players[card.playerId].team, card.squadIndex);
+    }
+
+    // G15-18: the name under LESIÓN, on the step injuriesUsed grows. The injured player is
+    // the one waiting in pendingInjury, or -- a keeper with no keeper left, who plays on
+    // (resolution 7) -- the one in lastInjury, which is readable on that same step.
+    function refreshInjuryCaption(team: 0 | 1): void {
+      const match = run.match;
+      const id = match.pendingInjury[team] >= 0 ? match.pendingInjury[team] : match.lastInjury;
+      injuryName = id < 0 ? '' : playerName(team, match.players[id].squadIndex);
+    }
+
+    // G15-18: the LESIONADO window, ONCE per window (criterion 20): the title, and one
+    // label per reserve of the human's Lineup.reserves (H10: the model the ALINEACIÓN
+    // screen draws, not a second list) that the engine's substitute would accept.
+    function refreshInjuryView(team: 0 | 1): void {
+      const match = run.match;
+      const out = match.players[match.pendingInjury[team]];
+      const teamId = match.teams[team].id;
+      const input = run.inputs[team];
+      injuryTitle = INJURY_TITLE + ': ' + playerName(team, out.squadIndex);
+      injuryChoiceCount = 0;
+      injuryCursor = 0;
+      // A direction already held when the window opens is not a push.
+      injuryLastDir = input.dy !== 0 ? input.dy : input.dx;
+      // Same for A: a button already down when the window opens must be released first.
+      injuryALatched = isDown(input.a);
+      const l = runLineups[team];
+      if (l === null) return;   // a human team always has one (fillRunLineups)
+      for (let i = 0; i < l.reserves.length; i++) {
+        const index = l.reserves[i];
+        if (!reserveCanComeOn(match, team, out.role, index)) continue;
+        injuryChoices[injuryChoiceCount] = index;
+        injuryLabels[injuryChoiceCount] = SHIRT_LABELS[index] + ' ' + lineupName(l, teamId, index);
+        injuryChoiceCount++;
+      }
+    }
+
+    // The window's input, read off the TeamInput the pads have just written: a fresh push
+    // of the d-pad moves the cursor (one row per push, not per step), A sends the reserve
+    // under it on. TeamInput.sub carries it for THIS step only -- runStep puts it back to
+    // -1 on every sample, like a 'pressed' -- because the choice has to replay from seed +
+    // TeamInput (criterion 1). If nobody chooses, the engine's own timeout picks.
+    function injuryPick(team: 0 | 1): void {
+      const input = run.inputs[team];
+      const dir = input.dy !== 0 ? input.dy : input.dx;
+      if (dir !== 0 && dir !== injuryLastDir && injuryChoiceCount > 0) {
+        injuryCursor = (injuryCursor + dir + injuryChoiceCount) % injuryChoiceCount;
+      }
+      injuryLastDir = dir;
+      if (!isDown(input.a)) injuryALatched = false;
+      else if (!injuryALatched && input.a === 'pressed' && injuryCursor < injuryChoiceCount) input.sub = injuryChoices[injuryCursor];
+    }
+
     // ONE simulation step. The human pads are sampled into their TeamInputs; the CPU
     // sides decide inside stepMatchRun (team 0 first, own stream). `first` is false from
     // the second step of a frame on (a single tap must not fire five shots).
@@ -931,11 +1065,14 @@ function VaultWorldCupGame({
       if (run.human[0]) {
         padToTeamInput(pads[0], first, run.inputs[0]);
         overlayPadToTeamInput(gamepadPads[0], first, run.inputs[0]);
+        run.inputs[0].sub = -1;
       }
       if (run.human[1]) {
         padToTeamInput(pads[1], first, run.inputs[1]);
         overlayPadToTeamInput(gamepadPads[1], first, run.inputs[1]);
+        run.inputs[1].sub = -1;
       }
+      if (injuryViewTeam !== -1) injuryPick(injuryViewTeam);
       stepMatchRun(run);
 
       // 1. The ball being struck (audio table: ActionEvent 'shot' with ok).
@@ -964,6 +1101,10 @@ function VaultWorldCupGame({
       //     the end of the extra time ('golden-goal' -> 'shootout'). Same `watch`,
       //     same reason it still holds the previous step.
       if (halfEndWhistleDue(match, watch)) sfxVaultWorldCup.play('whistle_end');
+      // 2c. G15-12: a post or the crossbar. ball.frameHit is a one-step flank, read here
+      //     after EVERY step of the frame against the same `watch`, so a hit on the second
+      //     of five steps is neither lost nor rung twice.
+      if (crossbarDue(match, watch)) sfxVaultWorldCup.play('crossbar');
       // 3. The third link, part way into the celebration. KNOWN GAP carried from the
       //    Task 8-4 review (its minor 1): goalCrowdDue needs phase 'goal', which a
       //    golden goal (straight to 'over') and a shootout goal (never leaves
@@ -1024,11 +1165,25 @@ function VaultWorldCupGame({
 
       // 7. Captions, from the transition detector, seen from the human side of THIS
       //    match; no GANADOR when a victory screen follows (S-FL3).
+      //    The names under a card or an injury caption are composed HERE, on the step of
+      //    the event and against the same watch, before updateWatch moves it on.
+      if (cardShownThisStep(match, watch)) refreshCardView();
+      const injured = injuredTeamThisStep(match, watch);
+      if (injured !== -1) refreshInjuryCaption(injured);
       const before = captions.kind;
       collectCaptions(match, watch, humanSide, captions, victoryScreen);
       updateWatch(match, watch);
       stepCaption(captions);
       playCaptionEdge(before);
+
+      // 7b. G15-18: the LESIONADO window opens and closes with the phase 'injury' and
+      //     pendingInjury (never injuryStepsLeft, which keeps its last value), and is
+      //     built once, on the step it opens.
+      const windowTeam = injuryWindowTeam(match, run.human);
+      if (windowTeam !== injuryViewTeam) {
+        injuryViewTeam = windowTeam;
+        if (windowTeam !== -1) refreshInjuryView(windowTeam);
+      }
 
       // 8. The camera. During the shootout the target is the alternating penalty
       //    spot and the cut is instant (S-SC8): panning 1600 units between kicks
@@ -1208,7 +1363,7 @@ function VaultWorldCupGame({
     // charge notches and the sprint ring stay vector, on top of the sprite.
     //
     // The shootout exclusions of stage B2 §8 live in choosePlayerSprite now:
-    //   · `parked` — the fifteen in the centre circle stand still, whatever slide,
+    //   · `parked` — the nineteen in the centre circle stand still, whatever slide,
     //     floor or charge fields the engine left on them.
     //   · nobody is drawn lying down or sliding during the shootout, THE TAKER
     //     INCLUDED (B2 report, Minor 2; probe P6(1)).
@@ -1311,12 +1466,23 @@ function VaultWorldCupGame({
       }
     }
 
+    // G15-13 / G15-18 (V15-4-7): a player who has left the pitch -- sent off, or injured
+    // with nobody to replace him (and the injured one while his window is open) -- is not
+    // drawn. Hidden by ACTIVITY (discipline.ts isActive), not by position: he is still in
+    // the array, and placeByFormation puts him back on his anchor at every restart.
+    // The shootout's eleven all kick (a sent-off player included, set-pieces.ts
+    // shootoutTakerId): whoever takes the current kick is never hidden, the rest who left stay hidden.
+    function isShootoutTaker(match: MatchRun['match'], p: PlayerState): boolean {
+      return match.phase === 'shootout' && p.id === (match.shootout?.takerId ?? -1);
+    }
+
     function drawPlayers(): void {
       const match = run.match;
       cursorIds[0] = run.human[0] ? cursorPlayerId(match, 0) : -1;
       cursorIds[1] = run.human[1] ? cursorPlayerId(match, 1) : -1;
       for (let i = 0; i < match.players.length; i++) {
         const p = match.players[i];
+        if (!isActive(p) && !isShootoutTaker(match, p)) continue;
         drawPlayer(p, p.id === cursorIds[p.team]);
       }
     }
@@ -1417,9 +1583,12 @@ function VaultWorldCupGame({
       ctx.lineTo(MINIMAP_X + MINIMAP_W / 2, MINIMAP_Y + MINIMAP_H);
       ctx.stroke();
 
-      // Criterion 13: all eighteen, always -- this is the context the camera takes away.
+      // Criterion 13: everybody on the pitch, always -- this is the context the camera takes
+      // away. Since V15-4-7 that is the ACTIVE ones (drawPlayers' rule): the sent off and
+      // the injured are not on it.
       for (let i = 0; i < match.players.length; i++) {
         const p = match.players[i];
+        if (!isActive(p) && !isShootoutTaker(match, p)) continue;
         ctx.fillStyle = matchKits[p.team].primary;
         ctx.beginPath();
         ctx.arc(
@@ -1525,7 +1694,9 @@ function VaultWorldCupGame({
       if (run.human[0]) drawTeamStrip(0);
       if (run.human[1]) drawTeamStrip(1);
 
-      if (buttonsIdle(match)) {
+      // Only the AIM line: during the LESIONADO window A does something (it confirms the
+      // reserve), so "only the d-pad works" would contradict the window's own hint.
+      if (idleHint(match) === 'aim') {
         ctx.textAlign = 'center';
         ctx.font = FONT_SMALL;
         ctx.fillStyle = HINT_TEXT;
@@ -1563,11 +1734,73 @@ function VaultWorldCupGame({
       ctx.strokeStyle = HUD_ACCENT;
       ctx.lineWidth = 2;
       ctx.strokeRect(0, CAPTION_Y, VIEW_W, CAPTION_H);
+      const kind = captions.kind;
       ctx.font = FONT_CAPTION;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
+      ctx.fillStyle = kind === 'card-yellow' ? CARD_YELLOW : kind === 'card-red' ? CARD_RED : HUD_ACCENT;
+      // G15-13 "rótulo tarjeta + nombre", and the same for LESIÓN: the name composed on the
+      // event (refreshCardView / refreshInjuryCaption) goes on a second line.
+      const name = kind === 'card-yellow' || kind === 'card-red' ? cardName : kind === 'injury' ? injuryName : '';
+      if (name === '') {
+        ctx.fillText(CAPTION_TEXT[kind], VIEW_W / 2, CAPTION_Y + CAPTION_H / 2);
+        return;
+      }
+      ctx.fillText(CAPTION_TEXT[kind], VIEW_W / 2, CAPTION_Y + CAPTION_TITLE_DY);
+      ctx.font = FONT_TEAM;
+      ctx.fillStyle = HUD_TEXT;
+      ctx.fillText(name, VIEW_W / 2, CAPTION_Y + CAPTION_NAME_DY);
+    }
+
+    // G15-18: the LESIONADO window over the stopped match (an overlay, not a FlowPhase:
+    // the flow stays in 'match' and the engine in 'injury'). Every string was built by
+    // refreshInjuryView; the countdown reads the engine's injuryStepsLeft, the engine does
+    // not depend on anything drawn here. The phase is checked again because the window is
+    // a level of the match: an abandon (viewport guard) leaves it for 'over' with no step.
+    function drawInjuryWindow(): void {
+      if (injuryViewTeam === -1) return;
+      const match = run.match;
+      if (match.phase !== 'injury') return;
+      const rows = injuryChoiceCount === 0 ? 1 : injuryChoiceCount;
+      const h = INJURY_HEAD_H + rows * INJURY_ROW_H + INJURY_FOOT_H;
+      ctx.fillStyle = BLOCKED_BG;
+      ctx.fillRect(INJURY_X, INJURY_Y, INJURY_W, h);
+      ctx.strokeStyle = HUD_ACCENT;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(INJURY_X, INJURY_Y, INJURY_W, h);
+      ctx.textBaseline = 'middle';
+      ctx.textAlign = 'left';
+      ctx.font = FONT_TEAM;
       ctx.fillStyle = HUD_ACCENT;
-      ctx.fillText(CAPTION_TEXT[captions.kind], VIEW_W / 2, CAPTION_Y + CAPTION_H / 2);
+      ctx.fillText(injuryTitle, INJURY_X + 12, INJURY_Y + INJURY_HEAD_H / 2);
+      // Resolution 9: the visible way out -- the seconds before the reserve of that
+      // position comes on by himself.
+      ctx.textAlign = 'right';
+      ctx.font = FONT_INJURY_COUNTDOWN;
+      ctx.fillText(
+        smallNumber(countdownSeconds(match.injuryStepsLeft[injuryViewTeam])), INJURY_X + INJURY_W - 12, INJURY_Y + INJURY_HEAD_H / 2,
+      );
+      ctx.textAlign = 'left';
+      ctx.font = FONT_SMALL;
+      const listY = INJURY_Y + INJURY_HEAD_H;
+      if (injuryChoiceCount === 0) {
+        ctx.fillStyle = DIM_TEXT;
+        ctx.fillText(LINEUP_NO_RESERVE, INJURY_X + 24, listY + INJURY_ROW_H / 2);
+      }
+      for (let i = 0; i < injuryChoiceCount; i++) {
+        const rowY = listY + i * INJURY_ROW_H;
+        const live = i === injuryCursor;
+        if (live) {
+          ctx.fillStyle = CARD_BG;
+          ctx.fillRect(INJURY_X + 8, rowY, INJURY_W - 16, INJURY_ROW_H);
+        }
+        ctx.fillStyle = live ? HUD_ACCENT : HUD_TEXT;
+        ctx.fillText(injuryLabels[i], INJURY_X + 24, rowY + INJURY_ROW_H / 2);
+      }
+      ctx.textAlign = 'center';
+      ctx.font = FONT_HALF;
+      ctx.fillStyle = HINT_TEXT;
+      ctx.fillText(injuryHintFor(tables[injuryViewTeam]), VIEW_W / 2, INJURY_Y + h - INJURY_FOOT_H / 2);
     }
 
     // The viewport guard, drawn instead of a frozen canvas. S-SC12: the match has
@@ -1927,6 +2160,7 @@ function VaultWorldCupGame({
       drawMinimap();
       drawHud();
       drawCaption();
+      drawInjuryWindow();
     }
 
     function draw(): void {

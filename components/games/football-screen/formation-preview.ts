@@ -9,7 +9,7 @@ import type { Formation, OutfieldRole } from '../football-logic/teams';
 // does not move. Pure arithmetic; nothing allocates.
 
 // The goalkeeper has no FormationSlot. In the match it stands GK_LINE_DIST = 25 u off
-// its own line on a 2000 u pitch (0.0125), which in a 150 px preview would be under
+// its own line on a 2200 u pitch (0.0114), which in a 150 px preview would be under
 // two pixels from the frame and eat the dot. 0.045 clears the frame without lying
 // about where the keeper is. (Deliberately NOT imported from players.ts: the engine
 // is out of bounds in this step, and a schematic must not be coupled to the physics.)
@@ -35,7 +35,7 @@ export function previewGkY(y: number, h: number): number {
   return y + h / 2;
 }
 
-// The outfield slots plus the goalkeeper: 9 today, 11 once V15-4 raises TEAM_SIZE.
+// The outfield slots plus the goalkeeper: 11 (TEAM_SIZE) in every formation.
 export function previewDotCount(f: Formation): number {
   return f.slots.length + 1;
 }

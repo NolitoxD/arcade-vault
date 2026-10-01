@@ -126,7 +126,7 @@ describe('fouls', () => {
     return out;
   }
   it('inside the offender own big area: penalty for the victim at the spot', () => {
-    // team 1 defends side 1 in the first half; its box starts at width - 320 = 1680
+    // team 1 defends side 1 in the first half; its box starts at width - bigAreaDepth = 1848
     const c = foul(1900, CY + 60, 0);
     expect(c).toMatchObject({ kind: 'penalty', team: 0, x: penaltySpotX(PITCH, 1), y: CY });
     const d = foul(140, CY - 200, 1);

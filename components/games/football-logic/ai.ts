@@ -16,6 +16,7 @@ import {
   type ActionEvent,
 } from './actions';
 import type { Rng } from './rng';
+import { firstFreeReserveOfRole, isActive } from './discipline';
 
 // -- Spec "Reglas de la IA": every number named, none buried -------------------
 export const SHOT_RANGE = 420;
@@ -43,7 +44,10 @@ const DODGE_DIST = 150;
 const SPRINT_LANE_RADIUS = 60;
 // G15-27 (Paco, 30-sep): 20 -> 8, below the post reach POST_RADIUS + BALL_RADIUS (11),
 // so a CPU shot can actually meet the frame (with 20 it never did). The posts are NOT thickened.
-const SHOT_POST_MARGIN = 8;
+// Paco 01-oct (V15-4-10 probe): 8 -> 4 (BALL_RADIUS - 1): the aimed line may pass as close as
+// 4 u inside a post centre, so the 5 u ball still overlaps the post and the shot can hit the
+// frame; at 8 the CPU met a post in 1 of the probe's 40 matches, at 4 in 6 of 40.
+const SHOT_POST_MARGIN = 4;
 const CHASE_DEAD_ZONE = 4;
 
 // Profile formulas (spec table "Perfil por dificultad (1-8)").
@@ -178,7 +182,7 @@ export function quantizeDir(x: number, y: number, out: { dx: Axis; dy: Axis }): 
 export function laneBlocked(players: readonly PlayerState[], team: 0 | 1, fromX: number, fromY: number, dirX: number, dirY: number, length: number, radius: number, stepCount: number): boolean {
   for (let i = 0; i < players.length; i++) {
     const q = players[i];
-    if (q.team === team || isPlayerDown(q, stepCount)) continue;
+    if (q.team === team || !isActive(q) || isPlayerDown(q, stepCount)) continue;
     const rx = q.x - fromX;
     const ry = q.y - fromY;
     const along = rx * dirX + ry * dirY;
@@ -233,7 +237,7 @@ function chaseRank(p: PlayerState, players: readonly PlayerState[], ball: BallSt
   let rank = 0;
   for (let i = 0; i < players.length; i++) {
     const q = players[i];
-    if (q.team !== p.team || q.role === 'gk' || q.id === p.id || isPlayerDown(q, stepCount)) continue;
+    if (q.team !== p.team || q.role === 'gk' || q.id === p.id || !isActive(q) || isPlayerDown(q, stepCount)) continue;
     const d = dist(q.x, q.y, ball.x, ball.y);
     if (d < mine || (d === mine && q.id < p.id)) rank++;
   }
@@ -254,14 +258,19 @@ export function positionTeam(players: PlayerState[], ball: BallState, team: 0 | 
   const cy = centerY(pitch);
   for (let i = 0; i < players.length; i++) {
     const p = players[i];
-    if (p.team !== team || p.role === 'gk') continue;
+    // G15-13: a player who left stands where standDown (discipline.ts) stopped him.
+    if (p.team !== team || p.role === 'gk' || !isActive(p)) continue;
     p.wantSprint = false;
     if (p.id === controlled) continue;
     let targetX: number;
     let targetY: number;
     const rank = inPossession ? Infinity : chaseRank(p, players, ball, stepCount);
     if (rank < chasers) {
-      // 4. pursuit: the CHASERS nearest run at the ball (rank 0 is the controlled and never gets here)
+      // 4. pursuit: the CHASERS nearest run at the ball. Before G15-5 (v1.5, V15-2) the
+      // controlled player was by definition rank 0 and so never reached this branch;
+      // since the human can hand control to any of the MANUAL_SWITCH_POOL nearest, the
+      // controlled one may be rank 1 or 2 and the rank-0 player DOES get here -- which
+      // is what keeps somebody running at the ball while the human covers.
       targetX = ball.x;
       targetY = ball.y;
     } else if (rank === chasers) {
@@ -281,7 +290,7 @@ export function positionTeam(players: PlayerState[], ball: BallState, team: 0 | 
     // 3. separation: mates closer than SEPARATION_DIST push the target away
     for (let j = 0; j < players.length; j++) {
       const q = players[j];
-      if (q.team !== team || q.role === 'gk' || q.id === p.id) continue;
+      if (q.team !== team || q.role === 'gk' || q.id === p.id || !isActive(q)) continue;
       const d = dist(p.x, p.y, q.x, q.y);
       if (d >= SEPARATION_DIST) continue;
       if (d === 0) {
@@ -304,7 +313,7 @@ function mateCloserToBall(gk: PlayerState, players: readonly PlayerState[], ball
   const mine = dist(gk.x, gk.y, ball.x, ball.y);
   for (let i = 0; i < players.length; i++) {
     const q = players[i];
-    if (q.team !== gk.team || q.id === gk.id || isPlayerDown(q, stepCount)) continue;
+    if (q.team !== gk.team || q.id === gk.id || !isActive(q) || isPlayerDown(q, stepCount)) continue;
     if (dist(q.x, q.y, ball.x, ball.y) < mine) return true;
   }
   return false;
@@ -462,7 +471,7 @@ function nearestRival(players: readonly PlayerState[], team: 0 | 1, x: number, y
   let bestDist = Infinity;
   for (let i = 0; i < players.length; i++) {
     const q = players[i];
-    if (q.team === team || isPlayerDown(q, stepCount)) continue;
+    if (q.team === team || !isActive(q) || isPlayerDown(q, stepCount)) continue;
     const d = dist(x, y, q.x, q.y);
     if (d < bestDist) {
       bestDist = d;
@@ -656,6 +665,14 @@ function chase(match: MatchState, team: 0 | 1, me: PlayerState, profile: AiProfi
 export function decideTeamInput(match: MatchState, team: 0 | 1, profile: AiProfile, state: AiState, rng: Rng, out: TeamInput): void {
   neutralInput(out);
   out.formation = match.formationIndex[team];   // S18: the CPU never changes formation
+  // G15-18: "CPU: cambio automatico misma posicion". Derived, not drawn: the lowest
+  // squad index of the injured player's role that is not already on the pitch. Costs
+  // SQUAD_SIZE * TEAM_SIZE * 2 comparisons and runs ONLY on the steps the phase is
+  // 'injury'. Written here, before the phase branches, because every one of them
+  // returns early -- at the end of the function it would never run in that phase.
+  out.sub = match.phase === 'injury' && match.pendingInjury[team] >= 0
+    ? firstFreeReserveOfRole(match, team, match.players[match.pendingInjury[team]].role)
+    : -1;
   if (match.stepCount >= state.nextStrategyStep) {
     state.strategy = chooseStrategy(match.score, team, match.half, match.halfStep);
     state.nextStrategyStep = match.stepCount + STRATEGY_REVIEW_STEPS;

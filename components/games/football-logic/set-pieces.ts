@@ -8,6 +8,7 @@ import { stepsFor, type AttackDirs } from './step';
 import type { Rng } from './rng';
 import { longPass, shoot, shortPass, type ActionEvent } from './actions';
 import type { SetPieceKind } from './referee';
+import { isActive } from './discipline';
 
 export type PenaltySide = -1 | 0 | 1;
 
@@ -41,15 +42,16 @@ function rivalSide(team: 0 | 1, attackDir: AttackDirs): Side {
   return attackDir[team] === 1 ? 1 : 0;
 }
 
-// Returns -1 only if the team has no outfield player: unreachable while TEAM_SIZE
-// is 9 and rosters are fixed (stage B decision); v1.5 substitutions/sendings-off
-// must keep at least one outfield player or guard beginSetPiece before indexing.
+// Returns -1 only if the team has no ACTIVE outfield player: unreachable, because a
+// team keeps at least TEAM_SIZE - SENT_OFF_MAX - INJURY_MAX_PER_TEAM players
+// (invariants.ts checkTeamCount) and only one of them is the keeper. G15-13: a sent-off
+// or injured player is never the taker.
 function nearestOutfield(players: readonly PlayerState[], team: 0 | 1, x: number, y: number): number {
   let best = -1;
   let bestDist = Infinity;
   for (let i = 0; i < players.length; i++) {
     const p = players[i];
-    if (p.team !== team || p.role === 'gk') continue;
+    if (p.team !== team || p.role === 'gk' || !isActive(p)) continue;
     const d = dist(p.x, p.y, x, y);
     if (d < bestDist) {
       bestDist = d;
@@ -79,7 +81,7 @@ function placeTaker(sp: SetPieceState, taker: PlayerState, ball: BallState, pitc
 function pushRivalsAway(sp: SetPieceState, players: PlayerState[], attackDir: AttackDirs, pitch: PitchDef): void {
   for (let i = 0; i < players.length; i++) {
     const q = players[i];
-    if (q.team === sp.team) continue;
+    if (q.team === sp.team || !isActive(q)) continue;   // nobody needs to clear a man who left
     const d = dist(sp.x, sp.y, q.x, q.y);
     if (d >= SET_PIECE_CLEARANCE) continue;
     if (!normalizeInto(scratch, q.x - sp.x, q.y - sp.y)) {
@@ -259,9 +261,14 @@ export function shootoutWinner(sh: ShootoutState): 0 | 1 | -1 {
 }
 
 // S-PK3: team 0 opens (resetShootout) and they alternate; each team's takers go by
-// ascending id without repeating until its eight outfield players are used up, and
-// then it starts again. players[i].id === i and id `team * TEAM_SIZE` is the keeper,
-// so the outfield ids of a team are team * TEAM_SIZE + 1 .. + OUTFIELD.
+// ascending id without repeating until its outfield players are used up, and then it
+// starts again. G15-13 (V15-4): cards "no afectan a la tanda", so this stays pure
+// arithmetic and CAN name a sent-off player -- the eleven take their kicks, sent off
+// included. A literal reading of the spec; if it jars in Paco's QA, skipping them is a
+// small change but not a one-liner: this formula would become a scan over the team's
+// ids with a fallback for a team short of players. players[i].id === i and id
+// `team * TEAM_SIZE` is the keeper, so the outfield ids of a team are
+// team * TEAM_SIZE + 1 .. + OUTFIELD.
 export function shootoutTakerId(team: 0 | 1, taken: number): number {
   return team * TEAM_SIZE + 1 + (taken % OUTFIELD);
 }
@@ -276,15 +283,15 @@ export function shootoutTakerId(team: 0 | 1, taken: number): number {
 // shootout. executePenalty derives its target from attackDir, and there is no notion
 // in the engine of "both teams shoot at one goal".
 // Stage B2 assumption S-PK10, not in the spec -- review in QA: finding H7 -- S-PK10
-// clears a leftover slide, tackle or charge on the fifteen parked outfield players, but
+// clears a leftover slide, tackle or charge on the nineteen parked outfield players, but
 // the two goalkeepers never go through placeAroundCentreSpot -- and placeByFormation,
 // the only thing beginSetPiece does to them, resets vx/vy/want*/facing but not
 // downUntilStep/tackleStepsLeft/chargeSteps
 // (players.ts, placeByFormation). A keeper whose extra time ended mid-slide would
 // otherwise stay frozen in that pose for the whole shootout -- the same artefact
-// S-PK10 already fixes for the outfield fifteen. Harmless today (executePenalty
+// S-PK10 already fixes for the outfield nineteen. Harmless today (executePenalty
 // teleports the keeper by `gk.y` directly, without going through the physics that read
-// these fields), but the same reasoning that put the fix on the fifteen puts it here.
+// these fields), but the same reasoning that put the fix on the nineteen puts it here.
 export function beginShootoutKick(
   sp: SetPieceState, sh: ShootoutState, players: PlayerState[], ball: BallState,
   formations: readonly [Formation, Formation], strategies: readonly [Strategy, Strategy],

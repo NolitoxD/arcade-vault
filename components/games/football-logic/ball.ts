@@ -3,6 +3,7 @@ import type { PitchDef } from './pitch';
 import { PLAYER_HEIGHT, isPlayerDown, type PlayerState } from './players';
 import { perStep, stepsFor } from './clock';
 import { bounceOffFrame, frameHitFor, type FrameHit } from './goal-frame';
+import { isActive } from './discipline';
 
 export type BallState = {
   x: number;
@@ -75,6 +76,7 @@ export function kickBall(ball: BallState, kicker: PlayerState, dirX: number, dir
 }
 
 export function canPickUp(ball: BallState, p: PlayerState, stepCount: number): boolean {
+  if (!isActive(p)) return false;   // G15-13 / G15-18: who left the game never touches the ball
   if (isPlayerDown(p, stepCount)) return false;
   if (p.tackleStepsLeft > 0) return false;
   if (ball.kickerId === p.id && stepCount < ball.kickLockUntilStep) return false;
@@ -146,8 +148,10 @@ export function stepBall(ball: BallState, players: readonly PlayerState[], stepC
   flyAndRoll(ball);
   // G15-12: the frame BEFORE the pickup and, through it, before the referee
   // (stepOpenPlay judges after stepPhysics): a ball that hits the post must never be
-  // judged a goal or a goal kick first. One level, reset at the top of every step, so
-  // the screen reads it exactly like scratch.call -- on the edge.
+  // judged a goal or a goal kick first. Reset at the top of stepBall AND, for the phases
+  // where stepBall does not run (kickoff, set-piece, goal, half-time), at the top of
+  // stepMatch, so on every step it holds only that step's hit and the screen reads it
+  // exactly like scratch.call -- on the edge.
   const hit = frameHitFor(ball, pitch);
   if (hit !== 'none') {
     bounceOffFrame(ball, pitch, hit);

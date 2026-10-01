@@ -4,6 +4,7 @@ import { FORMATIONS, OUTFIELD, STRATEGIES, TEAMS, TEAM_SIZE, type Formation, typ
 import { dist } from './geometry';
 import { BALL_RADIUS, POST_RADIUS } from './goal-frame';
 import { checkTeamInput, copyTeamInput, createTeamInput, type Axis, type TeamInput } from './input';
+import { SQUAD_SIZE } from './squads';
 import { HALF_STEPS, perStep, stepsFor } from './step';
 import { GK_LINE_DIST, GK_SPEED, PLAYER_HEIGHT, PLAYER_SPEED, createPlayers, isPlayerDown, type PlayerState } from './players';
 import { KICK_LOCK_STEPS, createBall, givePossession, type BallState } from './ball';
@@ -188,7 +189,7 @@ function targetOf(p: PlayerState): { x: number; y: number } {
 describe('positionTeam: anchor + drift + separation + bounded pursuit (spec "Los compañeros sin balón")', () => {
   it('with possession, a mate far from its anchor wants to go there, shifted by the strategy (criterion 11 lives here)', () => {
     const w = world();
-    givePossession(w.ball, w.players[5], 0);                 // team 0 has the ball; ball near (918, 650)
+    givePossession(w.ball, w.players[5], 0);                 // team 0 has the ball; ball near (990, 214.5)
     at(w.players[1], 100, 100);                              // far from slot 0's anchor, up and to the left
     const want = wantOf(w, 1, 'neutral', 5);
     expect(Math.sqrt(want.x * want.x + want.y * want.y)).toBeCloseTo(1, 10);   // far away: full speed
@@ -318,10 +319,10 @@ describe('keeperStep: on its line closing the angle, out inside the small area f
     w.ball.x = 582; w.ball.y = 300;
     const gk = at(w.players[0], LINE_X, CY);
     keeperStep(gk, w.players, w.ball, 1, PITCH, 0);
-    // Intersection of (582, 300)->(0, 650) with x = 25: t = (25 - 582)/(0 - 582), y = 300 + t*(650 - 300)
+    // Intersection of (582, 300)->(0, CY) with x = LINE_X: t = (LINE_X - 582)/(0 - 582), y = 300 + t*(CY - 300)
     const t = (LINE_X - 582) / (0 - 582);
     const targetY = 300 + t * (CY - 300);
-    const dy = (targetY - CY) / perStep(GK_SPEED);           // -15 u / 3.67 u per step: capped at -1
+    const dy = (targetY - CY) / perStep(GK_SPEED);           // about -18 u at 3.67 u per step: capped at -1
     expect(gk.wantX).toBe(0);
     expect(gk.wantY).toBeCloseTo(dy < -1 ? -1 : dy, 6);
     expect(targetY).toBeLessThan(CY);                        // towards the ball's side of the goal
@@ -946,7 +947,7 @@ function playCpuMatch(seed: number, formationTable: readonly Formation[], fi: re
     for (const t of [0, 1] as const) {
       decideTeamInput(match, t, profiles[t], states[t], aiRng, live[t]);
       live[t].formation = fi[t];   // the formation choice is the test's (S18: the CPU keeps whatever it is given)
-      if (checkTeamInput(live[t], formationTable.length).length > 0) stats.invalid++;
+      if (checkTeamInput(live[t], formationTable.length, SQUAD_SIZE).length > 0) stats.invalid++;
       stats.strategies.add(`${t}:${live[t].strategy}`);
     }
     const frame: [TeamInput, TeamInput] = [createTeamInput(), createTeamInput()];
@@ -963,7 +964,7 @@ function playCpuMatch(seed: number, formationTable: readonly Formation[], fi: re
     stepMatch(match, live, matchRng);
     stats.phases.add(match.phase);
     // Only a step that actually ran open play leaves fresh events: stepOpenPlay wipes
-    // all 18 slots at its top and the set-piece/pause branches of stepMatch never do.
+    // all 22 slots at its top and the set-piece/pause branches of stepMatch never do.
     // Unguarded, this loop re-counts the LAST open-play step's events once per step of
     // the 300-step countdown that followed it -- which is how the first run of this
     // recording read "8 shots" for a seed where the CPU released none (task report).
@@ -1038,11 +1039,16 @@ const ALL_PHASES: readonly MatchPhase[] = ['kickoff', 'play', 'set-piece', 'goal
 describe('CPU vs CPU: a recorded, deterministic full match that exercises the whole AI (criteria 1, 9b, 12 and the never-invalid input)', () => {
   // Seed 14 (fixture recomputed, task report): the brief's seed 7 completes ZERO shots
   // and zero keeper catches in a full match, and only read "8 shots" through the stale-event
-  // count fixed above. Seed 14 exercises every branch with margin: 2-1, 6 shots, 79 short
-  // and 35 long passes, 313 slide steps (10 of them WON the ball back), 69 steal attempts
-  // (41 of them WON it), 8 catches and 8 releases. Fix round 1 (review Important #2):
-  // tacklesWon/stealsWon are re-measured OUTCOME counts, gated on ev.ok, not the attempt
-  // counts above -- see the counting loop's comment for why.
+  // count fixed above. Re-measured ONCE in V15-4 (01-oct-2026, eleven a side + 2200 x 1430
+  // pitch + attributes + goal frame + directional tackles + cards + injuries, probe-tuned
+  // SHOT_POST_MARGIN 4), reported, never tuned: 11 704 steps, 2-1, decided in regulation,
+  // 8 open-play shots, 88 short and 43 long passes, 20 slides that WON the ball back,
+  // 54 steals WON, 6 catches and 6 releases; seven phases visited (kickoff, play,
+  // set-piece, injury, goal, half-time, over). (Old value, stage B, nine a side: 2-1,
+  // 6 shots, 79 short and 35 long passes, 313 slide steps (10 of them WON the ball back),
+  // 69 steal attempts (41 of them WON it), 8 catches and 8 releases.) Fix round 1 (review
+  // Important #2): tacklesWon/stealsWon are re-measured OUTCOME counts, gated on ev.ok, not
+  // attempt counts -- see the counting loop's comment for why.
   const SEED = 14;
   const game = playCpuMatch(SEED, FORMATIONS, [0, 0]);
   it('ends, scores, and actually shoots, passes short and long, slides, steals, and the keepers catch and release', () => {
@@ -1064,12 +1070,13 @@ describe('CPU vs CPU: a recorded, deterministic full match that exercises the wh
     expect(visited).toContain('goal');
     // Measured once and reported in the task report (steps, score, counts); never tuned here.
   });
-  // PENDING_REBASELINE (Task V15-4-9): the G15-10/G15-26 attributes (profile bend, per-player
-  // speed and shot, keeper reflexes/rushing/kicking) move this recording, and its open-play
-  // shot count fell under the floor. ONLY that floor is here (mark-3 technique): every other
+  // A coverage floor, not a recorded count: never lower it to what a run reads. During
+  // V15-4 (attributes, before the probe-tuned engine) this recording fell to 1 shot and the
+  // floor was parked; on the final V15-4 engine (01-oct-2026) it shoots 8 times again, so
+  // the floor is back unchanged. ONLY that floor is here (mark-3 technique): every other
   // count and the structural zeros stay live in the `it`s around it. `game` is the
-  // describe-level recording, so un-skipping this replays nothing.
-  it.skip('(measured) the recording shoots at least three times in open play', () => {
+  // describe-level recording, so this replays nothing.
+  it('(measured) the recording shoots at least three times in open play', () => {
     expect(game.stats.shots).toBeGreaterThanOrEqual(3);
   });
   it('(a) never produced an invalid TeamInput in the whole match', () => {
@@ -1087,14 +1094,18 @@ describe('CPU vs CPU: a recorded, deterministic full match that exercises the wh
     // The COUNT of big-area off-line moves is a measurement too, so it lives on its own
     // in the `it` below -- the two structural zeros above stay live for Tasks 2-8.
   });
-  // PENDING_REBASELINE (Task V15-4-9): eleven a side + a 10 % bigger pitch with x1.1
-  // areas move every measured count of this recording. ONLY the measured count is here
-  // (review-1b fix round 1): the structural zeros stay live in the `it` above, and in
-  // engine-invariants.test.ts since Task V15-4-1a. `game` is the describe-level recording,
-  // so un-skipping this replays nothing.
-  it.skip('(c, measured) how many times the keepers left their line outside the small area (G12-3 presses)', () => {
+  // ONLY the measured count is here (review-1b fix round 1): the structural zeros stay
+  // live in the `it` above, and in engine-invariants.test.ts since Task V15-4-1a.
+  it('(c, measured) how many times the keepers left their line outside the small area (G12-3 presses)', () => {
     // G12-3 (re-recorded, old value 0).
-    expect(game.stats.keeperLeftLineOutsideSmallArea).toBe(69);
+    // Re-measured ONCE in V15-4 (01-oct-2026, eleven a side + 2200 x 1430 pitch +
+    // attributes + goal frame + directional tackles + cards + injuries, probe-tuned
+    // SHOT_POST_MARGIN 4). Old value 69, measured for the 9v9 engine of the stage B. On the
+    // bare eleven-a-side engine of V15-4-1b (no attributes yet) this seed read 0; with the
+    // final engine it reads 17 again, every one of them with a G12-3 press reason
+    // (keeperLeftLineWithoutPressReason is 0 above). Change the engine and this moves;
+    // measure the new value and report it, never edit it away.
+    expect(game.stats.keeperLeftLineOutsideSmallArea).toBe(17);
   });
   it('(e) the same seed replays to the same score and the same final positions; a different seed does not', () => {
     const again = playCpuMatch(SEED, FORMATIONS, [0, 0]);
@@ -1115,9 +1126,11 @@ describe('CPU vs CPU: a recorded, deterministic full match that exercises the wh
   });
   it('(b, end to end) level 8 vs level 1 over twelve seeds, in BOTH orientations: the harder side scores at least as many goals in total', () => {
     // A trend probe, not a theorem. The brief sampled three seeds; measured, those three
-    // are the worst sample there is (3-4 for the easy side) while the twelve below read
-    // 32-9 for the hard one, and 35-9 with the levels swapped between the two teams. The
-    // sample was widened, never the assertion: a red here is still a QA signal (Task 11).
+    // were the worst sample there is (the easy side ahead) while the twelve below had the
+    // hard one well ahead, in both orientations. (The scores quoted when this was written
+    // came from the nine-a-side engine and no longer describe this one; they are not
+    // re-quoted here.) The sample was widened, never the assertion: a red here is still
+    // a QA signal (Task 11).
     // V15-4-2 (controller ruling, 30-sep): widened again, to both orientations. Since
     // eleven a side the one-orientation sum was already fragile when the sides were swapped
     // (measured at 1ecf01e, task-2-report.md), and from V15-4 the two sides are also two
@@ -1139,17 +1152,25 @@ describe('CPU vs CPU: a recorded, deterministic full match that exercises the wh
 
 describe('CPU vs CPU with every published formation (Task 7): the AI works with all three, not only the 4-4-2', () => {
   const PAIRS: readonly (readonly [number, number])[] = [[1, 1], [2, 2], [0, 2], [1, 0]];
-  // Per-pair counts for seed 31 (measured once on the nine-a-side engine, G12-3 probe):
-  // only OFENSIVA vs OFENSIVA and OFENSIVA vs NORMAL ever put a rival one-on-one inside
+  // Per-pair counts for seed 31. The unit is STEPS, not presses: the harness counts every
+  // step in which a keeper moves away from his line outside the small area.
+  // Re-measured ONCE in V15-4 (01-oct-2026, eleven a side +
+  // 2200 x 1430 pitch + attributes + goal frame + directional tackles + cards + injuries,
+  // probe-tuned SHOT_POST_MARGIN 4): 4-3-3 vs 4-3-3 = 10, 4-3-3 vs 4-4-2 = 188, and the
+  // two pairs with a 5-3-2 (5-3-2 vs 5-3-2, 4-4-2 vs 5-3-2) = 0 -- the keeper never had to
+  // press a rival one-on-one in those two matches, the same 0 they already had, so they
+  // keep falling through to the `?? 0` below. The PAIRS are formation INDICES, so they
+  // still name the same three line-ups after G15-16 replaced the shapes.
+  // (Old value, measured once on the nine-a-side engine, G12-3 probe: { '1-1': 19, '1-0': 36 }
+  // -- only OFENSIVA vs OFENSIVA and OFENSIVA vs NORMAL ever put a rival one-on-one inside
   // this match's big area; the other two pairs never did, so their count was still the
-  // pre-G12-3 value of 0. The PAIRS are formation INDICES, so they still name the same
-  // three line-ups after G15-16 replaced the shapes -- but every count moved, which is
-  // what the mark below is about.
-  const EXPECTED_OUTSIDE_SMALL_AREA: Record<string, number> = { '1-1': 19, '1-0': 36 };
+  // pre-G12-3 value of 0.) Change the engine and these move; measure the new values and
+  // report them, never edit them away.
+  const EXPECTED_OUTSIDE_SMALL_AREA: Record<string, number> = { '1-1': 10, '1-0': 188 };
   for (const pair of PAIRS) {
     // Every assertion here is structural or a floor, and stays live for Tasks 2-8: this is
     // the ONLY place the suite plays each formation pair (engine-invariants.test.ts runs its
-    // own seeds with one formation). The measured per-pair count lives in the `it.skip`
+    // own seeds with one formation). The measured per-pair count lives in its own `it`
     // after the loop (review-1b fix round 1).
     it(`${FORMATIONS[pair[0]].id} vs ${FORMATIONS[pair[1]].id}: ends, plays the whole game, replays identically`, () => {
       const g = playCpuMatch(31, FORMATIONS, pair);
@@ -1164,12 +1185,10 @@ describe('CPU vs CPU with every published formation (Task 7): the AI works with 
       expect(sameFinal(g.match, replay(31, FORMATIONS, g.recorded))).toBe(true);
     });
   }
-  // PENDING_REBASELINE (Task V15-4-9): eleven a side + a 10 % bigger pitch with x1.1
-  // areas move EXPECTED_OUTSIDE_SMALL_AREA for every pair. ONLY the measured counts are
-  // here (review-1b fix round 1): 'over', invalid 0, keeperOutsideBox 0 and the replay stay
-  // live per pair in the loop above. It replays the four matches itself, so it depends on
-  // no other test -- and costs nothing while it is skipped.
-  it.skip('the per-pair count of G12-3 presses outside the small area (seed 31)', () => {
+  // ONLY the measured counts are here (review-1b fix round 1): 'over', invalid 0,
+  // keeperOutsideBox 0 and the replay stay live per pair in the loop above. It replays the
+  // four matches itself, so it depends on no other test.
+  it('the per-pair count of G12-3 presses outside the small area (seed 31)', () => {
     for (const pair of PAIRS) {
       const g = playCpuMatch(31, FORMATIONS, pair);
       // G12-3 (re-recorded, old value 0 for every pair): the keeper now legitimately

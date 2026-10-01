@@ -1,9 +1,10 @@
 import type { PitchDef } from '../football-logic/pitch';
 import { VIEW_H, VIEW_W, type Camera } from './camera';
 
-// Spec: "minimapa con los dieciocho en una esquina". 200 x 130 keeps the 2000 x 1300
-// aspect exactly, so the projection is a single scale factor per axis and nothing is
-// distorted.
+// Spec: "minimapa con los dieciocho en una esquina" (eighteen then, twenty-two since
+// V15-4). 200 x 130 keeps the 2200 x 1430 aspect exactly (the ratio of the old
+// 2000 x 1300 pitch, scaled by 1.1 both ways), so the projection is a single scale
+// factor per axis and nothing is distorted.
 export const MINIMAP_W = 200;
 export const MINIMAP_H = 130;
 export const MINIMAP_PAD = 12;

@@ -1,6 +1,35 @@
-# HANDOFF — VAULT WORLD CUP · v1.5: V15-4 «Motor» DÍAS 1-2 HECHOS (día 1 commiteado `1ecf01e`, día 2 sin commit) · siguiente día 3 · actualizado 2026-09-30
+# HANDOFF — VAULT WORLD CUP · v1.5: V15-4 «Motor» CERRADO EN CÓDIGO (día 3 sin commit; QA jugado pendiente) · actualizado 2026-10-01
 
-Prompt para retomar: `/retomar tasks/vault-world-cup/HANDOFF-next-session.md` → PRIMERO corregir briefs de las Tasks 9 y 10 (ver §-19) → SDD día 3: Task 5 (lesiones) → 6 (tarjetas) → 7 (pantalla) → 8 (comentarios) → sonda → 9 (regrabado único) → 11 (cierre).
+Prompt para retomar: `/retomar tasks/vault-world-cup/HANDOFF-next-session.md` → QA jugado de V15-4 (`.superpowers/sdd/2026-09-24-vault-world-cup-v15-4/qa-paco.md`) → ajustes si los hay (los marcados AJUSTE obligan a regrabar) → plan V15-5 «Espectáculo».
+
+## -21. 01-oct: V15-4 «Motor» CERRADO EN CÓDIGO (día 3: Tasks 5-11 + revisión final)
+
+**Hecho hoy:** lesiones con ventana LESIONADO (reloj parado, cambio automático si no eliges, portero → segundo portero), tarjetas con
+expulsión real (amarilla 2.ª, roja 4.ª, tope 2, quien sale no vuelve), pantalla (rótulos con nombre, sonido de poste/larguero sin repetir,
+expulsados ocultos, **la alineación editada de V15-3 juega de verdad y en su formación**), comentarios al día, **sonda de 40 partidos ANTES
+del regrabado**, **regrabado único** y cierre.
+**Sonda final (margen al palo 4, decisión de Paco):** igualados 77,5-87,5 % (pedía ≥70), goleadas 0 % (pedía ≤5), dif. 8 gana 49-24 a
+dif. 1 (red agregada; la banda de 60 % por orientación se cayó porque la dificultad pesa poco frente a atributos → juzgar el Mundial jugando,
+fórmula de dificultad en v1.6 si se nota plano), postes 6 de 40 partidos, larguero solo con chut cargado, 0 rojas de la CPU en 960 partidos.
+**Regrabado único:** 69 → 17 y `{'1-1':19,'1-0':36}` → `{'1-1':10,'1-0':188}`; marcas 3 y 4 solo se quitó el skip; marca 5 **invertida** (Paco,
+opción a): la segunda grabación cubre «prórroga sin goles → penaltis»; el gol de oro lo cubren dos tests directos.
+**Revisión final:** arreglados el lanzador de penaltis invisible si estaba expulsado y la A pulsada al abrirse la ventana de lesión.
+**Estado:** 1519 passed | 0 skipped, 90 ficheros; tsc limpio; red `engine-invariants` idéntica desde el día 1.
+⚠️ **El índice de git está a medias:** usar `git add -A` antes de commitear (si no, sube una marca de regrabado ya resuelta).
+**Commit propuesto:** `feat(world-cup): v1.5 engine day 3 — injuries with LESIONADO window, cards with real sendings off, screen wiring, single rebaseline and 40-match probes (V15-4, G15-4/G15-13/G15-18/G15-26/G15-27/G15-28)`
+**QA:** `qa-paco.md` (10 bloques). Primero: commit con `git add -A`; penaltis tras una roja (¿se ve al lanzador?); dejarte lesionar con A
+pulsada; entrenamiento (¿quieres tarjetas y parones ahí? → interruptor sin regrabar); frecuencia de lesiones, postes, faltas a dif. 5 y
+pausa de 4 s; progresión del Mundial y rivales desparejos.
+**Siguiente paso tras el QA:** V15-5 «Espectáculo» (celebración abrazo, red ondula, entrada visible G15-25, pantalla previa sin nombres,
+nombres en eventos, celebración de victoria).
+
+## -20. 01-oct: V15-4 día 3 — Tasks 5 (lesiones), 6 (tarjetas), 7 (pantalla), 8 (comentarios) HECHAS; sonda (Task 10) BLOQUEADA
+
+Todas revisadas y aprobadas (rondas de arreglo en 5, 6 y 7 con lo que se detalla en el ledger). Suite antes de la sonda: 1502 | 5 skipped; marcas 5/7.
+**Sonda:** bandas G15-28 de igualdad y goleadas se CUMPLEN con margen; la de «el mejor gana ≥60 %» FALLA porque la dificultad de la CPU
+pesa poco frente a los atributos. `probes.test.ts` tiene 3 tests en rojo a propósito hasta que Paco decida. Ver el final del ledger.
+**Decisiones pendientes:** (1) banda 3 → (a) solo «8 gana más que 1» en agregado + juzgar el Mundial jugando, fórmula de dificultad en v1.6 si se nota plano; (2) margen al palo 8 → 4;
+(3) partir la sonda (31 s) en 3 ficheros paralelos.
 
 ## -19. 30-sep: V15-4 DÍA 2 (Tasks 2, 3, 4) EJECUTADO (sin commit)
 

@@ -79,7 +79,7 @@ describe('runPose', () => {
     expect(runPose(SPRINT_FRAME_STEPS, 0, 180, 0)).toBe(POSE_RUN_0);
   });
 
-  it('puts neighbours out of phase so the eighteen do not march in step', () => {
+  it('puts neighbours out of phase so the twenty-two do not march in step', () => {
     expect(runPose(0, 1, 180, 0)).toBe(POSE_RUN_0);
     expect(runPose(0, 2, 180, 0)).toBe(POSE_RUN_1);
   });

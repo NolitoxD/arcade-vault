@@ -45,6 +45,8 @@ describe('frameMode', () => {
     expect(frameMode('play', false, false)).toBe('full');
     expect(frameMode('shootout', false, false)).toBe('full');
     expect(frameMode('kickoff', false, false)).toBe('full');
+    // G15-18 (V15-4): the LESIONADO window keeps the pitch drawn under it.
+    expect(frameMode('injury', false, false)).toBe('full');
   });
 
   it('a paused frame runs nothing at all', () => {

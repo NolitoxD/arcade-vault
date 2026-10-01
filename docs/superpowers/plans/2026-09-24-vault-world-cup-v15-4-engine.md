@@ -1853,7 +1853,7 @@ grep -rn "_exhaustive" components/games/football-screen                    # hud
 **Files:**
 - Modify: `components/games/football-logic/discipline.ts`, `discipline.test.ts`
 - Modify: `components/games/football-logic/players.ts` (`fouls`, `card`, `sentOff`)
-- Modify: `components/games/football-logic/match.ts` (el registro de la falta, `lastCard`, `clearDiscipline` al empezar la tanda)
+- Modify: `components/games/football-logic/match.ts` (el registro de la falta y `lastCard`; las tarjetas no afectan a la tanda, no hay nada que limpiar al empezarla)
 - Modify: `components/games/football-logic/actions.ts` (`updateTeamControl`, `nextManualControl`, `pickPassTarget`, `freestMateDir`, `steal` ignoran a los expulsados)
 - Modify: `components/games/football-logic/ai.ts` (`positionTeam`, `chaseRank`, `mateCloserToBall` ignoran a los expulsados)
 - Modify: `components/games/football-logic/invariants.ts` (`checkTeamCount`, **con cuerpo**)

@@ -72,8 +72,11 @@ export function bounceOffFrame(ball: BallState, pitch: PitchDef, hit: FrameHit):
   if (hit === 'crossbar') {
     ball.vz = -Math.abs(ball.vz) * FRAME_BOUNCE;
   }
-  // Make sure it cannot be judged a goal on the very next step: park it one ball
-  // radius inside the line, on the side it came from.
+  // Make sure it cannot be judged a goal on the very next step: park it POST_RADIUS +
+  // BALL_RADIUS inside the line, on the side it came from. That is exactly goalSideNear's
+  // inclusive boundary, so the ball is still "near" the frame on the next step; what
+  // stops a second hit is the direction check in frameHitFor (it now travels away from
+  // the line), and the next move takes it out of reach.
   if (ball.vx * inward <= 0) ball.vx = Math.abs(ball.vx) * inward;
   ball.x = line + inward * (POST_RADIUS + BALL_RADIUS);
 }

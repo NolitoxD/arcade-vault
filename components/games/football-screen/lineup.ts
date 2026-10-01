@@ -8,7 +8,7 @@ import { TEAM_SIZE, type Formation, type Role } from '../football-logic/teams';
 //
 // SIZE INDEPENDENCE (Global Constraints of V15-3): the number of positions is
 // `f.slots.length + 1` and the number of reserves is `SQUAD_SIZE` minus that --
-// nine and nine today, eleven and seven the day V15-4 raises the team to eleven
+// nine and nine before V15-4, eleven and seven since it raised the team to eleven
 // (G15-16), with NO change to this file. `TEAM_SIZE` is read exactly once, inside
 // checkLineup, to notice when the screen and the engine disagree.
 
@@ -63,7 +63,7 @@ export function refreshReserves(f: Formation, out: Lineup): void {
 
 // The lowest unused squad index of the right role for each position, keeper first --
 // so the number 1 always starts in goal and the number 2 always sits on the bench.
-// Deterministic, so the same formation always opens on the same eleven (nine today).
+// Deterministic, so the same formation always opens on the same eleven.
 // Does NOT touch `names`: an edited name belongs to the player, not to the lineup.
 export function defaultLineup(f: Formation, out: Lineup): void {
   const positions = lineupPositionCount(f);
@@ -168,8 +168,8 @@ export function lineupStorageKey(teamId: string): string {
   return LINEUP_STORAGE_PREFIX + teamId;
 }
 
-// The formation id AND the starter count travel inside on purpose: when V15-4 raises
-// the team to eleven, a lineup stored today no longer matches and parseLineup falls
+// The formation id AND the starter count travel inside on purpose: when V15-4 raised
+// the team to eleven, a lineup stored before it no longer matched and parseLineup fell
 // back to the default -- instead of pushing nine indices into eleven positions.
 export function serializeLineup(f: Formation, l: Lineup): string {
   return JSON.stringify({ f: f.id, n: lineupPositionCount(f), s: l.starters, m: l.names });

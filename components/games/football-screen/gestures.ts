@@ -88,7 +88,7 @@ export function diveReach(progress: number): number {
   return t * DIVE_REACH_MAX;
 }
 
-// The one reader of the engine in this module: the same 18-slot sweep sfx-map.ts does
+// The one reader of the engine in this module: the same 22-slot sweep sfx-map.ts does
 // for the shot, because the shootout wipes any pointer. Returns how many gestures it
 // started (0 on almost every step). Reads the match; writes nothing in it.
 //

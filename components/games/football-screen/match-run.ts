@@ -1,9 +1,12 @@
 import { createAiState, decideTeamInput, humanProfile, profileFor, type AiProfile, type AiState } from '../football-logic/ai';
 import { createTeamInput, type TeamInput } from '../football-logic/input';
-import { createMatch, stepMatch, winnerOf, type MatchRules, type MatchState } from '../football-logic/match';
+import {
+  createMatch, stepMatch, winnerOf, type MatchRules, type MatchState, type StartingLineup,
+} from '../football-logic/match';
 import { PITCH } from '../football-logic/pitch';
 import { createRng, type Rng } from '../football-logic/rng';
 import { FORMATIONS, type TeamDef } from '../football-logic/teams';
+import { checkLineup, type Lineup } from './lineup';
 
 // ONE match and everything that drives it: the two rng streams, the two AI states and
 // the two TeamInputs, plus the mask of who is human. The component fills the human
@@ -31,11 +34,23 @@ export type MatchRun = {
   human: [boolean, boolean];
 };
 
+// V15-4-7: the gate between ALINEACIÓN and createPlayers. Only a lineup that passes
+// checkLineup for the formation the team starts in reaches the engine (keeperAttrsFor
+// throws unless the keeper is squad index 0 or 1, review-2); anything else -- no lineup,
+// or one that does not check -- is null, and the engine fields its default eleven.
+function startingLineupFor(l: Lineup | null, formation: number): StartingLineup | null {
+  if (l === null || checkLineup(FORMATIONS[formation], l).length !== 0) return null;
+  return { formation, starters: l.starters };
+}
+
 // Allocates: a match, two rngs, two AI states, two inputs. Called on an EVENT (A on
-// the bracket, A on the team selector), never per frame.
+// the bracket, A on the team selector), never per frame. `lineups` (V15-4-7): per team,
+// the human's Lineup from ALINEACIÓN, or null for a CPU side; omitted, both sides play
+// the engine's default (a CPU pair, every test written before V15-4-7).
 export function createMatchRun(
   home: TeamDef, away: TeamDef, seed: number, difficulty: number,
   human: readonly [boolean, boolean], rules: Readonly<MatchRules>, formations: readonly [number, number],
+  lineups?: readonly [Lineup | null, Lineup | null],
 ): MatchRun {
   // D3: the human profile is the CPU profile with zero kick error -- same keeper,
   // same penalty read, same difficulty.
@@ -43,7 +58,11 @@ export function createMatchRun(
     human[0] ? humanProfile(home, difficulty) : profileFor(home, difficulty),
     human[1] ? humanProfile(away, difficulty) : profileFor(away, difficulty),
   ];
-  const match = createMatch([home, away], FORMATIONS, PITCH, profiles, rules);
+  const match = lineups === undefined
+    ? createMatch([home, away], FORMATIONS, PITCH, profiles, rules)
+    : createMatch([home, away], FORMATIONS, PITCH, profiles, rules, [
+      startingLineupFor(lineups[0], formations[0]), startingLineupFor(lineups[1], formations[1]),
+    ]);
   match.formationIndex[0] = formations[0];
   match.formationIndex[1] = formations[1];
   const inputs: [TeamInput, TeamInput] = [createTeamInput(), createTeamInput()];

@@ -3,7 +3,7 @@ import { GOAL_PAUSE_STEPS, type MatchState } from '../football-logic/match';
 import type { FxKind } from '../football-logic/mode';
 import type { Rng } from '../football-logic/rng';
 import type { VaultWorldCupSfx } from '@/lib/sfx-vault-world-cup';
-import type { CaptionKind, MatchWatch, ShowingCaption } from './captions';
+import { frameHitThisStep, type CaptionKind, type MatchWatch, type ShowingCaption } from './captions';
 
 // The audio table of the spec, one row per caption. The goal is a CHAIN of three:
 // the net fires the moment the ball crosses the line (RefereeCall.kind === 'goal',
@@ -30,6 +30,11 @@ export function sfxForCaption(kind: CaptionKind): VaultWorldCupSfx | 'none' {
     case 'winner':
     case 'eliminated':
     case 'draw':
+      return 'none';
+    // G15-13 / G15-18: the foul that gives the card or the injury already whistled.
+    case 'card-yellow':
+    case 'card-red':
+    case 'injury':
       return 'none';
   }
 }
@@ -66,6 +71,19 @@ export function goalNetDue(match: MatchState, w: MatchWatch): boolean {
   return match.scratch.call.kind === 'goal' && w.call !== 'goal';
 }
 
+// G15-12: ball.frameHit is a per-step flank: stepMatch resets it at the top of EVERY
+// step, in every phase (V15-4-3 fix round 1, review-3 I2), and stepBall sets it only on
+// the step of the hit. So it is non-'none' for exactly one step per hit, and reading it
+// here rings once. Without that per-step reset it would be a level (stepBall does not run
+// in kickoff/set-piece/goal/half-time) -- the goal_net bug of 07-sep all over again.
+// Controller addition 1 (V15-4-7): it is still read against the watch, like goalNetDue
+// -- only on a step the watch has not seen yet (frameHitThisStep) -- and runStep calls
+// it after EVERY stepMatch of a frame, before updateWatch, so a hit on the second of
+// five steps is neither lost nor rung twice.
+export function crossbarDue(match: MatchState, w: MatchWatch): boolean {
+  return frameHitThisStep(match, w) !== 'none';
+}
+
 // whistle_end where the caption map cannot reach. The spec's audio table asks for it
 // at "endHalf de cada parte y phase === 'over'", but two of those transitions never
 // produce a 'half-time' caption and so would be silent:
@@ -91,8 +109,8 @@ export function goalCrowdDue(match: MatchState): boolean {
 }
 
 // The ball being struck. Stage B2 §8 warns that during the shootout the resolution
-// wipes the pointer, so the safe read is a scan of all eighteen slots for the single
-// 'shot' -- which is exactly what this does, and it costs 18 comparisons.
+// wipes the pointer, so the safe read is a scan of all twenty-two slots for the single
+// 'shot' -- which is exactly what this does, and it costs 22 comparisons.
 export function shotFiredThisStep(match: MatchState): boolean {
   const events = match.scratch.events;
   for (let i = 0; i < events.length; i++) {

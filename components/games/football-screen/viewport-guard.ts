@@ -8,7 +8,7 @@
 // tablet, the width at which the rest of the site stops being a phone layout -- and
 // 560 leaves the 500-unit canvas its row of page HUD underneath. The canvas is 800
 // wide and is drawn with `maxWidth: 100%`, so between 768 and 800 it scales down
-// instead of being cropped: nothing disappears, the eighteen players just get
+// instead of being cropped: nothing disappears, the twenty-two players just get
 // smaller. That is the trade R35 accepts to keep a 13" laptop in split screen
 // playable, which the old 900 x 600 refused.
 export const MIN_VIEWPORT_W = 768; // Tailwind's `md`

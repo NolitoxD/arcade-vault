@@ -8,8 +8,6 @@
 // NOT here, on purpose:
 //   · the two music tracks (theme-game-play / theme-pre-game-lobby) -- step 10, they
 //     go through app/context/MusicContext's setTrackOverride, not through this class;
-//   · the crossbar (vault-futbol-crossbar.mp3) -- reserved with NO consumer until v1.5:
-//     the engine has no posts as a collision, only the line between them;
 //   · the sliding tackle -- S-SC10: it has no file at all, and the v1 leaves it
 //     SILENT rather than inventing a synthesised one. Pending Paco.
 export type VaultWorldCupSfx =
@@ -22,7 +20,10 @@ export type VaultWorldCupSfx =
   | 'kick'
   | 'pass'
   | 'crowd'
-  | 'chants_victory';
+  | 'chants_victory'
+  // G15-12 (v1.5, V15-4): the post and the crossbar, one file for both (sfx-map.ts
+  // crossbarDue). Reserved since step 8, consumed since the engine has a frame.
+  | 'crossbar';
 
 // Every name is a plain ASCII kebab-case slug (renamed 2026-09-07, no accents or
 // commas left to encode), but they still go through encodeURI below: a cheap, always
@@ -38,6 +39,7 @@ const RAW_FILES: Readonly<Record<VaultWorldCupSfx, string>> = {
   pass: '/vault-futbol-pass.mp3',
   crowd: '/vault-futbol-crowd-ambience.mp3',
   chants_victory: '/vault-futbol-chants-victory.mp3',
+  crossbar: '/vault-futbol-crossbar.mp3',
 };
 
 function encodeAll(files: Readonly<Record<VaultWorldCupSfx, string>>): Record<VaultWorldCupSfx, string> {
@@ -64,6 +66,9 @@ export const SFX_VOLUME: Readonly<Record<VaultWorldCupSfx, number>> = {
   // The chants play under the victory screen for 20-30 s: below the whistles, above
   // the crowd bed. The confetti halves this again through play()'s gain (sfx-map.ts).
   chants_victory: 0.6,
+  // A rare event the player should hear (G15-12 "ni rarísimo ni constante"): with the
+  // goal net, not above it.
+  crossbar: 0.7,
 };
 
 export class VaultWorldCupSFX {

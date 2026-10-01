@@ -44,7 +44,7 @@ export function drawSeedFor(seed: number): number {
 }
 
 // G9-4: the rival of a friendly (CPU or training) is drawn, never chosen. Uniform over
-// the other fifteen, one draw, no allocation.
+// the other nineteen, one draw, no allocation.
 export function drawRival(bankIds: readonly string[], homeId: string, rng: Rng): string {
   if (!bankIds.includes(homeId)) throw new Error(`home team not in bank: ${homeId}`);
   let k = Math.floor(rng() * (bankIds.length - 1));

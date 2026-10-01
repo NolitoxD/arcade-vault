@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { NORMAL_RULES, resumePlay } from '../football-logic/match';
+import { GOAL_PAUSE_STEPS, NORMAL_RULES, resumePlay } from '../football-logic/match';
 import { TEAMS, TEAM_SIZE } from '../football-logic/teams';
 import { createMatchRun, stepMatchRun } from './match-run';
 import {
@@ -158,8 +158,9 @@ describe('beginGkCatchGestures', () => {
 describe('the length of the gesture', () => {
   it('is the ~0.6 s G11-2 asked for (35 steps at 60 steps/s) and ends well before the next restart', () => {
     expect(GK_DIVE_STEPS).toBe(35);
-    // GOAL_PAUSE_STEPS is 120 and a set-piece countdown is 300: the keeper is
-    // standing again long before it has to take the goal kick (G11-2).
-    expect(GK_DIVE_STEPS).toBeLessThan(120);
+    // The dive is shorter than GOAL_PAUSE_STEPS, and the set-piece countdown is longer
+    // still: the keeper is standing again long before it has to take the goal kick
+    // (G11-2).
+    expect(GK_DIVE_STEPS).toBeLessThan(GOAL_PAUSE_STEPS);
   });
 });

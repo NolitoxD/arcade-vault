@@ -504,9 +504,9 @@ amistoso a dos sea justo, y que el Mundial dé ganas de otro.
    `dtMs` entra en el motor.
 2. **El motor no distingue quién mueve cada equipo**: `stepMatch` recibe dos `TeamInput` y ningún
    módulo de `football-logic/` lee teclado, `Math.random` ni estado de módulo.
-3. **Toda formación suma ocho de campo y ninguna posición se sale del campo**; el banco no repite
+3. **Toda formación suma diez de campo (ocho en la v1; G15-16) y ninguna posición se sale del campo**; el banco no repite
    ids ni equipaciones. Invariantes con test negativo cada uno.
-4. **Nueve por equipo** (v1.5, G15-16: **once por equipo**, 10 de campo + portero, en amistoso y Mundial), y el portero nunca es el jugador controlado.
+4. **Once por equipo** (10 de campo + portero, en amistoso, Mundial y entrenamiento; la v1 jugaba nueve, G15-16, implementado en V15-4), y el portero nunca es el jugador controlado. Un portero expulsado o lesionado lo sustituye el segundo portero; si no queda ninguno, la roja es solo rótulo y la lesión se señala sin retirarlo, así que siempre hay exactamente un portero por equipo.
 5. **Se controla siempre el más cercano al balón**, con histéresis de 40 u para que no parpadee,
    y el cambio es automático y derivado del estado (no es entrada).
    *G15-5 (v1.5): salvo el cambio manual del humano con C al defender, que sale de su `TeamInput`
@@ -933,6 +933,18 @@ La v1 es el MVP; la v1.5 es el producto fino. Lo apuntado en el grill del 04-sep
   - **G15-20 · Mando físico**: Gamepad API; módulo común `lib/gamepad` que traduce a las mismas entradas que el teclado (reutilizable en el portal), aplicado ahora solo a VAULT WORLD CUP. Mapeo estándar: stick izq./cruceta = mover; abajo (A/✕) = chut; derecha (B/○) = pase; izquierda (X/□) = sprint/cambio; L1/R1 = estrategia; Start = pausa. Teclado sigue activo a la vez; a dos: mando 1 = J1, mando 2 = J2 (si solo hay uno, J2 teclado). Menús navegables con mando. Excepción anotada al criterio 20: `navigator.getGamepads()` crea el array por frame (inevitable). En V15-2 (1,5-2 días).
   - **G15-21 · Celebración de victoria**: reutiliza particles.ts existente (confeti amistoso / fuegos Mundial). Amistoso ganado: confeti empieza sobre el campo al pitido final, más denso y con colores del kit propio. Mundial ganado: fuegos + confeti a la vez, más densos, confeti dorado + kit, destello dorado en la copa. Solo pantalla, en V15-5.
   - **G15-22 · Calendario revisado**: V15-1 Aspecto HECHO (`90dc114`) → V15-2 Mandos (cambio L, teclados, Esc, localStorage, mando físico; 1,5-2 días) → V15-3 Contenido (20 selecciones, 5×4, minicampo, Mundial 16, plantilla 14 + pantalla ALINEACIÓN; 2 días) → V15-4 Motor (11v11, atributos, postes/larguero, tarjetas, lesiones, pausa gol 4 s; UN regrabado + sonda 40; 2-3 días) → V15-5 Espectáculo (celebración abrazo, red ondula, nombres/dorsales en eventos, pantalla previa, celebración de victoria). Objetivo de Paco: la semana que viene; calidad antes que calendario.
+    *V15-4 implementado (2026-10-01): once por equipo con 4-4-2 / 4-3-3 / 5-3-2 y campo 2200 × 1430 con las áreas, el punto de
+    penalti y el círculo central ×1,1 y la portería sin escalar (G15-16, resolución de Paco 24-sep); cinco atributos 1-5 por selección
+    y velocidad/chut por jugador derivados del rol (G15-10); tres niveles por portero, distintos entre el 1 y el 2 (G15-26); postes y
+    larguero con rebote, pérdida y SFX (G15-12); lesión tras falta al 8 %, una por equipo, con cambio por `TeamInput.sub`, reloj
+    parado y salida por tiempo (G15-18); tarjetas deterministas con expulsión real y tope de dos, con el portero expulsado
+    sustituido por el segundo portero y el equipo perdiendo un jugador de campo (G15-13); `TACKLE_BALL_REACH` 28 y falta solo por
+    detrás o de lado (G15-24); pausa de gol de 4 s (G15-4); la CPU apunta al palo con `SHOT_POST_MARGIN` 4 (G15-27); sondas de 40
+    partidos con las bandas de G15-28 (tabla final bajo ese bullet). La pantalla pinta la ventana LESIONADO, la línea con el nombre
+    bajo tarjeta y lesión, oculta a los expulsados y lesionados, y lleva la alineación editada al partido. UN solo regrabado, al
+    final, con los valores viejos conservados al lado de los nuevos. Quedan para V15-5 el abrazo, la red que ondula, los nombres y
+    dorsales en los eventos (G15-11), la pantalla previa (G15-19) y la celebración de victoria (G15-21); y para v1.6 la resistencia,
+    el banquillo táctico y, si el Mundial se nota plano jugando, la fórmula de dificultad.*
   - **G15-23 · Online**: el online (amistoso 1v1 y Mundial a dos por Supabase Realtime, lockstep de TeamInput) NO entra antes de producción: va como **V15-6 tras la subida**, durante la beta. Prod sale con multijugador local.
   - **QA jugado de V15-2 (Paco, 2026-09-23): «con mando perfecto».** Dos ajustes nuevos:
     - **G15-24 · Entradas y faltas** (V15-4, mismo regrabado): `TACKLE_BALL_REACH` 20 → 28 (por encima de `TACKLE_FOUL_RADIUS` 24)
@@ -950,19 +962,45 @@ La v1 es el MVP; la v1.5 es el producto fino. Lo apuntado en el grill del 04-sep
       (porteros primero), 360 nombres. Garantiza un recambio por línea en las tres formaciones y cubre la lesión del portero.
       *Implementado en V15-3 (2026-09-23) con los titulares derivados de la formación (`slots.length + 1`: hoy 9 = 8 de campo + portero; 11 cuando V15-4 aplique G15-16) y las reservas como `SQUAD_SIZE` menos eso (hoy 9, luego 7): la plantilla y los dorsales son fijos, el reparto titulares/reservas no. **La plantilla sube de 14 a 18 (2 porteros + 6 defensas + 6 medios + 4 delanteros, dorsales 1-18), decisión de Paco del 23-sep**: con 14 y once titulares, la 4-4-2 se quedaba sin reserva de medio y la 5-3-2 sin reserva de defensa, así que el «reserva DEF/MED/DEL» de este bullet no se cumplía, y el segundo portero es el que cubre G15-18. Botones de la pantalla: A confirma o elige, B vuelve o cancela, C edita el nombre. Quedan para V15-4 que la alineación elegida llegue al partido (`PlayerState` no tiene nombre ni dorsal) y los cambios por lesión (G15-18), y para V15-5 los nombres en los eventos y el dorsal sobre el controlado (G15-11) y la pantalla previa con los dos equipos sin nombres (G15-19).*
     - **G15-16 matizada (Paco, 24-sep):** el campo crece **+10 % y nada más por ahora**. Si con 22 jugadores se ve apretado en el QA,
-      se sube DENTRO del mismo paso V15-4 y ANTES del regrabado único (el tamaño del campo mueve todas las grabaciones).    - **G15-16/G15-13/G15-18 matizadas (Paco, 24-sep):** entrenamiento conserva solo sus REGLAS y adopta el tamaño vigente (no hay tamaño
-      por partido); **portero expulsado** → un jugador de campo se pone los guantes, sin cambio (se mantiene «siempre un portero»);
-      **portero lesionado** → entra el segundo portero si queda, y si no, un jugador de campo. Campo 2200 × 1430 (+10 % de lado = misma
-      densidad por jugador que en 9 v 9; +15 % daría MÁS espacio que hoy).      Escalan campo, áreas, círculo central y **punto de penalti** (210 → 231); la **portería NO** escala. Portero expulsado o lesionado
+      se sube DENTRO del mismo paso V15-4 y ANTES del regrabado único (el tamaño del campo mueve todas las grabaciones).
+    - **G15-16/G15-13/G15-18 matizadas (Paco, 24-sep):** entrenamiento conserva solo sus REGLAS y adopta el tamaño vigente (no hay tamaño
+      por partido); **portero expulsado** → entra el segundo portero; sin él, la roja es solo rótulo;
+      **portero lesionado** → entra el segundo portero; sin él, el lesionado sigue jugando. Campo 2200 × 1430 (+10 % de lado = misma
+      densidad por jugador que en 9 v 9; +15 % daría MÁS espacio que hoy). Escalan campo, áreas, círculo central y **punto de penalti** (210 → 231); la **portería NO** escala. Portero expulsado o lesionado
       → entra el segundo portero (el equipo pierde un jugador de campo); sin portero disponible, la roja es solo rótulo. La ventana
       LESIONADO para el reloj y elige sola al suplente de la posición si el humano no decide. `ai.ts` (CPU entra de frente) no se toca.
     - **G15-27 · La CPU apunta más ajustado al palo (Paco, 2026-09-30)** (V15-4, mismo regrabado): `SHOT_POST_MARGIN` 20 → 8. Con 20
       (mayor que el radio del poste, 11) la CPU nunca rozaba el marco: 1 poste y 0 larguero en 40 partidos. Los postes NO se engordan.
-      Ajuste fino con la sonda de 40 partidos de V15-4, siempre antes del regrabado.    - **Tras la sonda de V15-4 (Paco, 2026-09-30):** se aceptan −20 % de goles por la nueva regla de faltas (se juzga jugando);
+      Ajuste fino con la sonda de 40 partidos de V15-4, siempre antes del regrabado.
+    - **Tras la sonda de V15-4 (Paco, 2026-09-30):** se aceptan −20 % de goles por la nueva regla de faltas (se juzga jugando);
       tarjetas y lesiones se implementan tal cual y se ajustan con la sonda antes del regrabado; el **larguero es cosa del chut cargado**
       del jugador (la CPU chuta raso), así que la sonda exige postes y no largueros.
     - **G15-28 · Partidos igualados y emocionantes (Paco, 2026-09-30):** la mayoría de partidos deben estar vivos hasta el final, pero
       sin ayudas escondidas al que va perdiendo (nada de rubber-banding). Bandas que valida la sonda de 40 partidos ANTES del regrabado:
       **≥70 %** de partidos empatados o por un gol; **goleadas (≥4 de diferencia) ≤5 %**; y la mayor dificultad sigue ganando claramente
       más. Si la sonda sale fuera, se ajusta con atributos, faltas o puntería de la CPU, nunca con una ayuda al que pierde.
+    - **G15-28 matizada y G15-27 ajustada tras la sonda (Paco, 2026-10-01):** las bandas de igualdad (≥70 % por ≤1 gol) y goleadas
+      (≤5 %) se cumplen con margen; la de «el mejor gana ≥60 %» NO, porque la dificultad de la CPU pesa poco frente a los atributos.
+      Queda como red solo «dificultad 8 gana más que dificultad 1» en agregado; la progresión del Mundial se juzga jugando y, si se
+      nota plana, la fórmula de dificultad se rehace en v1.6. `SHOT_POST_MARGIN` 8 → **4** (≈6 partidos con poste de cada 40).
+      **Sonda de V15-4, valores finales con margen 4** (CPU contra CPU, partidos completos con prórroga y tanda; 40 partidos por
+      fila; dificultad 5 = amistoso, escalera del Mundial = 3/4/6/8 según la ronda; ESPAÑA–ITALIA en las dos orientaciones or.1 / or.2
+      (definidas en `probe-harness.ts` y los `probes*.test.ts`); semillas 200-239 marco, 300-339 entradas, 400-439 y 500-539 igualdad,
+      600-639 tendencia; el código vive en `components/games/football-logic/probes*.test.ts`):
+
+      | Banda (qué asevera la sonda) | Dificultades | Valor final medido | Umbral |
+      |---|---|---|---|
+      | Marco (G15-12): partidos con poste | 5 v 5 | 6 de 40 (7 postes, 0 largueros; antes de bajar el margen: 1 de 40) | > 0 y < 40 |
+      | Igualados (G15-28): empatados o por ≤1 gol | 5 v 5 amistoso | 82,5 % (or.1) / 77,5 % (or.2) | ≥ 70 % |
+      | Igualados | escalera 3/4/6/8 | 82,5 % / 87,5 % | ≥ 70 % |
+      | Goleadas (≥4 de diferencia) | amistoso y escalera | 0 % en las cuatro filas | ≤ 5 % |
+      | Tendencia (G15-28, red contra la inversión): partidos decididos ganados | 8 contra 1, ambas orientaciones agregadas | 49 contra 24 (67,1 % de 73 decididos; or.1 23-15, or.2 26-9) | gana la 8 |
+      | Entradas limpias (G15-24), solo informado | 5 v 5 | 71,2 % (a dificultad 8: 53,1 %) | ≈ 50 % de referencia |
+      | Faltas por partido, solo informado | 5 v 5 / escalera / 8 v 8 | 1,9-2,6 / 3,0-3,4 / 5,9 | — |
+      | Rojas y expulsados, solo informado | los 720 partidos | 0 (las rojas solo las provoca un humano faltoso) | tope 2 por equipo |
+      | Lesiones, solo informado | los 720 partidos | máximo 1 por equipo; cambio siempre hecho | tope 1 por equipo |
+      | Estructura | los 720 partidos | todos acaban; exactamente un portero activo en cada paso | invariante |
+
+      Fuera de las bandas: a dificultad 5 contra 1 la mayor gana solo el 52,6 % / 70,0 % de los decididos (la dificultad de la CPU
+      pesa poco frente a los atributos; se juzga jugando).
 

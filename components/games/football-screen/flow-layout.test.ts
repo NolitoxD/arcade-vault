@@ -126,8 +126,9 @@ describe('the other screens', () => {
     expect(LINEUP_HINT_Y).toBeLessThan(VIEW_H);
     expect(lineupReserveY(0)).toBe(LINEUP_RESERVE_TOP);
     expect(lineupReserveY(1)).toBe(LINEUP_RESERVE_TOP + LINEUP_RESERVE_H);
-    // A squad of eighteen: NINE reserves today (9 on the pitch) and seven once V15-4
-    // plays eleven. The worst case is the ninth row; both must clear the status line.
+    // A squad of eighteen with eleven on the pitch: SEVEN reserves, so the worst real
+    // case is the seventh row. The ninth row (the nine reserves of the nine-a-side) is
+    // checked too, as a margin for a bigger squad; both must clear the status line.
     expect(lineupReserveY(8) + LINEUP_RESERVE_H).toBeLessThan(LINEUP_STATUS_Y);
     expect(lineupReserveY(6) + LINEUP_RESERVE_H).toBeLessThan(LINEUP_STATUS_Y);
     expect(LINEUP_RESERVE_X).toBeLessThan(VIEW_W - 60);

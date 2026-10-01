@@ -258,7 +258,8 @@ export function checkSquadCoversFormations(formations: readonly Formation[]): st
 
 // G15-26 (Paco, 23-sep): three 1-5 levels per KEEPER. reflexes feeds keeperCatch's
 // chance, rushing feeds how fast keeperStep comes out (on top of G12-3), kicking feeds
-// the strength and the accuracy of the keeper's long release. The two keepers of a
+// the strength of the keeper's long release and the accuracy of every throw he makes
+// (the long release and the B hand throw alike). The two keepers of a
 // squad are never identical: that is what makes the substitute noticeable when he
 // comes on for an injury (G15-18). The number 1 is better than the number 2 in at
 // least one level in every selection.

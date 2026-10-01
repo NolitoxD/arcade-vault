@@ -25,7 +25,7 @@ export type ControlHints = {
   readonly bracketPlay: string;
   readonly spectate: string;
   readonly victory: string;
-  readonly lineupBrowse: string;   // ALINEACIÓN: moving over the eleven (nine today)
+  readonly lineupBrowse: string;   // ALINEACIÓN: moving over the eleven
   readonly lineupSwap: string;     // ALINEACIÓN: picking the reserve who comes on
   readonly lineupEdit: string;     // ALINEACIÓN: typing a name
 };
@@ -84,4 +84,20 @@ export function keeperHintFor(table: KeyTable): string {
   if (table === CLASSIC_SOLO) return KEEPER_HINT_CLASSIC;
   if (table === TWO_PLAYER_P1) return KEEPER_HINT_P1;
   return KEEPER_HINT_ARROWS;
+}
+
+// G15-18 (V15-4-7): the LESIONADO window, the one moment of a match where A is a
+// CONFIRM. Per table, like the keeper's hint: the d-pad walks the reserves, A sends the
+// chosen one on (TeamInput.sub). The countdown is drawn apart, as a number.
+function injuryHint(table: KeyTable): string {
+  return `CRUCETA: ELIGE RESERVA · A (${keyLabel(table, 'a')}) CONFIRMA`;
+}
+const INJURY_HINT_ARROWS = injuryHint(ARROWS_SOLO);   // also J2's: the same J
+const INJURY_HINT_CLASSIC = injuryHint(CLASSIC_SOLO);
+const INJURY_HINT_P1 = injuryHint(TWO_PLAYER_P1);
+
+export function injuryHintFor(table: KeyTable): string {
+  if (table === CLASSIC_SOLO) return INJURY_HINT_CLASSIC;
+  if (table === TWO_PLAYER_P1) return INJURY_HINT_P1;
+  return INJURY_HINT_ARROWS;
 }

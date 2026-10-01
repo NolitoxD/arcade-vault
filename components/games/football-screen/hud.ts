@@ -5,7 +5,9 @@ import { SHOT_CHARGE_STEPS } from '../football-logic/actions';
 import type { MatchState } from '../football-logic/match';
 import { SHOOTOUT_ROUNDS, type ShootoutState } from '../football-logic/set-pieces';
 import { SPRINT_COOLDOWN_STEPS, SPRINT_STEPS, type PlayerState } from '../football-logic/players';
-import { TEAM_SIZE } from '../football-logic/teams';
+import { TEAM_SIZE, type Role } from '../football-logic/teams';
+import { hasLeftPitch } from '../football-logic/discipline';
+import { squadRole } from '../football-logic/squads';
 
 // Precomputed string tables (the TIMER_TEXT pattern of KongGame/VaultFighterGame):
 // draw() must never build a string. HALF_SECONDS (90) is the longest clock the HUD
@@ -89,9 +91,69 @@ export function cursorPlayerId(match: MatchState, team: 0 | 1): number {
 // Gate 4 of the stage B report: during a set-piece countdown stepSetPiece reads only
 // input.dx/dy -- A and B are swallowed. The HUD says so, or the player hammers the
 // buttons believing they are broken.
+// H5 (V15-4): an exhaustive switch, not a chain of comparisons, so a new MatchPhase
+// fails to compile here instead of being painted as open play.
+// V15-4-7 (controller addition 3): WHICH line the bottom of the screen shows. 'aim' is
+// the "only the d-pad works" hint; 'injury' is the LESIONADO window, where the match is
+// stopped too but A CONFIRMS the reserve -- so the aim hint must not be painted over it
+// (the window draws its own, control-hints.ts injuryHintFor).
+export type IdleHint = 'none' | 'aim' | 'injury';
+
+export function idleHint(match: MatchState): IdleHint {
+  switch (match.phase) {
+    case 'kickoff':
+    case 'set-piece':
+    case 'shootout':
+    case 'goal':
+    case 'half-time':
+      return 'aim';
+    case 'injury':
+      return 'injury';
+    case 'play':
+    case 'golden-goal':
+    case 'over':
+      return 'none';
+    default: {
+      const _exhaustive: never = match.phase;
+      return _exhaustive;
+    }
+  }
+}
+
+// The match is stopped and does not read A or B as football (it reads the d-pad of a
+// set piece, or the TeamInput.sub of the LESIONADO window).
 export function buttonsIdle(match: MatchState): boolean {
-  const p = match.phase;
-  return p === 'kickoff' || p === 'set-piece' || p === 'shootout' || p === 'goal' || p === 'half-time';
+  return idleHint(match) !== 'none';
+}
+
+// ── G15-18: the LESIONADO window (V15-4-7) ──────────────────────────────────────
+
+export const INJURY_TITLE = 'LESIONADO';
+
+// The team whose window the screen shows: a HUMAN team with an injured player waiting,
+// in the phase 'injury'. Controller addition 2: decided by the phase and pendingInjury,
+// never by injuryStepsLeft, which keeps its last value after the window closes. A CPU
+// team picks inside its TeamInput (ai.ts) and gets no window. Team 0 first; the engine
+// opens one window at a time (no foul can be given while the phase is 'injury').
+export function injuryWindowTeam(match: MatchState, human: readonly [boolean, boolean]): 0 | 1 | -1 {
+  if (match.phase !== 'injury') return -1;
+  if (human[0] && match.pendingInjury[0] >= 0) return 0;
+  if (human[1] && match.pendingInjury[1] >= 0) return 1;
+  return -1;
+}
+
+// The picker offers only what match.ts's substitute accepts (hud.test.ts checks the two
+// agree for every squad index): a keeper for a keeper and an outfield player of ANY
+// position for an outfield player (G15-18), nobody on the pitch and nobody who has left
+// it. Runs on the event (refreshInjuryView), over the Lineup.reserves of the screen.
+export function reserveCanComeOn(match: MatchState, team: 0 | 1, outRole: Role, squadIndex: number): boolean {
+  if ((outRole === 'gk') !== (squadRole(squadIndex) === 'gk')) return false;
+  if (hasLeftPitch(match, team, squadIndex)) return false;
+  for (let i = 0; i < match.players.length; i++) {
+    const p = match.players[i];
+    if (p.team === team && p.squadIndex === squadIndex) return false;
+  }
+  return true;
 }
 
 export function shootoutKicksTaken(sh: ShootoutState, team: 0 | 1): number {

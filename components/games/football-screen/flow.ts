@@ -220,7 +220,7 @@ export function flowConfirmTeam(f: FlowState, bankSize: number): 'next' | 'lineu
 
 // The ONE place a mode is built (Vault Fighter's confirmSelection). G9-4: the CPU
 // friendly and the training draw their rival; the two-player friendly takes J2's
-// pick; the World Cup draws seven of the fifteen. G9-7: everything comes off `seed`.
+// pick; the World Cup draws fifteen of the other nineteen. G9-7: everything comes off `seed`.
 export function flowBuildMode(f: FlowState, bankIds: readonly string[], seed: number): GameMode {
   const kind = flowModeKind(f);
   const homeId = bankIds[f.picked[0]];

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  CONTROL_HINTS, TWO_PLAYER_SCHEME_NOTE, keeperHintFor, keyLabel, type ControlHints,
+  CONTROL_HINTS, TWO_PLAYER_SCHEME_NOTE, injuryHintFor, keeperHintFor, keyLabel, type ControlHints,
 } from './control-hints';
 import { ARROWS_SOLO, CLASSIC_SOLO, KEY_SCHEMES, TWO_PLAYER_P1, TWO_PLAYER_P2, type KeyTable } from './keyboard';
 
@@ -36,6 +36,15 @@ describe('control hints per key scheme (G15-6)', () => {
     expect(keeperHintFor(TWO_PLAYER_P2)).toBe('SAQUE: K CORTO · J LARGO · ');
     expect(keeperHintFor(TWO_PLAYER_P1)).toBe('SAQUE: V CORTO · C LARGO · ');
     expect(keeperHintFor(CLASSIC_SOLO)).toBe('SAQUE: X CORTO · Z LARGO · ');
+  });
+
+  // V15-4-7: the LESIONADO window is the one in-match screen where A is a CONFIRM, so its
+  // hint names the A key of the table that team plays with -- never "the buttons do nothing".
+  it('injuryHintFor: the d-pad picks the reserve and the table\'s own A confirms', () => {
+    expect(injuryHintFor(ARROWS_SOLO)).toBe('CRUCETA: ELIGE RESERVA · A (J) CONFIRMA');
+    expect(injuryHintFor(TWO_PLAYER_P2)).toBe('CRUCETA: ELIGE RESERVA · A (J) CONFIRMA');
+    expect(injuryHintFor(TWO_PLAYER_P1)).toBe('CRUCETA: ELIGE RESERVA · A (C) CONFIRMA');
+    expect(injuryHintFor(CLASSIC_SOLO)).toBe('CRUCETA: ELIGE RESERVA · A (Z) CONFIRMA');
   });
 
   it('keyLabel names the key a table reads for a pad key, upper-cased, and throws when there is none', () => {

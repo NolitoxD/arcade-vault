@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { checkTeamInput, copyTeamInput, createTeamInput, isDown, toAxis } from './input';
+import { SQUAD_SIZE } from './squads';
 
 describe('TeamInput', () => {
   it('createTeamInput is the neutral input', () => {
-    expect(createTeamInput()).toEqual({ dx: 0, dy: 0, a: 'up', b: 'up', c: 'up', formation: 0, strategy: 'neutral' });
+    expect(createTeamInput()).toEqual({ dx: 0, dy: 0, a: 'up', b: 'up', c: 'up', formation: 0, strategy: 'neutral', sub: -1 });
   });
   it('isDown is true for pressed and held only', () => {
     expect(isDown('pressed')).toBe(true);
@@ -13,17 +14,17 @@ describe('TeamInput', () => {
   });
   it('copyTeamInput copies every field without aliasing', () => {
     const from = createTeamInput();
-    from.dx = -1; from.dy = 1; from.a = 'held'; from.b = 'released'; from.c = 'pressed'; from.formation = 2; from.strategy = 'attack';
+    from.dx = -1; from.dy = 1; from.a = 'held'; from.b = 'released'; from.c = 'pressed'; from.formation = 2; from.strategy = 'attack'; from.sub = 13;
     const to = createTeamInput();
     copyTeamInput(from, to);
     expect(to).toEqual(from);
     expect(to).not.toBe(from);
   });
   it('checkTeamInput accepts the neutral input and a full one', () => {
-    expect(checkTeamInput(createTeamInput(), 3)).toEqual([]);
+    expect(checkTeamInput(createTeamInput(), 3, SQUAD_SIZE)).toEqual([]);
     const full = createTeamInput();
-    full.dx = 1; full.dy = -1; full.a = 'pressed'; full.formation = 2; full.strategy = 'defend';
-    expect(checkTeamInput(full, 3)).toEqual([]);
+    full.dx = 1; full.dy = -1; full.a = 'pressed'; full.formation = 2; full.strategy = 'defend'; full.sub = SQUAD_SIZE - 1;
+    expect(checkTeamInput(full, 3, SQUAD_SIZE)).toEqual([]);
   });
   it('checkTeamInput rejects each invalid field', () => {
     const bad = createTeamInput();
@@ -41,6 +42,20 @@ describe('TeamInput', () => {
     const badStrategy = createTeamInput();
     badStrategy.strategy = 'yolo' as never;
     expect(checkTeamInput(badStrategy, 3).join(' ')).toContain('bad strategy');
+  });
+  it('checkTeamInput rejects a sub that is not -1 or a squad index (G15-18)', () => {
+    for (const sub of [SQUAD_SIZE, -2, 1.5, Number.NaN]) {
+      const bad = createTeamInput();
+      bad.sub = sub;
+      expect(checkTeamInput(bad, 3, SQUAD_SIZE).join(' '), `sub ${sub}`).toContain(`sub ${sub} out of range`);
+    }
+    // Without the squad size only the top bound is unknown; the rest is still checked.
+    const top = createTeamInput();
+    top.sub = SQUAD_SIZE;
+    expect(checkTeamInput(top, 3)).toEqual([]);
+    const negative = createTeamInput();
+    negative.sub = -2;
+    expect(checkTeamInput(negative, 3).join(' ')).toContain('sub -2 out of range');
   });
 });
 

@@ -1,8 +1,9 @@
 import { isKitColor, kitsClash } from './kits';
 import { isInsideBigArea, type PitchDef } from './pitch';
-import { BANK_SIZE, FORMATION_COUNT, OUTFIELD, STRATEGY_SHIFT, slotCounts, type Formation, type Role, type TeamDef } from './teams';
+import { BANK_SIZE, FORMATION_COUNT, OUTFIELD, STRATEGY_SHIFT, TEAM_SIZE, slotCounts, type Formation, type Role, type TeamDef } from './teams';
 import type { PlayerState } from './players';
 import type { AttackDirs } from './step';
+import { INJURY_MAX_PER_TEAM, SENT_OFF_MAX, isActive } from './discipline';
 
 const KEBAB_ID = /^[a-z][a-z0-9-]*$/;
 
@@ -111,6 +112,51 @@ export function checkGoalkeepersInBox(players: readonly PlayerState[], attackDir
     if (p.role !== 'gk') continue;
     const side = attackDir[p.team] === 1 ? 0 : 1;
     if (!isInsideBigArea(pitch, side, p.x, p.y)) problems.push(`goalkeeper ${p.id} outside big area`);
+  }
+  return problems;
+}
+
+// G15-13 + G15-18: a team never has fewer than TEAM_SIZE - SENT_OFF_MAX -
+// INJURY_MAX_PER_TEAM players on the pitch, always has EXACTLY ONE active goalkeeper
+// (Paco 24-sep, resolutions 6 and 7), never has more than SENT_OFF_MAX sent off, and
+// the controlled player is never one who has left. Returns the offenders by name, like
+// every other net in this file. It walks EVERY player of the team on purpose (one of the
+// documented exceptions in discipline.ts): it counts the ones who left.
+// Fix round 1 (review-6 I1): `pendingInjury` is MatchState.pendingInjury. While a
+// keeper's own LESIONADO window is open (G15-18, resolution 7) he is injured, hence not
+// isActive, and his replacement has not come on yet -- a legitimate state with play
+// stopped, so he still counts as the team's keeper. An injured keeper with NO window
+// open is not legitimate (that is what addition 3 closes) and is still flagged.
+export function checkTeamCount(
+  players: readonly PlayerState[], controlled: readonly [number, number], pendingInjury: readonly [number, number],
+): string[] {
+  const problems: string[] = [];
+  for (const team of [0, 1] as const) {
+    let active = 0;
+    let keepers = 0;
+    let off = 0;
+    for (let i = 0; i < players.length; i++) {
+      const p = players[i];
+      if (p.team !== team) continue;
+      if (p.sentOff) off++;
+      if (!isActive(p)) {
+        if (p.role === 'gk' && !p.sentOff && p.id === pendingInjury[team]) keepers++;
+        continue;
+      }
+      active++;
+      if (p.role === 'gk') keepers++;
+    }
+    if (keepers !== 1) problems.push(`team ${team}: ${keepers} active goalkeepers, expected exactly 1`);
+    if (off > SENT_OFF_MAX) problems.push(`team ${team}: ${off} sent off, over SENT_OFF_MAX ${SENT_OFF_MAX}`);
+    const floor = TEAM_SIZE - SENT_OFF_MAX - INJURY_MAX_PER_TEAM;
+    if (active < floor) problems.push(`team ${team}: ${active} on the pitch, under the floor of ${floor}`);
+    const c = controlled[team];
+    if (c >= 0) {
+      const p = players[c];
+      if (p.team !== team || p.role === 'gk' || !isActive(p)) {
+        problems.push(`team ${team}: controlled ${c} is not an active outfield player of this team`);
+      }
+    }
   }
   return problems;
 }

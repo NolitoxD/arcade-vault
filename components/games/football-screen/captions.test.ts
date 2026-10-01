@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createMatch, type MatchState } from '../football-logic/match';
+import { TEAM_SIZE } from '../football-logic/teams';
 import { PITCH } from '../football-logic/pitch';
 import { FORMATIONS, TEAMS } from '../football-logic/teams';
 import { humanProfile, profileFor } from '../football-logic/ai';
@@ -31,6 +32,16 @@ describe('CAPTION_TEXT', () => {
     expect(CAPTION_TEXT.shootout).toBe('PENALTIS');
     expect(CAPTION_TEXT.eliminated).toBe('ELIMINADO');
     expect(CAPTION_TEXT.draw).toBe('EMPATE');
+  });
+
+  // G15-13 + G15-18 (V15-4-7): the card and injury captions.
+  it('carries the card and injury captions, the cards as short as a FALTA (G15-13: no extra pause)', () => {
+    expect(CAPTION_TEXT['card-yellow']).toBe('TARJETA AMARILLA');
+    expect(CAPTION_TEXT['card-red']).toBe('TARJETA ROJA');
+    expect(CAPTION_TEXT.injury).toBe('LESIÓN');
+    expect(CAPTION_STEPS['card-yellow']).toBe(CAPTION_STEPS.foul);
+    expect(CAPTION_STEPS['card-red']).toBe(CAPTION_STEPS.foul);
+    expect(CAPTION_STEPS.injury).toBe(CAPTION_STEPS.foul);
   });
 
   it('every caption has a positive duration', () => {
@@ -511,5 +522,87 @@ describe('collectCaptions at the end of the match, by HumanSide', () => {
     const cs = createCaptionState();
     collectCaptions(leading.m, leading.w, 0, cs, false, false);
     expect(queued(cs)).toEqual(['full-time', 'winner']);
+  });
+});
+
+// G15-13 + G15-18 (V15-4-7). match.lastCard and match.lastInjury are engine flanks that
+// last ONE step. The card is read against the watch (a step the watch has not seen yet),
+// the injury from the monotonic injuriesUsed counter -- so a second look at the same step
+// (the viewport guard) never repeats them, and a step the screen only looks at after the
+// flank was cleared never loses an injury.
+describe('collectCaptions: cards and injuries', () => {
+  function started(m: MatchState) {
+    const w = createMatchWatch();
+    const cs = createCaptionState();
+    collectCaptions(m, w, 0, cs);
+    updateWatch(m, w);
+    resetCaptionState(cs);
+    return { w, cs };
+  }
+
+  it('queues TARJETA AMARILLA after the FALTA of the same step, and TARJETA ROJA for a red', () => {
+    const m = newMatch();
+    const { w, cs } = started(m);
+    m.stepCount++;
+    m.scratch.call.kind = 'free-kick';
+    m.lastCard.playerId = TEAM_SIZE + 4;
+    m.lastCard.squadIndex = 6;
+    m.lastCard.card = 'yellow';
+    collectCaptions(m, w, 0, cs);
+    expect(cs.kind).toBe('foul');
+    expect(cs.queue.slice(0, cs.queueLen)).toEqual(['card-yellow']);
+    updateWatch(m, w);
+    m.stepCount++;
+    m.lastCard.card = 'red';
+    collectCaptions(m, w, 0, cs);
+    expect(cs.queue.slice(0, cs.queueLen)).toEqual(['card-yellow', 'card-red']);
+  });
+
+  it('does NOT queue the card again when the screen looks twice at the same step (the viewport guard)', () => {
+    const m = newMatch();
+    const { w, cs } = started(m);
+    m.stepCount++;
+    m.lastCard.card = 'yellow';
+    collectCaptions(m, w, 0, cs);
+    expect(cs.kind).toBe('card-yellow');
+    // handleResize: updateWatch, abandon, collectCaptions -- with no stepMatch in between,
+    // so the flank is still standing.
+    updateWatch(m, w);
+    resetCaptionState(cs);
+    collectCaptions(m, w, 0, cs);
+    expect(cs.kind).toBe('none');
+  });
+
+  it('LESIÓN comes from the injuriesUsed counter, not from the one-step lastInjury flank', () => {
+    const m = newMatch();
+    const { w, cs } = started(m);
+    // A window for team 1: lastInjury is -1 (it is only set for a keeper with no
+    // replacement), so a reader of the flank would see nothing at all.
+    m.stepCount++;
+    m.injuriesUsed[1] = 1;
+    m.pendingInjury[1] = TEAM_SIZE + 6;
+    m.phase = 'injury';
+    expect(m.lastInjury).toBe(-1);
+    collectCaptions(m, w, 0, cs);
+    expect(cs.kind).toBe('injury');
+    updateWatch(m, w);
+    resetCaptionState(cs);
+    m.stepCount++;
+    collectCaptions(m, w, 0, cs);
+    expect(cs.kind).toBe('none');
+  });
+
+  it('a keeper flagged with no replacement (no window) gets LESIÓN once too', () => {
+    const m = newMatch();
+    const { w, cs } = started(m);
+    m.stepCount++;
+    m.injuriesUsed[0] = 1;
+    m.lastInjury = 0;
+    collectCaptions(m, w, 0, cs);
+    expect(cs.kind).toBe('injury');
+    updateWatch(m, w);
+    resetCaptionState(cs);
+    collectCaptions(m, w, 0, cs);
+    expect(cs.kind).toBe('none');
   });
 });

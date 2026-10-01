@@ -1,11 +1,16 @@
 import type { Vec2 } from './geometry';
 import { centerX, centerY, type PitchDef } from './pitch';
-import { TEAM_SIZE, type Formation, type Strategy, type TeamDef } from './teams';
+import { OUTFIELD, TEAM_SIZE, type Formation, type Strategy, type TeamDef } from './teams';
 import { copyTeamInput, createTeamInput, isDown, type TeamInput } from './input';
 import type { Rng } from './rng';
 import { HALF_SECONDS, HALF_SECONDS_MAX, HALF_STEPS, EXTRA_TIME_SECONDS, EXTRA_TIME_STEPS } from './clock';
 import { STEP_MS, stepPhysics, stepsFor } from './step';
-import { createPlayers, placeByFormation, type PlayerState } from './players';
+import { createPlayers, defaultSquadIndexFor, placeByFormation, type PlayerState } from './players';
+import { SQUAD_SIZE, squadRole } from './squads';
+import {
+  INJURY_CHANCE, INJURY_WINDOW_STEPS, bringOn, canInjure, firstFreeReserveOfRole, hasLeftPitch, hasSubstituteFor,
+  registerFoul, standDown, type Card,
+} from './discipline';
 import { createBall, stepBall, type BallState } from './ball';
 import {
   MANUAL_SWITCH_LOCK_STEPS, MANUAL_SWITCH_SPRINT_HOLD_STEPS, applyButtons, applyKeeperButtons, clearActionEvent,
@@ -22,7 +27,9 @@ import {
   createShootoutState, resetShootout, shootoutWinner, stepSetPiece, type SetPieceState, type ShootoutState,
 } from './set-pieces';
 
-export type MatchPhase = 'kickoff' | 'play' | 'set-piece' | 'goal' | 'half-time' | 'golden-goal' | 'shootout' | 'over';
+// G15-18 (V15-4): 'injury' is the LESIONADO window -- a pause with the clock stopped,
+// opened by an injuring foul and closed by the substitution (or by its own timeout).
+export type MatchPhase = 'kickoff' | 'play' | 'set-piece' | 'goal' | 'half-time' | 'golden-goal' | 'shootout' | 'over' | 'injury';
 
 // ── G9-1 (Paco, 09-sep): the training mode is a RULESET of the match, not a mode.
 // The engine still does not know what it is playing; it knows two switches:
@@ -72,7 +79,31 @@ export type MatchState = {
   // (physicsInputsFor). Always 0 for a CPU team -- it never presses C -- and wiped
   // whenever the phase leaves open play (end of stepMatch).
   manualSwitch: { lockSteps: [number, number]; sprintHoldSteps: [number, number] };
-  // Fix round 1: one ActionEvent per player id (18 total), not per team -- a
+  // G15-18 (V15-4). pendingInjury: per team, the id of the injured player waiting for
+  // his substitution (-1 when none) -- the 'injury' phase lasts while either is >= 0.
+  // injuriesUsed: per team, how many injuries the match has given it; incremented where
+  // the injury is decided and NEVER decremented, so the cap of INJURY_MAX_PER_TEAM
+  // survives the substitution (H6: the replaced player's `injured` flag does not).
+  // injuryStepsLeft: per team, the steps left in the LESIONADO window before the reserve
+  // of that position comes on by himself (resolution 9); the screen paints it.
+  // lastInjury: the id of a keeper injured with no keeper left to replace him, who is
+  // FLAGGED and keeps playing (resolution 7) -- set on the step it happens, -1 on every
+  // other step (cleared at the top of stepMatch, like the action events).
+  pendingInjury: [number, number];
+  injuriesUsed: [number, number];
+  injuryStepsLeft: [number, number];
+  lastInjury: number;
+  // G15-13 (V15-4). lastCard: the card shown on THIS step by registerFoul -- an edge,
+  // reset at the top of stepMatch like lastInjury, read by the screen on the edge like
+  // scratch.call. squadIndex is the carded player's own, taken before a sent-off
+  // keeper's slot changes identity, so the caption names the right man. One scalar
+  // object per match, created in createMatch and never by the shootout (G15-13: cards
+  // do not touch it).
+  // leftPitch: per team, the bitmask of squad indices that have left the pitch for good
+  // (substituted out or sent off; controller addition 1) -- they are never a reserve again.
+  lastCard: { playerId: number; squadIndex: number; card: Card };
+  leftPitch: [number, number];
+  // Fix round 1: one ActionEvent per player id (22 total), not per team -- a
   // shared per-team slot let a second same-team tackler's clean outcome
   // overwrite a first tackler's foul in the same step (see stepOpenPlay).
   // Stage B (D4): gkEvent is gone (each keeper writes its own slot events[gk.id])
@@ -130,13 +161,44 @@ function createPlayerEvents(count: number): ActionEvent[] {
   return events;
 }
 
+// V15-4-7 (the last piece of V15-3): the eleven a human left on ALINEACIÓN. `formation`
+// is the index into formationTable the lineup was checked against, and `starters` is
+// football-screen/lineup.ts's Lineup.starters for it (the squad index per position, 0 =
+// the keeper). The engine cannot import the screen (H17), hence this structural type.
+export type StartingLineup = { readonly formation: number; readonly starters: readonly number[] };
+
+// The engine's default eleven of a formation, in Lineup.starters order: keeper first,
+// then the slots -- defaultSquadIndexFor, which attributes.test.ts holds equal to the
+// screen's defaultLineup. Allocates; runs once per createMatch, never in the step.
+function defaultStarters(f: Formation): number[] {
+  const out = [defaultSquadIndexFor(f, -1)];
+  for (let s = 0; s < OUTFIELD; s++) out.push(defaultSquadIndexFor(f, s));
+  return out;
+}
+
+// `lineups`, when given, carries per team the lineup the screen validated (checkLineup)
+// or null for a side that plays the default (the CPU, the training). A team with a
+// lineup is created in ITS formation -- the roles of the positions are the ones the
+// lineup was checked against -- and starts the match in it. Without `lineups` (every
+// engine test, every recording) both teams are created exactly as before: the 4-4-2 of
+// formationTable[0] and defaultSquadIndexFor's eleven.
 export function createMatch(
   teams: [TeamDef, TeamDef], formationTable: readonly Formation[], pitch: PitchDef,
   profiles: readonly [AiProfile, AiProfile], rules: Readonly<MatchRules> = NORMAL_RULES,
+  lineups?: readonly [StartingLineup | null, StartingLineup | null],
 ): MatchState {
+  const home = lineups === undefined ? null : lineups[0];
+  const away = lineups === undefined ? null : lineups[1];
+  const formation0 = home === null ? 0 : home.formation;
+  const formation1 = away === null ? 0 : away.formation;
+  const f0 = formationTable[formation0];
+  const f1 = formationTable[formation1];
+  const starters: readonly [readonly number[], readonly number[]] | undefined = lineups === undefined
+    ? undefined
+    : [home === null ? defaultStarters(f0) : home.starters, away === null ? defaultStarters(f1) : away.starters];
   const match: MatchState = {
     teams,
-    players: createPlayers([formationTable[0], formationTable[0]], pitch, [teams[0].id, teams[1].id]),
+    players: createPlayers([f0, f1], pitch, [teams[0].id, teams[1].id], starters),
     ball: createBall(),
     score: [0, 0],
     half: 1,
@@ -149,7 +211,7 @@ export function createMatch(
     attackDir: [1, -1],
     halfStep: 0,
     pauseStepsLeft: 0,
-    formationIndex: [0, 0],
+    formationIndex: [formation0, formation1],
     strategies: ['neutral', 'neutral'],
     formationTable,
     pitch,
@@ -158,6 +220,12 @@ export function createMatch(
     catchRolled: [false, false],
     lastGoalTeam: -1,
     manualSwitch: { lockSteps: [0, 0], sprintHoldSteps: [0, 0] },
+    pendingInjury: [-1, -1],
+    injuriesUsed: [0, 0],
+    injuryStepsLeft: [0, 0],
+    lastInjury: -1,
+    lastCard: { playerId: -1, squadIndex: -1, card: 'none' },
+    leftPitch: [0, 0],
     scratch: {
       events: createPlayerEvents(TEAM_SIZE * 2),
       liveControlled: [-1, -1],
@@ -342,7 +410,7 @@ function runTeamAi(match: MatchState, team: 0 | 1): void {
 // and has just glued the ball to his foot at CONTROL_DIST, at rest; letting go here
 // leaves it exactly there, loose, for the human to collect by getting closer than the
 // statue (under 18 u; pickUp takes the nearest). Repeats every step while it lies
-// there: 18 comparisons, no allocation. The tackle route (a frozen player sliding a
+// there: 22 comparisons, no allocation. The tackle route (a frozen player sliding a
 // rival's ball loose into his own possession) cannot reach this function at all any
 // more -- applyTeamInput now refuses to hand the frozen team's controlled player any
 // TeamInput, so it can never start (or continue) a tackle in the first place; see the
@@ -470,12 +538,110 @@ function updateTeamControlOf(match: MatchState, team: 0 | 1): void {
   updateTeamControl(match.players, match.ball, match.controlled, team);
 }
 
+// ── G15-18: injuries and substitutions ───────────────────────────────────────────
+
+// Called on the step a foul is given, right after the referee has called its free kick
+// or penalty (the set piece is already in match.setPiece, waiting). The roll only
+// happens when it CAN injure (canInjure), for the same reason `steal` only rolls when a
+// steal is possible: the NUMBER of draws is part of the deterministic state.
+function decideInjury(match: MatchState, victim: PlayerState, rng: Rng): void {
+  if (!canInjure(match, victim)) return;
+  if (rng() >= INJURY_CHANCE) return;
+  match.injuriesUsed[victim.team]++;          // H6: never decremented
+  if (victim.role === 'gk' && !hasSubstituteFor(match, victim.team, victim)) {
+    // Paco 24-sep (resolution 7): a keeper with no keeper left is FLAGGED and keeps
+    // playing. A team is never without a goalkeeper (criterion 9b).
+    match.lastInjury = victim.id;             // caption only, no phase change
+    return;
+  }
+  victim.injured = true;
+  match.pendingInjury[victim.team] = victim.id;
+  match.injuryStepsLeft[victim.team] = INJURY_WINDOW_STEPS;
+  match.phase = 'injury';
+}
+
+// G15-18: the reserve takes the injured player's SLOT and his id -- the ids are the
+// engine's identity (players[i].id === i, match.ts and set-pieces.ts depend on it), so a
+// substitution swaps WHO the player is, never WHERE he sits in the array. Everything
+// that makes him a different footballer is re-derived from his squad index.
+//
+// This is counter-intuitive and deliberate; do not "fix" it by adding a 23rd player.
+// Growing the array would break three things at once: players[i].id === i (the promise
+// of players.ts), the fixed-size scratch.events created once in createMatch
+// (createPlayerEvents(TEAM_SIZE * 2)), and keeperOf(match, team) = players[team *
+// TEAM_SIZE]. A substitution is a NEW IDENTITY IN AN EXISTING SLOT, not a new player.
+//
+// Returns false, changing nothing, for an illegal request: nobody of that team waiting,
+// not a squad index, a player already on the pitch or who has already LEFT it (controller
+// addition 1), or a keeper/outfield mix. The swap itself is discipline.ts's bringOn,
+// shared with the sent-off keeper (resolution 6).
+export function substitute(match: MatchState, team: 0 | 1, squadIndex: number): boolean {
+  const outId = match.pendingInjury[team];
+  if (outId < 0) return false;
+  if (!Number.isInteger(squadIndex) || squadIndex < 0 || squadIndex >= SQUAD_SIZE) return false;
+  const out = match.players[outId];
+  const incomingRole = squadRole(squadIndex);
+  // Paco 24-sep (resolutions 6 and 7): a keeper is replaced by a KEEPER and an outfield
+  // player by an OUTFIELD player of ANY position ("cualquier posicion", G15-18). What is
+  // forbidden is MIXING the two, because the engine's keeper is players[team*TEAM_SIZE]
+  // and its role is structural. gk -> gk is not only allowed, it is the whole point: it
+  // is how the second keeper comes on for an injury (resolution 7) and for a red
+  // (resolution 6, Task V15-4-6).
+  if ((out.role === 'gk') !== (incomingRole === 'gk')) return false;
+  if (hasLeftPitch(match, team, squadIndex)) return false;               // never comes back
+  for (let i = 0; i < match.players.length; i++) {
+    const p = match.players[i];
+    if (p.team === team && p.squadIndex === squadIndex) return false;   // already on
+  }
+  bringOn(match, out, squadIndex);
+  return true;
+}
+
+// One step of the LESIONADO window. H13 / Paco 24-sep (resolution 9): THE CLOCK STOPS.
+// `halfStep` only advances inside stepOpenPlay and the set-piece branch, neither of which
+// runs here, so the match clock is frozen for as long as the window is open -- and so
+// is the set-piece countdown, which lives in stepSetPiece. That is deliberate and it is
+// asserted by two tests. No draw: the CPU's choice arrives in its TeamInput, derived.
+function stepInjury(match: MatchState, inputs: readonly [TeamInput, TeamInput]): void {
+  for (let t = 0; t < 2; t++) {
+    const team = t === 0 ? 0 : 1;                  // two branches, no array per step (criterion 20)
+    if (match.pendingInjury[team] < 0) continue;
+    const outPlayer = match.players[match.pendingInjury[team]];
+    const wanted = inputs[team].sub;
+    if (wanted >= 0 && substitute(match, team, wanted)) {
+      match.pendingInjury[team] = -1;
+      continue;
+    }
+    if (match.injuryStepsLeft[team] > 0) match.injuryStepsLeft[team]--;
+    if (match.injuryStepsLeft[team] > 0 && hasSubstituteFor(match, team, outPlayer)) continue;
+    // Out of time, or nothing to choose from. The default reserve of that position
+    // comes on; if there is none, G15-18's "juega con uno menos" applies and the
+    // injured outfield player simply stays off (isActive is false for him).
+    // Controller addition 3 (resolution 7): a KEEPER is never left out -- with nobody to
+    // come on he plays on, exactly as decideInjury does when there is no keeper at the
+    // moment of the injury, so "always one active keeper" does not hang on any other
+    // function. An outfield player stops where he is (standDown).
+    const fallback = firstFreeReserveOfRole(match, team, outPlayer.role);
+    if (fallback >= 0) substitute(match, team, fallback);
+    else if (outPlayer.role === 'gk') outPlayer.injured = false;
+    else standDown(outPlayer);
+    match.pendingInjury[team] = -1;
+  }
+  if (match.pendingInjury[0] >= 0 || match.pendingInjury[1] >= 0) return;
+  // No set piece of its own: the foul's free kick or penalty was already called by the
+  // branch that produced the injury, so play resumes exactly where it was, with the
+  // countdown at the value it had when the window opened. (A window with no set piece
+  // behind it cannot be produced today; it would resume open play, like resumePlay.)
+  if (match.setPiece !== null) match.phase = 'set-piece';
+  else match.phase = match.half === 3 ? 'golden-goal' : 'play';
+}
+
 function stepOpenPlay(match: MatchState, inputs: readonly [TeamInput, TeamInput], rng: Rng): void {
   const { players, ball, scratch } = match;
   // Whole-stage review C1: only the two controlled slots used to be cleared (by
   // applyButtons), so a judged foul stayed in its slot and was judged AGAIN as
   // soon as the set piece handed play back -- a new penalty every countdown.
-  // Wiping all 18 makes "the events of this step" true by construction; moved
+  // Wiping all 22 makes "the events of this step" true by construction; moved
   // to the top of stepMatch (final review Important #1) so kickoff/set-piece/
   // goal/half-time steps start clean too, not just open-play ones.
   // Stage B (Task 6a): the in-engine AI, applied to BOTH teams so the replay
@@ -485,7 +651,8 @@ function stepOpenPlay(match: MatchState, inputs: readonly [TeamInput, TeamInput]
   // controlled, or nobody when the keeper holds the ball (its input goes to the
   // keeper's throw and the field player is placed by the AI, D4); (3) placement
   // and keeper write the want channel; (4) per team, the throw + automatic
-  // release (exact, no draw) OR the buttons (steal draw) + kick error (one draw);
+  // release (one kick-error draw since G15-26, scaled by the keeper's kicking and 0
+  // for the human) OR the buttons (steal draw) + kick error (one draw);
   // (5) physics, tackles, referee, clock exactly as in stage A.
   keeperCatchFor(match, 0, rng);
   keeperCatchFor(match, 1, rng);
@@ -513,16 +680,24 @@ function stepOpenPlay(match: MatchState, inputs: readonly [TeamInput, TeamInput]
   clearRefereeCall(scratch.call);
   // Scan every player's event in ascending id order and judge the first foul.
   // First foul wins, lowest id (unchanged determinism rule, now applied across
-  // all 18 slots instead of 2): team 0's ids are lower than team 1's, so a
+  // all 22 slots instead of 2): team 0's ids are lower than team 1's, so a
   // simultaneous foul by both teams still resolves in favour of team 0's
   // victim -- a recorded, deferred minor (see the Task 5 report), not fixed here.
   for (let i = 0; i < scratch.events.length; i++) {
     const ev = scratch.events[i];
     if (ev.foul) {
+      // G15-13: the card is decided here, where the foul is judged, and NOT in
+      // referee.ts: the referee's job is where play restarts, the discipline is the
+      // match's. Before judgeFoul, so a sent-off offender is already off when the set
+      // piece picks its taker and lines up its rivals; and before the injury roll, which
+      // it does not change (no draw here). No extra pause (G15-13: "sin pausa extra");
+      // the screen reads match.lastCard on the edge, like it reads scratch.call.
+      registerFoul(match, ev.actorId);
       // Ruling R14: judgeFoul alone decides penalty vs free kick (offender's own
       // big area); match.ts must not re-derive that rule.
       judgeFoul(ev.x, ev.y, players[ev.victimId].team, match.attackDir, match.pitch, scratch.call);
       if (isRestart(scratch.call.kind)) callSetPiece(match, scratch.call.kind, scratch.call.team, scratch.call.x, scratch.call.y);
+      decideInjury(match, players[ev.victimId], rng);
       advanceClock(match);
       return;
     }
@@ -634,6 +809,10 @@ export function stepMatch(match: MatchState, inputs: readonly [TeamInput, TeamIn
   // on EVERY step, before the 'over' early return: it is output only, nothing in the
   // engine reads it. stepBall keeps its own reset for callers that step the ball directly.
   match.ball.frameHit = 'none';
+  match.lastInjury = -1;   // G15-18: an edge, like frameHit -- output only, nobody in the engine reads it
+  match.lastCard.card = 'none';   // G15-13: the same kind of edge
+  match.lastCard.playerId = -1;
+  match.lastCard.squadIndex = -1;
   if (match.phase === 'over') return;
   // Final review Important #1: this used to run only inside stepOpenPlay, so a
   // foul (or any other event) judged on the last open-play step before a
@@ -643,7 +822,7 @@ export function stepMatch(match: MatchState, inputs: readonly [TeamInput, TeamIn
   // dispatch, makes "the events of this step" true on every step, not only
   // open-play ones. The set-piece branch below writes
   // scratch.events[sp.takerId] AFTER this sweep runs (same step), so that
-  // write stays visible when stepMatch returns. 18 scalar resets, no allocation.
+  // write stays visible when stepMatch returns. 22 scalar resets, no allocation.
   for (let i = 0; i < match.scratch.events.length; i++) clearActionEvent(match.scratch.events[i]);
   applyTeamChoices(match, inputs);
   switch (match.phase) {
@@ -682,8 +861,11 @@ export function stepMatch(match: MatchState, inputs: readonly [TeamInput, TeamIn
     case 'shootout':
       stepShootout(match, inputs, rng);
       break;
+    case 'injury':
+      stepInjury(match, inputs);
+      break;
     default: {
-      // A ninth phase (v1.5 world cup, stage C screens) fails to compile here
+      // A tenth phase (the ninth, 'injury', came with V15-4) fails to compile here
       // instead of silently falling through this switch.
       const _exhaustive: never = match.phase;
       return _exhaustive;

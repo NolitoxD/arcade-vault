@@ -7,8 +7,9 @@ import {
   loadLineup, parseLineup, saveLineup, serializeLineup, type Lineup,
 } from './lineup';
 
-// A ten-outfield formation: the shape V15-4 brings (G15-16). Written here, not
-// imported, so this file is proven size-independent BEFORE V15-4 exists.
+// A ten-outfield formation: the shape V15-4 brought (G15-16), identical to
+// FORMATIONS[0] today. Written here, not imported, so this file stays independent of
+// the engine's table (it was written before V15-4 existed).
 const TEN_SLOTS: Formation = {
   id: '4-4-2', name: 'NORMAL', slots: [
     { role: 'def', x: 0.2, y: 0.15 }, { role: 'def', x: 0.2, y: 0.38 }, { role: 'def', x: 0.2, y: 0.62 }, { role: 'def', x: 0.2, y: 0.85 },

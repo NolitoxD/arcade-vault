@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createTeamInput } from '../football-logic/input';
 import { FORMATION_COUNT } from '../football-logic/teams';
 import { checkTeamInput } from '../football-logic/input';
+import { SQUAD_SIZE } from '../football-logic/squads';
 import {
   ARROWS_SOLO, CLASSIC_SOLO, DEFAULT_KEY_SCHEME, KEY_BINDINGS, KEY_SCHEMES, KEY_SCHEME_STORAGE_KEY, SOLO_TABLES_BY_SCHEME,
   TWO_PLAYER_P1, TWO_PLAYER_P2, TWO_PLAYER_TABLES,
@@ -144,7 +145,7 @@ describe('padToTeamInput', () => {
     padDown(pad, 'right');
     padDown(pad, 'b');
     padToTeamInput(pad, true, out);
-    expect(checkTeamInput(out, FORMATION_COUNT)).toEqual([]);
+    expect(checkTeamInput(out, FORMATION_COUNT, SQUAD_SIZE)).toEqual([]);
   });
 
   // The rule the component's update() has to honour: an edge is consumed by a STEP,
@@ -379,7 +380,7 @@ describe('overlayPadToTeamInput: the gamepad over the keyboard (G15-20)', () => 
     overlayPadToTeamInput(gp, true, out);
     expect(out.dx).toBe(-1);
     expect(out.dy).toBe(1);
-    expect(checkTeamInput(out, FORMATION_COUNT)).toEqual([]);
+    expect(checkTeamInput(out, FORMATION_COUNT, SQUAD_SIZE)).toEqual([]);
   });
 
   it('each button keeps the stronger state, and from the second step of a frame the gamepad edges settle too', () => {

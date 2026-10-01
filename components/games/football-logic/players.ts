@@ -7,6 +7,8 @@ import { perStep, stepsFor } from './clock';
 // It is data only and one-way (squads.ts never imports this file): defaultSquadIndexFor
 // needs the role table, applySquadAttrs the per-player and per-keeper levels.
 import { SQUAD_SIZE, keeperAttrsFor, outfieldAttrsFor, squadRole } from './squads';
+// Type only: erased at compile time (discipline.ts imports this file's values).
+import type { Card } from './discipline';
 
 export type PlayerState = {
   id: number; // own id, not "defender #2": what will make substitutions possible in v1.5
@@ -42,6 +44,17 @@ export type PlayerState = {
   keeperReflexes: number;   // 1-5 for a keeper, 0 for an outfield player
   keeperRushing: number;    // 1-5 for a keeper, 0 for an outfield player
   keeperKicking: number;    // 1-5 for a keeper, 0 for an outfield player
+  // G15-18 (V15-4): set where the injury is decided (match.ts), cleared by the
+  // substitution that puts a healthy player in the same slot. It is NOT the injury cap:
+  // that lives in MatchState.injuriesUsed, because this flag is wiped on every change.
+  injured: boolean;
+  // G15-13 (V15-4): the fouls THIS player has made in this match, the card he is
+  // showing, and whether he has been sent off (registerFoul, discipline.ts). Created
+  // at zero with the match -- cards are reset per match -- and cleared on the slot by a
+  // substitution, because the one who comes on has fouled nobody (bringOn).
+  fouls: number;
+  card: Card;
+  sentOff: boolean;
 };
 
 export const PLAYER_SPEED = 180;
@@ -105,6 +118,8 @@ function createPlayer(id: number, team: 0 | 1, role: Role, slot: number, attackD
     tackleStepsLeft: 0, tackleDirX: 0, tackleDirY: 0,
     wantX: 0, wantY: 0, wantSprint: false,
     squadIndex, speedMult: 1, shotMult: 1, keeperReflexes: 0, keeperRushing: 0, keeperKicking: 0,
+    injured: false,
+    fouls: 0, card: 'none', sentOff: false,
   };
 }
 

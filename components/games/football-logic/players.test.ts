@@ -24,7 +24,7 @@ function walk(p: PlayerState, steps: number, dx: -1 | 0 | 1, sprint: boolean, ha
 }
 
 describe('createPlayers', () => {
-  it('creates 18 players whose array index is their id', () => {
+  it('creates 22 players whose array index is their id', () => {
     const ps = fresh();
     expect(ps).toHaveLength(2 * TEAM_SIZE);
     ps.forEach((p, i) => expect(p.id).toBe(i));
@@ -330,12 +330,16 @@ describe('placeAroundCentreSpot (shootout)', () => {
     expect(SHOOTOUT_GRID_SPACING_Y).toBe(80);
   });
   // Anti-coincidence: a grid that put two players on the same spot would still be
-  // "inside the circle" and still park fifteen. Nobody overlaps, and nobody lands on
+  // "inside the circle" and still park nineteen. Nobody overlaps, and nobody lands on
   // the centre spot itself (Stage B2 finding H4): with an EVEN number of ROWS, no slot's
   // offset from the centre is ever (0, 0) -- the y offset alone rules it out, whatever
   // the column -- unlike the 5 x 3 layout this replaces, whose middle column and row
   // landed exactly on it. (G15-16 made the columns odd again, five; the rows are what
-  // carries the property.)
+  // carries the property.) H4 has no assertion of its own: it follows from the pin in
+  // the test above, COLUMNS * ROWS === 2 * OUTFIELD = 20. An even product forces at
+  // least one even factor, and along an axis with an even count every offset
+  // (index - (count - 1) / 2) is a half-integer, never 0 -- an odd x odd grid cannot
+  // have an even product, so no grid that satisfies the pin can park on the spot.
   it('nobody shares a spot and the grid is wider than a player', () => {
     const players = createPlayers([FORMATIONS[0], FORMATIONS[0]], PITCH, [TEAMS[0].id, TEAMS[1].id]);
     placeAroundCentreSpot(players, 3, PITCH);
