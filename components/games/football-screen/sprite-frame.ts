@@ -2,7 +2,7 @@ import { PLAYER_SPEED, isPlayerDown, type PlayerState } from '../football-logic/
 import { DIVE_REACH_MAX, GESTURE_IDLE, diveReach } from './gestures';
 import {
   OCTANT_E, OCTANT_N, OCTANT_NE, OCTANT_NW, OCTANT_S, OCTANT_SE, OCTANT_SW, OCTANT_W,
-  POSE_DIVE_0, POSE_DIVE_1, POSE_DOWN, POSE_IDLE, POSE_RUN_0, POSE_RUN_1, POSE_RUN_2,
+  POSE_DIVE_0, POSE_DIVE_1, POSE_DOWN, POSE_FEINT, POSE_IDLE, POSE_RUN_0, POSE_RUN_1, POSE_RUN_2, POSE_SLIDE,
 } from './sprite-maps';
 
 // V15-1 (G15-2 + G15-3): which cell of the sprite atlas each player shows this frame.
@@ -13,8 +13,10 @@ import {
 //
 // The priorities copy the exclusions drawPlayer already had (stage B2 §8 and its
 // Minor 2): a diving keeper first, then the parked nineteen of the shootout (standing,
-// whatever the engine left in their slide/floor fields), then lying down (never during
-// the shootout, taker included), then sliding, then running or standing still.
+// whatever the engine left in their slide/floor fields), then lying down -- getting up
+// through the FEINT crouch in its last GETUP_STEPS -- (never during the shootout, taker
+// included), then sliding (G15-25: lying on its side, head trailing), then a steal
+// feint, then running or standing still.
 
 // tan(22.5 deg) = sqrt(2) - 1: below it a direction is an axis, above it a diagonal.
 export const OCTANT_TAN = 0.41421356;
@@ -56,25 +58,24 @@ export function diveSpritePose(progress: number): number {
   return diveReach(progress) >= DIVE_REACH_MAX * DIVE_FULL_FRACTION ? POSE_DIVE_1 : POSE_DIVE_0;
 }
 
-// G15-3: "deslizamiento = carrera inclinada". The only trigonometry of V15-1, computed
-// ONCE at module load so the component can tilt the sprite with setTransform.
-export const SLIDE_TILT_RAD = 0.45;
-export const SLIDE_TILT_COS = Math.cos(SLIDE_TILT_RAD);
-export const SLIDE_TILT_SIN = Math.sin(SLIDE_TILT_RAD);
+// G15-25: the last steps of lying down show the FEINT crouch -- "y luego se levanta".
+// TACKLE_MISS_DOWN_STEPS is 60; 12 is a fifth of a second.
+export const GETUP_STEPS = 12;
 
-export type SpriteChoice = { octant: number; pose: number; tilt: -1 | 0 | 1 };
+export type SpriteChoice = { octant: number; pose: number };
 
 export function createSpriteChoice(): SpriteChoice {
-  return { octant: OCTANT_E, pose: POSE_IDLE, tilt: 0 };
+  return { octant: OCTANT_E, pose: POSE_IDLE };
 }
 
 // diveProgress: gestureProgress(...) for a keeper, GESTURE_IDLE for everybody else.
 // diveDirX/diveDirY: gestures.dirX/dirY of that player (read only while diving).
+// feintProgress (G15-25): the steal feint's gestureProgress for an outfield player,
+// GESTURE_IDLE otherwise.
 export function choosePlayerSprite(
   p: PlayerState, stepCount: number, shootout: boolean, parked: boolean,
-  diveProgress: number, diveDirX: number, diveDirY: number, out: SpriteChoice,
+  diveProgress: number, diveDirX: number, diveDirY: number, feintProgress: number, out: SpriteChoice,
 ): void {
-  out.tilt = 0;
   if (diveProgress !== GESTURE_IDLE) {
     out.octant = facingOctant(diveDirX, diveDirY);
     out.pose = diveSpritePose(diveProgress);
@@ -86,13 +87,18 @@ export function choosePlayerSprite(
     return;
   }
   if (!shootout && isPlayerDown(p, stepCount)) {
-    out.pose = POSE_DOWN;
+    out.pose = p.downUntilStep - stepCount <= GETUP_STEPS ? POSE_FEINT : POSE_DOWN;
     return;
   }
   if (!shootout && p.tackleStepsLeft > 0) {
-    out.octant = facingOctant(p.tackleDirX, p.tackleDirY);
-    out.pose = POSE_RUN_1;
-    out.tilt = p.tackleDirX < 0 ? -1 : 1;
+    // G15-25: the head trails and the stretched leg leads, so the octant is the
+    // opposite of the tackle's direction.
+    out.octant = facingOctant(-p.tackleDirX, -p.tackleDirY);
+    out.pose = POSE_SLIDE;
+    return;
+  }
+  if (feintProgress !== GESTURE_IDLE) {
+    out.pose = POSE_FEINT;
     return;
   }
   out.pose = runPose(stepCount, p.id, p.vx, p.vy);

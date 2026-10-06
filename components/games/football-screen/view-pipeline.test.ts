@@ -10,7 +10,8 @@ import { ballInsideGoalMouth } from './goal-net';
 import { MATCH_RUN_STEP_CAP, createMatchRun, finishMatchRun, stepMatchRun } from './match-run';
 import { choosePlayerSprite, createSpriteChoice } from './sprite-frame';
 import {
-  OCTANT_COUNT, PLAYER_SPRITE_MAPS, POSE_COUNT, POSE_DIVE_0, POSE_DIVE_1, POSE_IDLE, POSE_RUN_0, POSE_RUN_1, POSE_RUN_2,
+  OCTANT_COUNT, PLAYER_SPRITE_MAPS, POSE_COUNT, POSE_DIVE_0, POSE_DIVE_1, POSE_FEINT, POSE_IDLE, POSE_RUN_0, POSE_RUN_1,
+  POSE_RUN_2, POSE_SLIDE,
 } from './sprite-maps';
 
 const BRA = TEAMS[2];
@@ -37,6 +38,8 @@ describe('the view layer (steps 11 and V15-1) over three full matches', () => {
     let runSeen = 0;
     let diveOpenSeen = 0;
     let diveFullSeen = 0;
+    let slideSeen = 0;
+    let getUpSeen = 0;
     const octantSeen = new Uint8Array(OCTANT_COUNT);
 
     const gestures = createGestureTimers();
@@ -92,7 +95,7 @@ describe('the view layer (steps 11 and V15-1) over three full matches', () => {
           }
           const parked = shootout && p.id !== takerId && p.role !== 'gk';
           const keeperProgress = p.role === 'gk' ? progress : GESTURE_IDLE;
-          choosePlayerSprite(p, m.stepCount, shootout, parked, keeperProgress, gestures.dirX[p.id], gestures.dirY[p.id], choice);
+          choosePlayerSprite(p, m.stepCount, shootout, parked, keeperProgress, gestures.dirX[p.id], gestures.dirY[p.id], GESTURE_IDLE, choice);
           if (!Number.isInteger(choice.octant) || choice.octant < 0 || choice.octant >= OCTANT_COUNT) spriteInBounds = false;
           else if (!Number.isInteger(choice.pose) || choice.pose < 0 || choice.pose >= POSE_COUNT) spriteInBounds = false;
           else if (PLAYER_SPRITE_MAPS[choice.octant][choice.pose].length === 0) spriteInBounds = false;
@@ -101,6 +104,8 @@ describe('the view layer (steps 11 and V15-1) over three full matches', () => {
           if (choice.pose === POSE_RUN_0 || choice.pose === POSE_RUN_1 || choice.pose === POSE_RUN_2) runSeen++;
           if (choice.pose === POSE_DIVE_0) diveOpenSeen++;
           if (choice.pose === POSE_DIVE_1) diveFullSeen++;
+          if (choice.pose === POSE_SLIDE) slideSeen++;
+          if (choice.pose === POSE_FEINT) getUpSeen++;
         }
       }
 
@@ -122,6 +127,8 @@ describe('the view layer (steps 11 and V15-1) over three full matches', () => {
     expect(runSeen).toBeGreaterThan(0);
     expect(diveOpenSeen).toBeGreaterThan(0);
     expect(diveFullSeen).toBeGreaterThan(0);
+    expect(slideSeen).toBeGreaterThan(0);
+    expect(getUpSeen).toBeGreaterThan(0);
     let octants = 0;
     for (let o = 0; o < OCTANT_COUNT; o++) octants += octantSeen[o];
     expect(octants).toBe(OCTANT_COUNT);
@@ -165,7 +172,7 @@ describe('the view layer (steps 11 and V15-1) over three full matches', () => {
         // outfield player. With the real fraction, outfieldDives === 0 depends on gestures
         // only starting on keepers (verified by beginGkCatchGestures), which is the
         // guarantee this test claims to give.
-        choosePlayerSprite(p, m.stepCount, shootout, parked, progress, gestures.dirX[p.id], gestures.dirY[p.id], choice);
+        choosePlayerSprite(p, m.stepCount, shootout, parked, progress, gestures.dirX[p.id], gestures.dirY[p.id], GESTURE_IDLE, choice);
         if (choice.pose === POSE_DIVE_0 || choice.pose === POSE_DIVE_1) outfieldDives++;
       }
     }

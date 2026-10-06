@@ -1,6 +1,46 @@
-# HANDOFF — VAULT WORLD CUP · v1.5: V15-4 «Motor» CERRADO EN CÓDIGO (día 3 sin commit; QA jugado pendiente) · actualizado 2026-10-01
+# HANDOFF — VAULT WORLD CUP · v1.5: V15-4 COMMITEADO (`77aecd7`); V15-5 «Espectáculo» día 1 A MEDIAS (T1-T3 hechas, T4 en arreglo, T5 pendiente; sin commit) · actualizado 2026-10-06
 
-Prompt para retomar: `/retomar tasks/vault-world-cup/HANDOFF-next-session.md` → QA jugado de V15-4 (`.superpowers/sdd/2026-09-24-vault-world-cup-v15-4/qa-paco.md`) → ajustes si los hay (los marcados AJUSTE obligan a regrabar) → plan V15-5 «Espectáculo».
+Prompt para retomar: ver el bloque «PROMPT PARA LA SIGUIENTE SESIÓN» de §-22.
+
+## -22. 06-oct: V15-4 commiteado (`77aecd7`, verificado sin marcas viejas, 1519 verdes) + V15-5 «Espectáculo»: plan, pre-vuelo y día 1 a medias
+
+**Decisiones de Paco hoy:**
+- **G15-29:** el entrenamiento NO tiene tarjetas ni lesiones (es para coger los mandos). Hecho en la T1 (`MatchRules.discipline`), sin regrabado.
+- La dificultad no preocupa: «el amistoso ya es difícil contra la máquina».
+- Dudas del plan V15-5 resueltas (D1-D6, al final del plan): cámara de la tanda sujeta **1 s** y el rótulo GOL de la tanda también 1 s;
+  gol en propia = celebra el beneficiado, rótulo «GOL» + «EN PROPIA · <defensa>»; FALLA con el nombre del lanzador; la pantalla previa
+  sale tras la última ALINEACIÓN en el amistoso; compañeros lejanos van a velocidad normal (no sprint) y no siempre llegan al corro;
+  quien roba en la entrada no se levanta, sigue con el balón.
+- Calendario: **día 1 = T1-T5**, **día 2 = T6-T10**. El QA del V15-4 lo juega Paco al acabar el día 1, junto con lo nuevo.
+
+**Plan:** `docs/superpowers/plans/2026-10-06-vault-world-cup-v15-5-show.md` (10 tareas, objetivo 1561/94), pre-vuelo LISTO CON RESERVAS con
+H1-H5 y M1-M7 aplicados. Ledger: `.superpowers/sdd/2026-10-06-vault-world-cup-v15-5/progress.md` (con `sdd.sh`, briefs, reports, rules).
+**Estado del día 1 al cerrar la sesión:**
+- **T1** (entrenamiento sin disciplina) — hecha y revisada. **T2** (rótulos con su propio sujeto, gol en propia con el defensa, `buttonsIdle`
+  borrado) — hecha y revisada. **T3** (poses tirándose / amago / abrazo / cabizbajo, levantarse) — hecha y revisada.
+- **T4** (`celebration.ts`: corro de 4 s, gol de oro, en la tanda solo el lanzador, cámara 1 s) — implementada; la revisión pidió aserciones
+  independientes para `capturePreStep`; la **ronda de arreglo 1 está HECHA** (solo test, controles negativos en rojo; diff en
+  `review-task4-fix1.diff`). Falta SOLO el re-review acotado (sonnet, `re-review-prompt.md`) y cerrar la T4 en el ledger.
+- **T5** (cableado del `.tsx` del día 1: nombres, dorsal junto al cursor, sprites, corro, cámara de la tanda) — pendiente; su brief está en
+  `task-5-brief.md`. Cierra los 5 errores de `tsc` que la T3 dejó anunciados en `VaultWorldCupGame.tsx`.
+- Suite ahora: **1541 passed / 91 ficheros** (verde); `tsc` con exactamente los 5 errores anunciados; motor solo tocado por la T1;
+  `engine-invariants.test.ts` md5 `0845d50e…` intacto.
+**Commit propuesto del día 1 (tras la T5):** `feat(world-cup): v1.5 show day 1 — training without cards/injuries, named captions with own-goal defender, slide/feint/hug/dejected poses, goal celebration and shootout camera hold (V15-5, G15-29/G15-11/G15-25/G15-4)`
+**Después:** QA de Paco del V15-4 (`.superpowers/sdd/2026-09-24-vault-world-cup-v15-4/qa-paco.md`) + lo del día 1; luego día 2 (T6-T10):
+red que ondula, pantalla previa, victoria con confeti/fuegos, cierre con `qa-paco.md`.
+
+### PROMPT PARA LA SIGUIENTE SESIÓN
+```
+/retomar tasks/vault-world-cup/HANDOFF-next-session.md
+Seguimos con el V15-5 «Espectáculo», día 1. Lee §-22 del handoff y el final de
+.superpowers/sdd/2026-10-06-vault-world-cup-v15-5/progress.md.
+1) La ronda de arreglo 1 de la Task 4 está hecha: pasa el re-review acotado de review-task4-fix1.diff
+   y cierra la Task 4 en el ledger.
+2) Ejecuta la Task 5 (cableado del .tsx) con SDD: implementador + revisor, en serie.
+3) Cierra el día 1: suite completa, tsc limpio, eslint, compuerta del motor; deja el commit propuesto.
+Reglas de siempre: commits solo yo, nada de git stash, nunca next dev, motor solo lo toca la Task 1.
+Para no llenar el contexto, delega la ejecución en un agente coordinador y tráeme solo el resumen.
+```
 
 ## -21. 01-oct: V15-4 «Motor» CERRADO EN CÓDIGO (día 3: Tasks 5-11 + revisión final)
 

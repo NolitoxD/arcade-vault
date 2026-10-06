@@ -5,6 +5,7 @@ import {
 } from '../football-logic/match';
 import { sideIsHuman, type HumanSide } from '../football-logic/mode';
 import type { CallKind } from '../football-logic/referee';
+import { shootoutTakerId } from '../football-logic/set-pieces';
 import type { FrameHit } from '../football-logic/goal-frame';
 
 // Spec: the seven captions of the v1 (INICIO, FALTA, PENALTI, FUERA, CÓRNER, GOL,
@@ -53,6 +54,7 @@ export const CAPTION_TEXT: Readonly<Record<CaptionKind, string>> = {
 };
 
 const SHORT_CAPTION_STEPS = stepsFor(1.5);
+const SHOOTOUT_GOAL_CAPTION_STEPS = stepsFor(1);   // D1: the camera holds the same second (celebration.ts)
 const RESULT_CAPTION_STEPS = stepsFor(3);
 
 // The captions that cover an engine pause last exactly as long as the pause, so the
@@ -67,7 +69,7 @@ export const CAPTION_STEPS: Readonly<Record<CaptionKind, number>> = {
   'half-time': HALF_TIME_PAUSE_STEPS,
   'extra-time': RESULT_CAPTION_STEPS,
   shootout: RESULT_CAPTION_STEPS,
-  'shootout-goal': SHORT_CAPTION_STEPS,
+  'shootout-goal': SHOOTOUT_GOAL_CAPTION_STEPS,
   'shootout-miss': SHORT_CAPTION_STEPS,
   'full-time': RESULT_CAPTION_STEPS,
   winner: RESULT_CAPTION_STEPS,
@@ -86,29 +88,73 @@ export const CAPTION_STEPS: Readonly<Record<CaptionKind, number>> = {
 // GOL + FINAL + GANADOR too. A foul that cards and injures is FALTA + TARJETA + LESIÓN.
 export const CAPTION_QUEUE_MAX = 4;
 
+// G15-11 (V15-5): who a caption is about. `squad` is the squad index of the player --
+// the screen turns it into the name (lineup or squad) with a lookup, never a string
+// built per frame -- or SUBJECT_NONE for a caption that names nobody. `team` is the
+// subject's team (0 when nobody). D2 (Paco, 06-oct): an own goal is ABOUT THE DEFENDER --
+// his team and his squad index -- and `ownGoal` says so; the screen draws GOL with
+// OWN_GOAL_PREFIX + his name underneath, baked at startMatch, never composed per frame.
+// The subject travels WITH the caption through the queue: two captions about two players
+// never share one name slot (the V15-4 review found a second card inside 3 s renaming the
+// first one while it waited).
+export const SUBJECT_NONE = -1;
+export const OWN_GOAL_PREFIX = 'EN PROPIA · ';
+
 export type CaptionState = {
   kind: ShowingCaption;
   stepsLeft: number;
+  team: 0 | 1;
+  squad: number;
+  ownGoal: boolean;
   queue: CaptionKind[];
+  queueTeam: (0 | 1)[];
+  queueSquad: number[];
+  queueOwnGoal: boolean[];
   queueLen: number;
 };
 
 export function createCaptionState(): CaptionState {
   const queue: CaptionKind[] = [];
-  for (let i = 0; i < CAPTION_QUEUE_MAX; i++) queue.push('kickoff');
-  return { kind: 'none', stepsLeft: 0, queue, queueLen: 0 };
+  const queueTeam: (0 | 1)[] = [];
+  const queueSquad: number[] = [];
+  const queueOwnGoal: boolean[] = [];
+  for (let i = 0; i < CAPTION_QUEUE_MAX; i++) {
+    queue.push('kickoff');
+    queueTeam.push(0);
+    queueSquad.push(SUBJECT_NONE);
+    queueOwnGoal.push(false);
+  }
+  return {
+    kind: 'none', stepsLeft: 0, team: 0, squad: SUBJECT_NONE, ownGoal: false, queue, queueTeam, queueSquad, queueOwnGoal,
+    queueLen: 0,
+  };
 }
 
-export function pushCaption(cs: CaptionState, kind: CaptionKind): void {
+// A caption equal to the one showing, or to the last one queued, is dropped -- equal
+// meaning the same kind ABOUT THE SAME PLAYER (and the same own-goal mark): a second card
+// for somebody else is news.
+export function pushCaption(
+  cs: CaptionState, kind: CaptionKind, team: 0 | 1 = 0, squad: number = SUBJECT_NONE, ownGoal = false,
+): void {
   if (cs.kind === 'none') {
     cs.kind = kind;
     cs.stepsLeft = CAPTION_STEPS[kind];
+    cs.team = team;
+    cs.squad = squad;
+    cs.ownGoal = ownGoal;
     return;
   }
-  if (cs.kind === kind) return;
-  if (cs.queueLen > 0 && cs.queue[cs.queueLen - 1] === kind) return;
+  if (cs.kind === kind && cs.team === team && cs.squad === squad && cs.ownGoal === ownGoal) return;
+  const last = cs.queueLen - 1;
+  if (
+    last >= 0 && cs.queue[last] === kind && cs.queueTeam[last] === team && cs.queueSquad[last] === squad
+    && cs.queueOwnGoal[last] === ownGoal
+  ) return;
   if (cs.queueLen >= CAPTION_QUEUE_MAX) return;
   cs.queue[cs.queueLen] = kind;
+  cs.queueTeam[cs.queueLen] = team;
+  cs.queueSquad[cs.queueLen] = squad;
+  cs.queueOwnGoal[cs.queueLen] = ownGoal;
   cs.queueLen++;
 }
 
@@ -119,11 +165,22 @@ export function stepCaption(cs: CaptionState): void {
   if (cs.queueLen === 0) {
     cs.kind = 'none';
     cs.stepsLeft = 0;
+    cs.team = 0;
+    cs.squad = SUBJECT_NONE;
+    cs.ownGoal = false;
     return;
   }
   cs.kind = cs.queue[0];
+  cs.team = cs.queueTeam[0];
+  cs.squad = cs.queueSquad[0];
+  cs.ownGoal = cs.queueOwnGoal[0];
   cs.stepsLeft = CAPTION_STEPS[cs.kind];
-  for (let i = 1; i < cs.queueLen; i++) cs.queue[i - 1] = cs.queue[i];
+  for (let i = 1; i < cs.queueLen; i++) {
+    cs.queue[i - 1] = cs.queue[i];
+    cs.queueTeam[i - 1] = cs.queueTeam[i];
+    cs.queueSquad[i - 1] = cs.queueSquad[i];
+    cs.queueOwnGoal[i - 1] = cs.queueOwnGoal[i];
+  }
   cs.queueLen--;
 }
 
@@ -183,6 +240,55 @@ export function frameHitThisStep(match: MatchState, w: MatchWatch): FrameHit {
   return match.stepCount !== w.step ? match.ball.frameHit : 'none';
 }
 
+// G15-11 / G15-4 / D3: the id of the taker whose shootout kick `team` has just taken --
+// scored OR missed, both captions name him. NOT shootout.takerId: on the step of the kick
+// finishShootoutKick has already put the NEXT taker on the spot (measured 06-oct, seed 16).
+// shootoutTakerId is the engine's own pure rule (set-pieces.ts); the kick just counted is
+// number taken[team] - 1.
+export function shootoutScorerId(match: MatchState, team: 0 | 1): number {
+  const sh = match.shootout;
+  if (sh === null || sh.taken[team] === 0) return -1;
+  return shootoutTakerId(team, sh.taken[team] - 1);
+}
+
+// G15-11: the player whose foul the referee judged on THIS step -- the first foul event in
+// ascending id order, the very scan stepOpenPlay judges by. -1 when there is none. The
+// events are swept at the top of the next stepMatch: read on the step, never later.
+export function foulOffenderId(match: MatchState): number {
+  const events = match.scratch.events;
+  for (let i = 0; i < events.length; i++) {
+    if (events[i].foul) return events[i].actorId;
+  }
+  return -1;
+}
+
+// G15-4 / G15-14: the team that scored on THIS step -- in open play or a golden goal (the
+// score), or in the shootout (its own scoreboard) -- or -1. A post or a crossbar never
+// moves either counter. Read against the watch BEFORE updateWatch, like the captions.
+export function goalScoredThisStep(match: MatchState, w: MatchWatch): 0 | 1 | -1 {
+  if (match.score[0] > w.score0) return 0;
+  if (match.score[1] > w.score1) return 1;
+  const sh = match.shootout;
+  if (sh === null) return -1;
+  if (sh.scored[0] > w.scored0) return 0;
+  if (sh.scored[1] > w.scored1) return 1;
+  return -1;
+}
+
+// The squad index of whoever left the pitch with the card of THIS step, if it is the
+// offender; otherwise the offender's own. After a keeper's red the slot already holds
+// the second keeper (review-6), and lastCard kept the one sent off.
+function offenderSquad(match: MatchState, w: MatchWatch, id: number): number {
+  const card = match.lastCard;
+  if (cardShownThisStep(match, w) && card.playerId === id) return card.squadIndex;
+  return match.players[id].squadIndex;
+}
+
+function injurySquad(match: MatchState, team: 0 | 1): number {
+  const id = match.pendingInjury[team] >= 0 ? match.pendingInjury[team] : match.lastInjury;
+  return id < 0 ? SUBJECT_NONE : match.players[id].squadIndex;
+}
+
 // `human` is who the keyboard drives (mode.ts HumanSide): 0 or 1 in a solo mode and in
 // the World Cup (S-PK3 may put the human on either side), 'both' in the two-player
 // friendly, 'none' for a CPU pair watched on screen. `victoryScreen` (Task 9-5, S-FL3,
@@ -210,14 +316,31 @@ export function collectCaptions(
   }
   // 1. The goal first: scoreGoal moves the phase in the SAME step, so a phase-based
   //    rule would swallow it.
-  if (match.score[0] > w.score0 || match.score[1] > w.score1) pushCaption(cs, 'goal');
+  const scorer = match.score[0] > w.score0 ? 0 : match.score[1] > w.score1 ? 1 : -1;
+  if (scorer !== -1) {
+    // G15-11 / D2: the subject is the last player to touch the ball (ball.lastTouchId,
+    // written by every kick and every possession), read on the goal's own step -- the
+    // kickoff after the pause gives the ball to somebody else. A touch by the team that
+    // did NOT score is an own goal: the caption is ABOUT that defender, flagged ownGoal.
+    const id = match.ball.lastTouchId;
+    if (id === null) pushCaption(cs, 'goal', scorer);
+    else {
+      const toucher = match.players[id];
+      pushCaption(cs, 'goal', toucher.team, toucher.squadIndex, toucher.team !== scorer);
+    }
+  }
 
   // 2. The shootout, read the way the stage B2 report prescribes: `taken` is the only
   //    reliable signal for BOTH outcomes, and `scored` separates them.
   const sh = match.shootout;
   if (sh !== null && (sh.taken[0] !== w.taken0 || sh.taken[1] !== w.taken1)) {
+    // D3: GOL and FALLA both name the man who took THAT kick; the team whose `taken`
+    // moved is the one that kicked.
+    const kicked = sh.taken[0] !== w.taken0 ? 0 : 1;
+    const id = shootoutScorerId(match, kicked);
+    const squad = id < 0 ? SUBJECT_NONE : match.players[id].squadIndex;
     const scoredNow = sh.scored[0] !== w.scored0 || sh.scored[1] !== w.scored1;
-    pushCaption(cs, scoredNow ? 'shootout-goal' : 'shootout-miss');
+    pushCaption(cs, scoredNow ? 'shootout-goal' : 'shootout-miss', kicked, squad);
   }
 
   // 3. Phase and half changes. endHalf on a level second half sets half = 3 AND calls
@@ -251,8 +374,18 @@ export function collectCaptions(
   //      of FINAL. w.phase still says 'shootout' on that step, which is what closes it.
   if (match.phase !== 'shootout' && w.phase !== 'shootout' && match.scratch.call.kind !== w.call) {
     switch (match.scratch.call.kind) {
-      case 'free-kick': pushCaption(cs, 'foul'); break;
-      case 'penalty': pushCaption(cs, 'penalty'); break;
+      case 'free-kick': {
+        const id = foulOffenderId(match);
+        if (id < 0) pushCaption(cs, 'foul');
+        else pushCaption(cs, 'foul', match.players[id].team, offenderSquad(match, w, id));
+        break;
+      }
+      case 'penalty': {
+        const sp = match.setPiece;
+        if (sp === null || sp.takerId < 0) pushCaption(cs, 'penalty');
+        else pushCaption(cs, 'penalty', match.players[sp.takerId].team, match.players[sp.takerId].squadIndex);
+        break;
+      }
       case 'corner': pushCaption(cs, 'corner'); break;
       case 'throw-in':
       case 'goal-kick': pushCaption(cs, 'out'); break;
@@ -262,8 +395,14 @@ export function collectCaptions(
 
   // 4b. G15-13 + G15-18 (V15-4-7): the card and the injury of the foul, AFTER its FALTA
   //     or PENALTI -- they come from the same step, and the whistle is the foul's.
-  if (cardShownThisStep(match, w)) pushCaption(cs, match.lastCard.card === 'red' ? 'card-red' : 'card-yellow');
-  if (injuredTeamThisStep(match, w) !== -1) pushCaption(cs, 'injury');
+  if (cardShownThisStep(match, w)) {
+    const card = match.lastCard;
+    const kind = card.card === 'red' ? 'card-red' : 'card-yellow';
+    if (card.playerId < 0) pushCaption(cs, kind);
+    else pushCaption(cs, kind, match.players[card.playerId].team, card.squadIndex);
+  }
+  const injured = injuredTeamThisStep(match, w);
+  if (injured !== -1) pushCaption(cs, 'injury', injured, injurySquad(match, injured));
 
   // 5. The end. winnerOf is the ONE reader of the winner (stage B2 §8) and it can
   //    return -1 with the match over -- abandon() at a level score, the only draw this
@@ -306,6 +445,9 @@ export function updateWatch(match: MatchState, w: MatchWatch): void {
 export function resetCaptionState(cs: CaptionState): void {
   cs.kind = 'none';
   cs.stepsLeft = 0;
+  cs.team = 0;
+  cs.squad = SUBJECT_NONE;
+  cs.ownGoal = false;
   cs.queueLen = 0;
 }
 

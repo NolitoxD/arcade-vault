@@ -121,3 +121,24 @@ export function beginGkCatchGestures(
   }
   return started;
 }
+
+// G15-25: "el robo normal solo amaga". steal() (actions.ts) stamps an ActionEvent of kind
+// 'steal' on EVERY press, but fills victimId only when the owner is within STEAL_RANGE:
+// that is the feint -- a lunge at somebody -- and a press with nobody near is not. Read
+// after EVERY step, like the dive (the events are swept at the top of the next stepMatch).
+// A screen timer in its own GestureTimers (the component keeps it apart from the dives).
+export const FEINT_STEPS = 18;   // 0.3 s
+
+export function beginStealFeints(match: MatchState, g: GestureTimers, durationSteps = FEINT_STEPS): number {
+  const events = match.scratch.events;
+  let started = 0;
+  for (let i = 0; i < events.length; i++) {
+    const ev = events[i];
+    if (ev.kind !== 'steal' || ev.victimId < 0) continue;
+    const id = ev.actorId;
+    if (id < 0 || id >= g.count) continue;
+    gestureBegin(g, id, match.stepCount, durationSteps, 0, 0);
+    started++;
+  }
+  return started;
+}

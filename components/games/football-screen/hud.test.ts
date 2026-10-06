@@ -8,7 +8,7 @@ import { humanProfile, profileFor } from '../football-logic/ai';
 import { SHOT_CHARGE_STEPS } from '../football-logic/actions';
 import { SHOOTOUT_ROUNDS, createShootoutState } from '../football-logic/set-pieces';
 import {
-  INJURY_TITLE, SHOT_CHARGE_SEGMENTS, buttonsIdle, chargeSegments, clockSeconds, clockSteps, clockText,
+  INJURY_TITLE, SHOT_CHARGE_SEGMENTS, chargeSegments, clockSeconds, clockSteps, clockText,
   countdownSeconds, cursorPlayerId, halfCapSteps, halfLabel, idleHint, injuryWindowTeam, keeperHoldsBall,
   reserveCanComeOn, shootoutKicksTaken, shootoutRoundLabel, smallNumber, sprintBarFraction,
 } from './hud';
@@ -152,28 +152,9 @@ describe('the cursor', () => {
   });
 });
 
-describe('buttonsIdle (gate 4)', () => {
-  it('is true in every phase where stepSetPiece swallows A and B', () => {
-    const m = newMatch();
-    // G15-18 (V15-4): the LESIONADO window ('injury') stops the match too.
-    for (const phase of ['kickoff', 'set-piece', 'shootout', 'goal', 'half-time', 'injury'] as const) {
-      m.phase = phase;
-      expect(buttonsIdle(m)).toBe(true);
-    }
-  });
-
-  it('is false in open play, in the golden goal and once the match is over', () => {
-    const m = newMatch();
-    for (const phase of ['play', 'golden-goal', 'over'] as const) {
-      m.phase = phase;
-      expect(buttonsIdle(m)).toBe(false);
-    }
-  });
-});
-
-// V15-4-7 (controller addition 3): during the LESIONADO window buttonsIdle stays true --
-// the match is stopped -- but A confirms the reserve, so the bottom line must not say
-// "the buttons do nothing". idleHint is the exhaustive switch that picks which line.
+// V15-4-7 (controller addition 3): during the LESIONADO window the match is stopped, but
+// A confirms the reserve, so the bottom line must not say "the buttons do nothing".
+// idleHint is the exhaustive switch that picks which line.
 describe('idleHint', () => {
   it('is the aim hint where stepSetPiece swallows A and B, and the injury hint in the LESIONADO window', () => {
     const m = newMatch();

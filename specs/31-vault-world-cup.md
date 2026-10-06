@@ -1003,4 +1003,8 @@ La v1 es el MVP; la v1.5 es el producto fino. Lo apuntado en el grill del 04-sep
 
       Fuera de las bandas: a dificultad 5 contra 1 la mayor gana solo el 52,6 % / 70,0 % de los decididos (la dificultad de la CPU
       pesa poco frente a los atributos; se juzga jugando).
+    - **G15-29 · Entrenamiento sin tarjetas ni lesiones (Paco, 2026-10-06):** el entrenamiento sirve para habituarse a los mandos y
+      coger habilidad, no para practicar reglas: se desactivan tarjetas y lesiones en ese modo (interruptor en las reglas del modo,
+      sin regrabado). Amistoso y Mundial no cambian. Sobre la dificultad: «el amistoso ya es difícil contra la máquina», así que
+      la progresión del Mundial no preocupa por ahora (se confirma en el QA).
 

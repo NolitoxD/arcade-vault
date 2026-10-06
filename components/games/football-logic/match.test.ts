@@ -1751,8 +1751,8 @@ describe('G9-1: match rules (clock off, frozen team)', () => {
   it('createMatch without rules is the normal match: NORMAL_RULES, and an identical run to an explicit one', () => {
     const implicit = fresh();
     const explicit = createMatch(TEAM_PAIR, FORMATIONS, PITCH, PROFILES, NORMAL_RULES);
-    expect(implicit.rules).toEqual({ timed: true, frozenTeam: -1 });
-    expect(TRAINING_RULES).toEqual({ timed: false, frozenTeam: 1 });
+    expect(implicit.rules).toEqual({ timed: true, frozenTeam: -1, discipline: true });
+    expect(TRAINING_RULES).toEqual({ timed: false, frozenTeam: 1, discipline: false });
     idle(implicit, 2000, createRng(7));
     idle(explicit, 2000, createRng(7));
     expect(snapshot(implicit)).toBe(snapshot(explicit));

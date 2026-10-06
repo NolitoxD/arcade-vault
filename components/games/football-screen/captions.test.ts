@@ -1,14 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { createMatch, type MatchState } from '../football-logic/match';
+import { NORMAL_RULES, createMatch, type MatchState } from '../football-logic/match';
 import { TEAM_SIZE } from '../football-logic/teams';
 import { PITCH } from '../football-logic/pitch';
 import { FORMATIONS, TEAMS } from '../football-logic/teams';
 import { humanProfile, profileFor } from '../football-logic/ai';
-import { createShootoutState } from '../football-logic/set-pieces';
+import { createShootoutState, shootoutTakerId } from '../football-logic/set-pieces';
 import {
-  CAPTION_QUEUE_MAX, CAPTION_STEPS, CAPTION_TEXT, collectCaptions, createCaptionState,
-  createMatchWatch, pushCaption, resetCaptionState, resetMatchWatch, stepCaption, updateWatch, type CaptionKind,
+  CAPTION_QUEUE_MAX, CAPTION_STEPS, CAPTION_TEXT, OWN_GOAL_PREFIX, SUBJECT_NONE, collectCaptions,
+  createCaptionState, createMatchWatch, goalScoredThisStep, pushCaption, resetCaptionState, resetMatchWatch, stepCaption,
+  updateWatch, type CaptionKind,
 } from './captions';
+import { createMatchRun, stepMatchRun } from './match-run';
 
 function newMatch(): MatchState {
   return createMatch(
@@ -604,5 +606,238 @@ describe('collectCaptions: cards and injuries', () => {
     resetCaptionState(cs);
     collectCaptions(m, w, 0, cs);
     expect(cs.kind).toBe('none');
+  });
+});
+
+// ── G15-11 (V15-5): who each caption is about ─────────────────────────────────
+// The subject travels WITH the caption through the queue, so two captions about two
+// players never share one name slot (the V15-4 review: a second card inside 3 s renamed
+// the first one while it was still waiting).
+describe('G15-11: every caption carries its own subject', () => {
+  function started(m: MatchState) {
+    const w = createMatchWatch();
+    const cs = createCaptionState();
+    collectCaptions(m, w, 0, cs);
+    updateWatch(m, w);
+    resetCaptionState(cs);
+    return { w, cs };
+  }
+
+  it('pushCaption carries the subject (and the own-goal mark) with the caption, and stepCaption hands it over with the kind', () => {
+    const cs = createCaptionState();
+    // Two DIFFERENT subjects on purpose: with the same one, a stepCaption that forgot to
+    // hand the subject over would still show the right name, by coincidence.
+    pushCaption(cs, 'foul', 1, 7);
+    pushCaption(cs, 'injury', 0, 2);
+    pushCaption(cs, 'goal', 1, 4, true);   // an own goal by player 4 of team 1 (D2): the mark travels too
+    expect([cs.kind, cs.team, cs.squad, cs.ownGoal]).toEqual(['foul', 1, 7, false]);
+    for (let i = 0; i < CAPTION_STEPS.foul; i++) stepCaption(cs);
+    expect([cs.kind, cs.team, cs.squad, cs.ownGoal]).toEqual(['injury', 0, 2, false]);
+    for (let i = 0; i < CAPTION_STEPS.injury; i++) stepCaption(cs);
+    expect([cs.kind, cs.team, cs.squad, cs.ownGoal]).toEqual(['goal', 1, 4, true]);
+    for (let i = 0; i < CAPTION_STEPS.goal; i++) stepCaption(cs);
+    expect([cs.kind, cs.squad, cs.ownGoal]).toEqual(['none', SUBJECT_NONE, false]);
+  });
+
+  it('two cards for two players keep a name each, also back to back (the single name slot of V15-4 is gone)', () => {
+    const cs = createCaptionState();
+    pushCaption(cs, 'foul', 0, 3);
+    pushCaption(cs, 'card-yellow', 0, 3);
+    pushCaption(cs, 'foul', 1, 9);
+    pushCaption(cs, 'card-yellow', 1, 9);
+    expect(cs.queue.slice(0, cs.queueLen)).toEqual(['card-yellow', 'foul', 'card-yellow']);
+    expect(cs.queueSquad.slice(0, cs.queueLen)).toEqual([3, 9, 9]);
+    expect(cs.queueTeam.slice(0, cs.queueLen)).toEqual([0, 1, 1]);
+    // The same kind about a DIFFERENT player, straight after: queued, not swallowed.
+    const back = createCaptionState();
+    pushCaption(back, 'card-yellow', 0, 3);
+    pushCaption(back, 'card-yellow', 1, 9);
+    expect([back.queueLen, back.queue[0], back.queueSquad[0]]).toEqual([1, 'card-yellow', 9]);
+  });
+
+  it('the same caption about the same player is still queued once', () => {
+    const cs = createCaptionState();
+    pushCaption(cs, 'foul', 1, 9);
+    // The subject is part of the state: this line is what puts the test in red before the
+    // code exists (the old state has no team/squad), so it is not an empty test.
+    expect([cs.kind, cs.team, cs.squad]).toEqual(['foul', 1, 9]);
+    pushCaption(cs, 'foul', 1, 9);
+    expect(cs.queueLen).toBe(0);
+    pushCaption(cs, 'card-red', 1, 9);
+    pushCaption(cs, 'card-red', 1, 9);
+    expect(cs.queueLen).toBe(1);
+    // A caption with no subject keeps the old rule.
+    pushCaption(cs, 'full-time');
+    pushCaption(cs, 'full-time');
+    expect(cs.queue.slice(0, cs.queueLen)).toEqual(['card-red', 'full-time']);
+  });
+
+  it('GOL names the last player to touch the ball; in an own goal that is the DEFENDER, flagged ownGoal; nobody when nobody touched it', () => {
+    const m = newMatch();
+    const { w, cs } = started(m);
+    const scorer = m.players[TEAM_SIZE + 9];
+    m.ball.lastTouchId = scorer.id;
+    m.score[1] = 1;
+    m.phase = 'goal';
+    m.stepCount++;
+    collectCaptions(m, w, 0, cs);
+    expect([cs.kind, cs.team, cs.squad, cs.ownGoal]).toEqual(['goal', 1, scorer.squadIndex, false]);
+    expect(scorer.squadIndex).toBeGreaterThanOrEqual(0);
+    updateWatch(m, w);
+    resetCaptionState(cs);
+    // A team-0 defender put it in his own net: team 1 scores, but the caption is ABOUT the
+    // defender (D2: "EN PROPIA · <defender's name>"), so it carries HIS team and squad index.
+    const defender = m.players[4];
+    expect(defender.team).toBe(0);
+    m.ball.lastTouchId = defender.id;
+    m.score[1] = 2;
+    m.stepCount++;
+    collectCaptions(m, w, 0, cs);
+    expect([cs.kind, cs.team, cs.squad, cs.ownGoal]).toEqual(['goal', 0, defender.squadIndex, true]);
+    expect(OWN_GOAL_PREFIX).toBe('EN PROPIA · ');
+    updateWatch(m, w);
+    resetCaptionState(cs);
+    m.ball.lastTouchId = null;
+    m.score[0] = 1;
+    m.stepCount++;
+    collectCaptions(m, w, 0, cs);
+    expect([cs.kind, cs.team, cs.squad, cs.ownGoal]).toEqual(['goal', 0, SUBJECT_NONE, false]);
+  });
+
+  it('GOL of the shootout names the man who took THAT kick, not the next taker the engine already put on the spot', () => {
+    const m = newMatch();
+    m.phase = 'shootout';
+    m.shootout = createShootoutState();
+    const { w, cs } = started(m);
+    // Team 0's third kick went in. The next taker of the SAME team is used as the trap:
+    // the two teams' default lineups share squad indices slot by slot, so only a taker
+    // of the same team tells a right name from a wrong one.
+    m.shootout.taken[0] = 3;
+    m.shootout.scored[0] = 1;
+    m.shootout.taken[1] = 2;
+    m.shootout.team = 1;
+    m.shootout.takerId = shootoutTakerId(0, 3);
+    m.stepCount++;
+    collectCaptions(m, w, 0, cs);
+    const scorer = m.players[shootoutTakerId(0, 2)];
+    const next = m.players[shootoutTakerId(0, 3)];
+    expect([cs.kind, cs.team, cs.squad]).toEqual(['shootout-goal', 0, scorer.squadIndex]);
+    expect(scorer.squadIndex).not.toBe(next.squadIndex);
+  });
+
+  it('FALTA names the offender of the step\'s foul and PENALTI the taker who will kick it', () => {
+    const m = newMatch();
+    const { w, cs } = started(m);
+    const offender = m.players[TEAM_SIZE + 5];
+    const victim = m.players[3];
+    const ev = m.scratch.events[offender.id];
+    ev.kind = 'tackle';
+    ev.foul = true;
+    ev.actorId = offender.id;
+    ev.victimId = victim.id;
+    m.scratch.call.kind = 'free-kick';
+    m.phase = 'set-piece';
+    m.stepCount++;
+    collectCaptions(m, w, 0, cs);
+    expect([cs.kind, cs.team, cs.squad]).toEqual(['foul', 1, offender.squadIndex]);
+
+    const p = newMatch();
+    const s = started(p);
+    const taker = p.players[7];
+    p.setPiece = p.scratch.setPiece;
+    p.setPiece.kind = 'penalty';
+    p.setPiece.takerId = taker.id;
+    p.scratch.call.kind = 'penalty';
+    p.phase = 'set-piece';
+    p.stepCount++;
+    collectCaptions(p, s.w, 0, s.cs);
+    expect([s.cs.kind, s.cs.team, s.cs.squad]).toEqual(['penalty', 0, taker.squadIndex]);
+  });
+
+  it('TARJETA names the carded man from lastCard (not the slot) and LESIÓN the injured one, each in its own caption', () => {
+    const m = newMatch();
+    const { w, cs } = started(m);
+    const fouler = m.players[TEAM_SIZE + 4];
+    const victim = m.players[6];
+    const ev = m.scratch.events[fouler.id];
+    ev.kind = 'tackle';
+    ev.foul = true;
+    ev.actorId = fouler.id;
+    ev.victimId = victim.id;
+    m.scratch.call.kind = 'free-kick';
+    m.lastCard.playerId = fouler.id;
+    m.lastCard.squadIndex = fouler.squadIndex;
+    m.lastCard.card = 'yellow';
+    m.injuriesUsed[0] = 1;
+    m.pendingInjury[0] = victim.id;
+    m.phase = 'injury';
+    m.stepCount++;
+    collectCaptions(m, w, 0, cs);
+    expect([cs.kind, cs.team, cs.squad]).toEqual(['foul', 1, fouler.squadIndex]);
+    expect(cs.queue.slice(0, cs.queueLen)).toEqual(['card-yellow', 'injury']);
+    expect(cs.queueTeam.slice(0, cs.queueLen)).toEqual([1, 0]);
+    expect(cs.queueSquad.slice(0, cs.queueLen)).toEqual([fouler.squadIndex, victim.squadIndex]);
+
+    // A keeper's red: the slot already holds the second keeper (squad 1) when the screen
+    // looks, and the caption must still name the one sent off (squad 0) -- review-6.
+    const k = newMatch();
+    const s = started(k);
+    k.players[0].squadIndex = 1;
+    k.lastCard.playerId = 0;
+    k.lastCard.squadIndex = 0;
+    k.lastCard.card = 'red';
+    k.stepCount++;
+    collectCaptions(k, s.w, 0, s.cs);
+    expect([s.cs.kind, s.cs.team, s.cs.squad]).toEqual(['card-red', 0, 0]);
+  });
+
+  // MEASURED 06-oct: CPU v CPU, seed 16, difficulty 5, ESPAÑA v ITALIA in 4-4-2 ends 0-0
+  // and goes to penalties, where team 0 scores three (0-0, 3-0 on penalties) and team 1
+  // misses its three (pre-flight). On the step of each kick the engine has ALREADY put the
+  // next taker on the spot, so this one run covers the GOL and the FALLA (D3) of the shootout.
+  it('a real shootout (CPU v CPU, seed 16): every GOL and every FALLA, read step by step, names the man who took THAT kick', () => {
+    const run = createMatchRun(TEAMS[0], TEAMS[1], 16, 5, [false, false], NORMAL_RULES, [0, 0]);
+    const m = run.match;
+    const w = createMatchWatch();
+    const cs = createCaptionState();
+    let named = 0;
+    let missed = 0;
+    for (let i = 0; i < 20_000 && m.phase !== 'over'; i++) {
+      const takerBefore = m.shootout === null ? -1 : m.shootout.takerId;
+      stepMatchRun(run);
+      resetCaptionState(cs);
+      collectCaptions(m, w, 'none', cs);
+      updateWatch(m, w);
+      if (cs.kind !== 'shootout-goal' && cs.kind !== 'shootout-miss') continue;
+      expect(takerBefore).toBeGreaterThanOrEqual(0);
+      expect([cs.team, cs.squad]).toEqual([m.players[takerBefore].team, m.players[takerBefore].squadIndex]);
+      if (cs.kind === 'shootout-goal') {
+        expect(m.shootout === null ? -1 : m.shootout.takerId).not.toBe(takerBefore);
+        named++;
+      } else missed++;
+    }
+    expect(named).toBe(3);
+    expect(missed).toBeGreaterThan(0);
+  });
+
+  it('goalScoredThisStep: the team that scored on this step, in open play or in the shootout; -1 for a post, a miss and the step after', () => {
+    const m = newMatch();
+    const w = createMatchWatch();
+    collectCaptions(m, w, 0, createCaptionState());
+    updateWatch(m, w);
+    m.ball.frameHit = 'post';
+    m.stepCount++;
+    expect(goalScoredThisStep(m, w)).toBe(-1);
+    m.score[1] = 1;
+    expect(goalScoredThisStep(m, w)).toBe(1);
+    updateWatch(m, w);
+    expect(goalScoredThisStep(m, w)).toBe(-1);
+    m.phase = 'shootout';
+    m.shootout = createShootoutState();
+    updateWatch(m, w);
+    m.shootout.taken[0] = 1;
+    expect(goalScoredThisStep(m, w)).toBe(-1);      // a miss: taken moved, scored did not
+    m.shootout.scored[0] = 1;
+    expect(goalScoredThisStep(m, w)).toBe(0);
   });
 });

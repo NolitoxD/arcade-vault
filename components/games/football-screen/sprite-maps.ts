@@ -6,7 +6,9 @@
 // Only three orientations are drawn by hand -- N, NE and E -- and the other five come
 // from quarter turns and left-right mirrors of the character grid, which are EXACT on
 // pixel art (no interpolation): S = cw(cw(N)), SE = cw(NE), SW = mirror(SE),
-// W = mirror(E), NW = mirror(NE). The grid is 15 x 15 (odd, so a quarter turn keeps the
+// W = mirror(E), NW = mirror(NE).
+// V15-5: the four poses of the show (slide, feint, hug, dejected) draw N and NE by hand; their E is rotateMapCW(N) -- a figure lying down or hugging reads the same turned a quarter, unlike the run frames, whose legs were drawn per side.
+// The grid is 15 x 15 (odd, so a quarter turn keeps the
 // centre pixel in place) at 2 px per cell: 30 px on screen, inside G15-2's 28-32, while
 // the engine's PLAYER_RADIUS stays 12 -- the sprite is bigger than the body only on
 // screen.
@@ -43,7 +45,12 @@ export const POSE_RUN_2 = 3;
 export const POSE_DOWN = 4;
 export const POSE_DIVE_0 = 5;
 export const POSE_DIVE_1 = 6;
-export const POSE_COUNT = 7;
+// V15-5: G15-25 (the slide, the feint/getting up) and G15-4 (the hug, the hung heads).
+export const POSE_SLIDE = 7;
+export const POSE_FEINT = 8;
+export const POSE_HUG = 9;
+export const POSE_DEJECTED = 10;
+export const POSE_COUNT = 11;
 
 // Screen axes: +x right, +y DOWN, clockwise from east.
 export const OCTANT_E = 0;
@@ -58,7 +65,7 @@ export const OCTANT_COUNT = 8;
 
 // The atlas: octants across, poses down.
 export const ATLAS_W = OCTANT_COUNT * SPRITE_SIZE; // 240
-export const ATLAS_H = POSE_COUNT * SPRITE_SIZE; // 210
+export const ATLAS_H = POSE_COUNT * SPRITE_SIZE; // 330
 
 export function atlasCellX(octant: number): number {
   return octant * SPRITE_SIZE;
@@ -432,9 +439,164 @@ const E_DIVE_1: SpriteMap = [
   '...............',
 ];
 
-export const HAND_N: readonly SpriteMap[] = [N_IDLE, N_RUN_0, N_RUN_1, N_RUN_2, N_DOWN, N_DIVE_0, N_DIVE_1];
-export const HAND_NE: readonly SpriteMap[] = [NE_IDLE, NE_RUN_0, NE_RUN_1, NE_RUN_2, NE_DOWN, NE_DIVE_0, NE_DIVE_1];
-export const HAND_E: readonly SpriteMap[] = [E_IDLE, E_RUN_0, E_RUN_1, E_RUN_2, E_DOWN, E_DIVE_0, E_DIVE_1];
+// ── V15-5. G15-25: lying on his side, one leg stretched to the edge of the cell, the
+// other bent, an arm on the ground. The leg is BEHIND the head (the head leads, as in
+// every map), so choosePlayerSprite draws it with the octant OPPOSITE to the tackle.
+const N_SLIDE: SpriteMap = [
+  '......OOO......',
+  '.....OHHHO.....',
+  '.....OHHHO.....',
+  '..OOOOTTTOO....',
+  '.OKKKSSSSSO....',
+  '..OOOSSSSSO....',
+  '.....OSSSO.....',
+  '.....OSSSO.....',
+  '.....OTTTO.....',
+  '.....OTTOKKOO..',
+  '.....OKKOOKKFO.',
+  '.....OKKO.OOO..',
+  '.....OKKO......',
+  '.....OFFO......',
+  '......OO.......',
+];
+const NE_SLIDE: SpriteMap = [
+  '..........OOO..',
+  '.........OHHHO.',
+  '........OHHHO..',
+  '......OOTTTO...',
+  '..OKKOSSSSSO...',
+  '...OOSSSSSO....',
+  '.....OSSSO.....',
+  '....OTTTTO.....',
+  '...OTTOOKKO....',
+  '..OKKO.OKKFO...',
+  '..OKKO..OOO....',
+  '.OKKO..........',
+  '.OKKO..........',
+  'OFFO...........',
+  'OO.............',
+];
+// G15-25: the steal that only feints, and the crouch of getting up -- head forward,
+// arms out, legs gathered: lower than standing, never on the ground.
+const N_FEINT: SpriteMap = [
+  '......OOO......',
+  '.....OHHHO.....',
+  '.....OHHHO.....',
+  '..OOOOTTTOOOO..',
+  '.OKSSSSSSSSSKO.',
+  '.OKOSSSSSSSOKO.',
+  '..O.OSSSSSO.O..',
+  '....OSSSSSO....',
+  '....OTTOTTO....',
+  '....OKKOKKO....',
+  '....OFFOFFO....',
+  '.....OO.OO.....',
+  '...............',
+  '...............',
+  '...............',
+];
+const NE_FEINT: SpriteMap = [
+  '..........OOO..',
+  '........OHHHO..',
+  '........OHHHO..',
+  '.....OOOTTTOOOO',
+  '...OKSSSSSSSSKO',
+  '..OKOSSSSSSSOO.',
+  '...OSSSSSSSO...',
+  '...OSSSSSSO....',
+  '...OTTOTTO.....',
+  '...OKKOKKO.....',
+  '..OFFOFFO......',
+  '..OO.OO........',
+  '...............',
+  '...............',
+  '...............',
+];
+// G15-4: the hug -- both arms reaching past the head, round a team-mate.
+const N_HUG: SpriteMap = [
+  '..OO.......OO..',
+  '.OKKO.OOO.OKKO.',
+  '.OKKOOHHHOOKKO.',
+  '..OKOOHHHOOKO..',
+  '..OKOOHHHOOKO..',
+  '...OOOTTTOOO...',
+  '...OSSSSSSSO...',
+  '...OSSSSSSSO...',
+  '...OSSSSSSSO...',
+  '....OSSSSSO....',
+  '....OTTOTTO....',
+  '....OKKOKKO....',
+  '....OKKOKKO....',
+  '....OFFOFFO....',
+  '.....OO.OO.....',
+];
+const NE_HUG: SpriteMap = [
+  '.......OO......',
+  '......OKKO.OOO.',
+  '.....OKKOOHHHO.',
+  '.....OKOOHHHOO.',
+  '......OOHHHOKKO',
+  '....OOOTTTOOKKO',
+  '..OSSSSSSSSOOO.',
+  '..OSSSSSSSSO...',
+  '..OSSSSSSSO....',
+  '..OSSSSSSO.....',
+  '..OTTOTTO......',
+  '..OKKOKKO......',
+  '..OKKOKKO......',
+  '.OFFOFFO.......',
+  '.OO.OO.........',
+];
+// G15-4: "rivales cabeza gacha" -- the head sunk between the shoulders, arms hanging.
+const N_DEJECTED: SpriteMap = [
+  '...............',
+  '...............',
+  '......OOO......',
+  '.....OHHHO.....',
+  '....OOHHHOO....',
+  '...OOOTTTOOO...',
+  '...OSSSSSSSO...',
+  '...OKSSSSSKO...',
+  '...OKSSSSSKO...',
+  '...OKSSSSSKO...',
+  '....OTTOTTO....',
+  '....OKKOKKO....',
+  '....OKKOKKO....',
+  '....OFFOFFO....',
+  '.....OO.OO.....',
+];
+const NE_DEJECTED: SpriteMap = [
+  '...............',
+  '...............',
+  '.........OOO...',
+  '........OHHHO..',
+  '.......OOHHHOO.',
+  '....OOOOTTTOO..',
+  '...OSSSSSSSSO..',
+  '...OKSSSSSSKO..',
+  '...OKSSSSSSKO..',
+  '..OSSSSSSSO....',
+  '..OTTOTTO......',
+  '..OKKOKKO......',
+  '..OKKOKKO......',
+  '.OFFOFFO.......',
+  '.OO.OO.........',
+];
+// rotateMapCW is a function declaration further down: hoisted, so callable here, at load.
+const E_SLIDE: SpriteMap = rotateMapCW(N_SLIDE);
+const E_FEINT: SpriteMap = rotateMapCW(N_FEINT);
+const E_HUG: SpriteMap = rotateMapCW(N_HUG);
+const E_DEJECTED: SpriteMap = rotateMapCW(N_DEJECTED);
+
+export const HAND_N: readonly SpriteMap[] = [
+  N_IDLE, N_RUN_0, N_RUN_1, N_RUN_2, N_DOWN, N_DIVE_0, N_DIVE_1, N_SLIDE, N_FEINT, N_HUG, N_DEJECTED,
+];
+export const HAND_NE: readonly SpriteMap[] = [
+  NE_IDLE, NE_RUN_0, NE_RUN_1, NE_RUN_2, NE_DOWN, NE_DIVE_0, NE_DIVE_1, NE_SLIDE, NE_FEINT, NE_HUG, NE_DEJECTED,
+];
+export const HAND_E: readonly SpriteMap[] = [
+  E_IDLE, E_RUN_0, E_RUN_1, E_RUN_2, E_DOWN, E_DIVE_0, E_DIVE_1, E_SLIDE, E_FEINT, E_HUG, E_DEJECTED,
+];
 
 // A quarter turn clockwise ON SCREEN: the top row becomes the right column.
 export function rotateMapCW(map: SpriteMap): string[] {

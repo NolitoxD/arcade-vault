@@ -120,12 +120,6 @@ export function idleHint(match: MatchState): IdleHint {
   }
 }
 
-// The match is stopped and does not read A or B as football (it reads the d-pad of a
-// set piece, or the TeamInput.sub of the LESIONADO window).
-export function buttonsIdle(match: MatchState): boolean {
-  return idleHint(match) !== 'none';
-}
-
 // ── G15-18: the LESIONADO window (V15-4-7) ──────────────────────────────────────
 
 export const INJURY_TITLE = 'LESIONADO';

@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { PLAYER_RADIUS } from '../football-logic/players';
 import {
   ATLAS_H, ATLAS_W, HAND_E, HAND_N, HAND_NE, OCTANT_COUNT, OCTANT_E, OCTANT_N, OCTANT_NE,
-  PLAYER_SPRITE_MAPS, POSE_COUNT, POSE_DIVE_1, POSE_IDLE, POSE_RUN_0, POSE_RUN_1, POSE_RUN_2,
+  PLAYER_SPRITE_MAPS, POSE_COUNT, POSE_DEJECTED, POSE_DIVE_1, POSE_FEINT, POSE_HUG, POSE_IDLE, POSE_RUN_0, POSE_RUN_1,
+  POSE_RUN_2, POSE_SLIDE,
   SPRITE_BOOTS, SPRITE_CHARS, SPRITE_GRID, SPRITE_HAIR, SPRITE_OUTLINE, SPRITE_SIZE, SPRITE_SKIN,
   atlasCellX, atlasCellY, bakeSpriteAtlas, createSpritePalette, mirrorMapX, rotateMapCW, writeSpritePalette,
   type SpriteMap,
@@ -200,5 +201,54 @@ describe('palette and atlas', () => {
     expect(atlasCellY(POSE_DIVE_1)).toBe(6 * SPRITE_SIZE);
     expect(atlasCellX(0)).toBe(0);
     expect(atlasCellY(0)).toBe(0);
+  });
+});
+
+// ── V15-5: the four poses of the show (G15-25 + G15-4) ──────────────────────────
+function opaqueRowSpan(map: SpriteMap): number {
+  let first = -1;
+  let last = -1;
+  for (let r = 0; r < map.length; r++) {
+    if (!/[^.]/.test(map[r])) continue;
+    if (first < 0) first = r;
+    last = r;
+  }
+  return last - first + 1;
+}
+
+function firstRowWith(map: SpriteMap, ch: string): number {
+  for (let r = 0; r < map.length; r++) if (map[r].includes(ch)) return r;
+  return -1;
+}
+
+function lastRowWith(map: SpriteMap, ch: string): number {
+  let row = -1;
+  for (let r = 0; r < map.length; r++) if (map[r].includes(ch)) row = r;
+  return row;
+}
+
+describe('the V15-5 poses', () => {
+  it('the slide lies the whole cell long with a boot at the far end from the hair; the feint crouches shorter than standing (G15-25)', () => {
+    const slide = HAND_N[POSE_SLIDE];
+    expect(opaqueRowSpan(slide)).toBe(SPRITE_GRID);
+    expect(lastRowWith(slide, 'H')).toBeLessThanOrEqual(2);
+    expect(lastRowWith(slide, 'F')).toBeGreaterThanOrEqual(SPRITE_GRID - 3);
+    expect(opaqueRowSpan(HAND_N[POSE_FEINT])).toBeLessThan(opaqueRowSpan(HAND_N[POSE_IDLE]));
+    expect(opaqueRowSpan(HAND_NE[POSE_FEINT])).toBeLessThan(opaqueRowSpan(HAND_NE[POSE_IDLE]));
+  });
+
+  it('the hug reaches its arms past the head, and the dejected head sits lower than the standing one (G15-4)', () => {
+    for (const set of [HAND_N, HAND_NE]) {
+      expect(firstRowWith(set[POSE_HUG], 'K')).toBeLessThan(firstRowWith(set[POSE_HUG], 'H'));
+      expect(firstRowWith(set[POSE_IDLE], 'K')).toBeGreaterThan(firstRowWith(set[POSE_IDLE], 'H'));
+      expect(firstRowWith(set[POSE_DEJECTED], 'H')).toBeGreaterThan(firstRowWith(set[POSE_IDLE], 'H'));
+    }
+  });
+
+  it('the E maps of the four new poses are the quarter turn of their N maps', () => {
+    for (const pose of [POSE_SLIDE, POSE_FEINT, POSE_HUG, POSE_DEJECTED]) {
+      expect(HAND_E[pose]).toEqual(rotateMapCW(HAND_N[pose]));
+    }
+    expect(POSE_COUNT).toBe(11);
   });
 });

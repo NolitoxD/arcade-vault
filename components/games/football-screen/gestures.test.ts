@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { GOAL_PAUSE_STEPS, NORMAL_RULES, resumePlay } from '../football-logic/match';
-import { TEAMS, TEAM_SIZE } from '../football-logic/teams';
+import { humanProfile, profileFor } from '../football-logic/ai';
+import { GOAL_PAUSE_STEPS, NORMAL_RULES, createMatch, resumePlay } from '../football-logic/match';
+import { PITCH } from '../football-logic/pitch';
+import { FORMATIONS, TEAMS, TEAM_SIZE } from '../football-logic/teams';
 import { createMatchRun, stepMatchRun } from './match-run';
 import {
-  DIVE_PEAK, DIVE_REACH_MAX, GESTURE_IDLE, GK_DIVE_STEPS,
-  beginGkCatchGestures, createGestureTimers, diveReach, gestureBegin, gestureProgress, resetGestures,
+  DIVE_PEAK, DIVE_REACH_MAX, FEINT_STEPS, GESTURE_IDLE, GK_DIVE_STEPS,
+  beginGkCatchGestures, beginStealFeints, createGestureTimers, diveReach, gestureBegin, gestureProgress, resetGestures,
 } from './gestures';
 
 const ESP = TEAMS[0];
@@ -162,5 +164,36 @@ describe('the length of the gesture', () => {
     // still: the keeper is standing again long before it has to take the goal kick
     // (G11-2).
     expect(GK_DIVE_STEPS).toBeLessThan(GOAL_PAUSE_STEPS);
+  });
+});
+
+// ── G15-25: the steal that only feints ─────────────────────────────────────────
+describe('beginStealFeints', () => {
+  it('starts a feint for a steal with a rival in reach, read on its step, and none for a press with nobody near', () => {
+    // MEASURED 06-oct: CPU v CPU, seed 14, difficulty 5 -- the first steal with a rival in
+    // reach is on step 588 (103 in the match).
+    const run = createMatchRun(ESP, ITA, 14, 5, [false, false], NORMAL_RULES, [0, 0]);
+    const m = run.match;
+    const g = createGestureTimers();
+    let actor = -1;
+    for (let i = 0; i < 3000 && actor < 0; i++) {
+      stepMatchRun(run);
+      const started = beginStealFeints(m, g);
+      if (started === 0) continue;
+      for (const ev of m.scratch.events) if (ev.kind === 'steal' && ev.victimId >= 0) actor = ev.actorId;
+    }
+    expect(actor).toBeGreaterThanOrEqual(0);
+    expect(gestureProgress(g, actor, m.stepCount)).toBe(0);
+    expect(gestureProgress(g, actor, m.stepCount + FEINT_STEPS)).toBe(GESTURE_IDLE);
+
+    // A steal pressed with no owner in reach: steal() stamps the event but no victim.
+    const quiet = createMatch([ESP, ITA], FORMATIONS, PITCH, [humanProfile(ESP, 5), profileFor(ITA, 5)]);
+    const q = createGestureTimers();
+    const ev = quiet.scratch.events[3];
+    ev.kind = 'steal';
+    ev.actorId = 3;
+    ev.victimId = -1;
+    expect(beginStealFeints(quiet, q)).toBe(0);
+    expect(gestureProgress(q, 3, quiet.stepCount)).toBe(GESTURE_IDLE);
   });
 });

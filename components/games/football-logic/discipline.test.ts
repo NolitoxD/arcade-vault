@@ -4,7 +4,8 @@ import {
   firstFreeReserveOfRole, hasSubstituteFor, isActive, registerFoul, sentOffCount,
 } from './discipline';
 import {
-  callSetPiece, createMatch, endExtraTime, keeperOf, resumePlay, stepMatch, substitute, type MatchPhase, type MatchState,
+  TRAINING_RULES, callSetPiece, createMatch, endExtraTime, keeperOf, resumePlay, stepMatch, substitute,
+  type MatchPhase, type MatchState,
 } from './match';
 import { createActionEvent, freestMateDir, pickPassTarget, steal, stepTackle, updateTeamControl } from './actions';
 import { stepBall } from './ball';
@@ -825,5 +826,32 @@ describe('checkTeamCount (G15-13 + G15-18): the net for a team in an impossible 
     const f = game();
     for (const id of [1, 2, 3, 4]) f.players[id].injured = true;
     expect(checkTeamCount(f.players, f.controlled, f.pendingInjury).some((s) => s.includes('team 0: 7 on the pitch'))).toBe(true);
+  });
+});
+
+// ── G15-29 (Paco, 06-oct): the training is for getting used to the pads, not for
+// practising the rules -- no cards and no injuries there. Friendly and World Cup keep
+// NORMAL_RULES, so every test above (and every recording) is untouched.
+describe('G15-29: the training decides no cards and no injuries', () => {
+  it('under TRAINING_RULES four fouls by the same player book nobody, hurt nobody and draw nothing from the Rng', () => {
+    const m = createMatch([TEAMS[0], TEAMS[1]], FORMATIONS, PITCH, PROFILES, TRAINING_RULES);
+    // The victim is a statue of the frozen team (team 1), so stageFoulOn makes the
+    // offender id 1 -- the human side's, the only one that can foul in a training.
+    const victimId = TEAM_SIZE + 5;
+    const offender = m.players[1];
+    for (let i = 0; i < CARD_RED_AT; i++) {
+      // A roll of 0 injures under NORMAL_RULES on the very first foul (INJURY_CHANCE 0.08).
+      const roll = fixedRng([0]);
+      foulStep(m, victimId, roll.rng);
+      expect(m.lastCard.card, `foul ${i + 1}: card`).toBe('none');
+      expect(roll.calls(), `foul ${i + 1}: injury draws`).toBe(0);
+      expect(m.phase, `foul ${i + 1}: phase`).toBe('set-piece');
+    }
+    expect(offender.fouls).toBe(0);
+    expect(offender.card).toBe('none');
+    expect(offender.sentOff).toBe(false);
+    expect(m.injuriesUsed).toEqual([0, 0]);
+    expect(m.players[victimId].injured).toBe(false);
+    expect(m.players.filter((p) => isActive(p))).toHaveLength(TEAM_SIZE * 2);
   });
 });

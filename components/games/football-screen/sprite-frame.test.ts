@@ -5,10 +5,10 @@ import { FORMATIONS, TEAMS } from '../football-logic/teams';
 import { DIVE_PEAK, GESTURE_IDLE, GK_DIVE_STEPS } from './gestures';
 import {
   OCTANT_COUNT, OCTANT_E, OCTANT_N, OCTANT_NE, OCTANT_NW, OCTANT_S, OCTANT_SE, OCTANT_SW, OCTANT_W,
-  POSE_DIVE_0, POSE_DIVE_1, POSE_DOWN, POSE_IDLE, POSE_RUN_0, POSE_RUN_1, POSE_RUN_2,
+  POSE_DIVE_0, POSE_DIVE_1, POSE_DOWN, POSE_FEINT, POSE_IDLE, POSE_RUN_0, POSE_RUN_1, POSE_RUN_2, POSE_SLIDE,
 } from './sprite-maps';
 import {
-  OCTANT_TAN, RUN_FRAME_STEPS, SLIDE_TILT_COS, SLIDE_TILT_RAD, SLIDE_TILT_SIN, SPRINT_FRAME_STEPS,
+  GETUP_STEPS, OCTANT_TAN, RUN_FRAME_STEPS, SPRINT_FRAME_STEPS,
   choosePlayerSprite, createSpriteChoice, diveSpritePose, facingOctant, runPose,
 } from './sprite-frame';
 
@@ -107,10 +107,9 @@ describe('choosePlayerSprite', () => {
     const out = createSpriteChoice();
     p.facingX = 1;
     p.facingY = 0;
-    choosePlayerSprite(p, 100, false, false, 0.3, 0, -1, out);
+    choosePlayerSprite(p, 100, false, false, 0.3, 0, -1, GESTURE_IDLE, out);
     expect(out.octant).toBe(OCTANT_N);
     expect(out.pose).toBe(POSE_DIVE_1);
-    expect(out.tilt).toBe(0);
   });
 
   it('keeps a parked shootout player standing still even if the engine left it sliding and down', () => {
@@ -119,9 +118,8 @@ describe('choosePlayerSprite', () => {
     p.vx = 180;
     p.tackleStepsLeft = 5;
     p.downUntilStep = 10_000;
-    choosePlayerSprite(p, 100, true, true, GESTURE_IDLE, 0, 0, out);
+    choosePlayerSprite(p, 100, true, true, GESTURE_IDLE, 0, 0, GESTURE_IDLE, out);
     expect(out.pose).toBe(POSE_IDLE);
-    expect(out.tilt).toBe(0);
   });
 
   it('lays a player down in open play, but never during the shootout, taker included', () => {
@@ -130,14 +128,14 @@ describe('choosePlayerSprite', () => {
     p.downUntilStep = 200;
     p.facingX = -1;
     p.facingY = 0;
-    choosePlayerSprite(p, 100, false, false, GESTURE_IDLE, 0, 0, out);
+    choosePlayerSprite(p, 100, false, false, GESTURE_IDLE, 0, 0, GESTURE_IDLE, out);
     expect(out.pose).toBe(POSE_DOWN);
     expect(out.octant).toBe(OCTANT_W);
-    choosePlayerSprite(p, 100, true, false, GESTURE_IDLE, 0, 0, out);
+    choosePlayerSprite(p, 100, true, false, GESTURE_IDLE, 0, 0, GESTURE_IDLE, out);
     expect(out.pose).toBe(POSE_IDLE);
   });
 
-  it('draws a slide as the run sprite tilted, along the tackle direction (G15-3)', () => {
+  it('draws the slide as the lying SLIDE pose with the head TRAILING, so the stretched leg leads the tackle (G15-25)', () => {
     const p = outfielder();
     const out = createSpriteChoice();
     p.facingX = 1;
@@ -145,29 +143,59 @@ describe('choosePlayerSprite', () => {
     p.tackleStepsLeft = 10;
     p.tackleDirX = -1;
     p.tackleDirY = 0;
-    choosePlayerSprite(p, 100, false, false, GESTURE_IDLE, 0, 0, out);
-    expect(out.pose).toBe(POSE_RUN_1);
-    expect(out.octant).toBe(OCTANT_W);
-    expect(out.tilt).toBe(-1);
-    p.tackleDirX = 1;
-    choosePlayerSprite(p, 100, false, false, GESTURE_IDLE, 0, 0, out);
-    expect(out.tilt).toBe(1);
-    expect(SLIDE_TILT_COS).toBeCloseTo(Math.cos(SLIDE_TILT_RAD), 9);
-    expect(SLIDE_TILT_SIN).toBeCloseTo(Math.sin(SLIDE_TILT_RAD), 9);
+    choosePlayerSprite(p, 100, false, false, GESTURE_IDLE, 0, 0, GESTURE_IDLE, out);
+    expect(out.pose).toBe(POSE_SLIDE);
+    expect(out.octant).toBe(OCTANT_E);   // sliding west: head east, leg west
+    p.tackleDirX = 0;
+    p.tackleDirY = 1;
+    choosePlayerSprite(p, 100, false, false, GESTURE_IDLE, 0, 0, GESTURE_IDLE, out);
+    expect(out.octant).toBe(OCTANT_N);   // sliding south: head north
+    choosePlayerSprite(p, 100, true, false, GESTURE_IDLE, 0, 0, GESTURE_IDLE, out);
+    expect(out.pose).not.toBe(POSE_SLIDE);   // never in the shootout
   });
 
   it('writes in place and returns nothing (criterion 20)', () => {
     const p = outfielder();
     const out = createSpriteChoice();
     p.vx = 180;
-    expect(choosePlayerSprite(p, 0, false, false, GESTURE_IDLE, 0, 0, out)).toBeUndefined();
+    expect(choosePlayerSprite(p, 0, false, false, GESTURE_IDLE, 0, 0, GESTURE_IDLE, out)).toBeUndefined();
     // id 1 at step 0: ((0 + 1 * RUN_PHASE_SPREAD) / RUN_FRAME_STEPS) | 0 = 0 -> RUN_0.
     expect(out.pose).toBe(POSE_RUN_0);
     expect(out.octant).toBe(OCTANT_E);
     p.facingX = 0;
     p.facingY = 1;
-    choosePlayerSprite(p, 6, false, false, GESTURE_IDLE, 0, 0, out);
+    choosePlayerSprite(p, 6, false, false, GESTURE_IDLE, 0, 0, GESTURE_IDLE, out);
     expect(out.pose).toBe(POSE_RUN_1);
     expect(out.octant).toBe(OCTANT_S);
+  });
+
+  it('gets up through the FEINT crouch in the last GETUP_STEPS of being down (G15-25: "y luego se levanta")', () => {
+    const p = outfielder();
+    const out = createSpriteChoice();
+    p.downUntilStep = 100 + GETUP_STEPS;
+    choosePlayerSprite(p, 100, false, false, GESTURE_IDLE, 0, 0, GESTURE_IDLE, out);
+    expect(out.pose).toBe(POSE_FEINT);
+    choosePlayerSprite(p, 99, false, false, GESTURE_IDLE, 0, 0, GESTURE_IDLE, out);
+    expect(out.pose).toBe(POSE_DOWN);
+    choosePlayerSprite(p, 100 + GETUP_STEPS, false, false, GESTURE_IDLE, 0, 0, GESTURE_IDLE, out);
+    expect(out.pose).toBe(POSE_IDLE);    // up, standing still
+    expect(GETUP_STEPS).toBeLessThan(60); // inside TACKLE_MISS_DOWN_STEPS (1 s)
+  });
+
+  it('a steal feint shows the FEINT pose the way the player faces, but the dive, the floor and the slide all win over it', () => {
+    const p = outfielder();
+    const out = createSpriteChoice();
+    p.facingX = 0;
+    p.facingY = -1;
+    choosePlayerSprite(p, 100, false, false, GESTURE_IDLE, 0, 0, 0.3, out);
+    expect([out.pose, out.octant]).toEqual([POSE_FEINT, OCTANT_N]);
+    choosePlayerSprite(p, 100, false, true, GESTURE_IDLE, 0, 0, 0.3, out);
+    expect(out.pose).toBe(POSE_IDLE);    // parked in the shootout
+    p.tackleStepsLeft = 5;
+    p.tackleDirX = 1;
+    choosePlayerSprite(p, 100, false, false, GESTURE_IDLE, 0, 0, 0.3, out);
+    expect(out.pose).toBe(POSE_SLIDE);
+    choosePlayerSprite(p, 100, false, false, 0.3, 1, 0, 0.3, out);
+    expect(out.pose).not.toBe(POSE_FEINT); // a dive (keeper gesture) wins
   });
 });

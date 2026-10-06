@@ -32,7 +32,7 @@ import {
 export type MatchPhase = 'kickoff' | 'play' | 'set-piece' | 'goal' | 'half-time' | 'golden-goal' | 'shootout' | 'over' | 'injury';
 
 // ── G9-1 (Paco, 09-sep): the training mode is a RULESET of the match, not a mode.
-// The engine still does not know what it is playing; it knows two switches:
+// The engine still does not know what it is playing; it knows three switches:
 //   · timed      — advanceClock is a no-op when false: no half ends, no extra time,
 //                  no shootout. The match only ends by abandon().
 //   · frozenTeam — that team's outfield players skip positionTeam (their want
@@ -40,11 +40,16 @@ export type MatchPhase = 'kickoff' | 'play' | 'set-piece' | 'goal' | 'half-time'
 //                  step holding a loose ball (dropFrozenPickup, S-FL2). Its KEEPER is
 //                  untouched: keeperStep, keeperCatch and the automatic release all
 //                  still run, which is what makes it a shooting drill and not a void.
+//   · discipline — G15-29 (Paco, 06-oct): the cards of G15-13 and the injuries of G15-18
+//                  are decided only when true. The training is for getting used to the
+//                  pads, not for practising the rules: with false a foul is still
+//                  whistled and restarted, but nobody is booked, nobody is hurt and the
+//                  Rng is not drawn for the injury roll.
 // NORMAL_RULES is the default of createMatch, so every existing call and test is the
 // match it always was, byte for byte (see the first G9-1 test).
-export type MatchRules = { timed: boolean; frozenTeam: -1 | 0 | 1 };
-export const NORMAL_RULES: Readonly<MatchRules> = { timed: true, frozenTeam: -1 };
-export const TRAINING_RULES: Readonly<MatchRules> = { timed: false, frozenTeam: 1 };
+export type MatchRules = { timed: boolean; frozenTeam: -1 | 0 | 1; discipline: boolean };
+export const NORMAL_RULES: Readonly<MatchRules> = { timed: true, frozenTeam: -1, discipline: true };
+export const TRAINING_RULES: Readonly<MatchRules> = { timed: false, frozenTeam: 1, discipline: false };
 
 export type MatchState = {
   teams: [TeamDef, TeamDef];
@@ -692,12 +697,13 @@ function stepOpenPlay(match: MatchState, inputs: readonly [TeamInput, TeamInput]
       // piece picks its taker and lines up its rivals; and before the injury roll, which
       // it does not change (no draw here). No extra pause (G15-13: "sin pausa extra");
       // the screen reads match.lastCard on the edge, like it reads scratch.call.
-      registerFoul(match, ev.actorId);
+      // G15-29: neither the card nor the injury roll happens in a training (rules.discipline).
+      if (match.rules.discipline) registerFoul(match, ev.actorId);
       // Ruling R14: judgeFoul alone decides penalty vs free kick (offender's own
       // big area); match.ts must not re-derive that rule.
       judgeFoul(ev.x, ev.y, players[ev.victimId].team, match.attackDir, match.pitch, scratch.call);
       if (isRestart(scratch.call.kind)) callSetPiece(match, scratch.call.kind, scratch.call.team, scratch.call.x, scratch.call.y);
-      decideInjury(match, players[ev.victimId], rng);
+      if (match.rules.discipline) decideInjury(match, players[ev.victimId], rng);
       advanceClock(match);
       return;
     }
