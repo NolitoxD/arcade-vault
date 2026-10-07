@@ -10,7 +10,7 @@ import { NORMAL_RULES, abandon, isOpenPlay, type MatchRules } from './football-l
 import {
   modeAwayId, modeBracket, modeDifficulty, modeFxKind, modeHasCrowd, modeHomeId, modeHumanSide, modeMatchLabel,
   modeMatchSeed, modeRules, modeScore, modeScores, modeStatus, modeVictoryScreen, modeVictoryTeamId, modeVictoryTitle,
-  createFriendlyMode, sideIsHuman, type FxKind, type GameMode, type HumanSide,
+  createFriendlyMode, sideIsHuman, FRIENDLY_LEVELS, FRIENDLY_LEVEL_NAMES, type FxKind, type GameMode, type HumanSide,
 } from './football-logic/mode';
 import { PITCH } from './football-logic/pitch';
 import { PLAYER_RADIUS, isSprinting, type PlayerState } from './football-logic/players';
@@ -38,12 +38,12 @@ import {
   pushCaption, resetCaptionState, resetMatchWatch, stepCaption, updateWatch, type ShowingCaption,
 } from './football-screen/captions';
 import {
-  CONTROL_HINTS, PRE_MATCH_HINT_TWO, TWO_PLAYER_SCHEME_NOTE, injuryHintFor, keeperHintFor,
+  CONTROL_HINTS, PRE_MATCH_HINT_TWO, TWO_PLAYER_SCHEME_NOTE, injuryHintFor, keeperHintFor, quickKickHintFor,
 } from './football-screen/control-hints';
 import {
   BRACKET_CHOICE_COUNT, MODE_BLURBS, MODE_LIST, MODE_NAMES, createFlowState, flowAfterModeBuilt, flowBuildMode,
-  flowCaptionsDrained, flowConfirmBracket, flowConfirmDraw, flowConfirmLineup, flowConfirmMode, flowConfirmTeam,
-  flowContinue, flowCpuPair, flowEndPreMatch, flowExitMatch, flowHasLineup, flowHumanCount, flowLineupBeginEdit, flowLineupCancelChoice,
+  flowCaptionsDrained, flowConfirmBracket, flowConfirmDraw, flowConfirmLevel, flowConfirmLineup, flowConfirmMode,
+  flowConfirmTeam, flowLevelBack, flowMoveLevel, flowContinue, flowCpuPair, flowEndPreMatch, flowExitMatch, flowHasLineup, flowHumanCount, flowLineupBeginEdit, flowLineupCancelChoice,
   flowLineupChoose, flowLineupEndEdit, flowLineupMove, flowMatchOver, flowMoveBracketChoice, flowMoveMode,
   flowMoveTeam, flowPickingHuman, flowRecordCpuResult, flowSetFormation, flowSetKeyScheme, flowSkipSpectate,
   flowSpectateOver, flowStepPreMatch, flowToggleKeyScheme, phaseGroup, type PhaseGroup,
@@ -69,13 +69,13 @@ import {
 } from './football-screen/grass';
 import {
   INJURY_TITLE, SHOT_CHARGE_SEGMENTS, chargeSegments, clockText, countdownSeconds, cursorPlayerId,
-  halfLabel, idleHint, injuryWindowTeam, keeperHoldsBall, reserveCanComeOn, shootoutRoundLabel, smallNumber,
+  halfLabel, idleHint, injuryWindowTeam, keeperHoldsBall, quickKickTeam, reserveCanComeOn, shootoutRoundLabel, smallNumber,
   sprintBarFraction,
 } from './football-screen/hud';
 import {
   ARROWS_SOLO, KEY_SCHEME_STORAGE_KEY, SOLO_TABLES_BY_SCHEME, TWO_PLAYER_P1, TWO_PLAYER_P2, TWO_PLAYER_TABLES,
   createPadState, isPauseKey, loadKeyScheme, overlayPadToTeamInput, padAdvance, padBlur, padChoice, padClear, padDown,
-  padFormationChoice, padKeyFor, padToTeamInput, padUp, saveKeyScheme, type KeyTable, type PadKey, type PadState,
+  padFormationChoice, padKeyFor, padQuickKick, padToTeamInput, padUp, saveKeyScheme, type KeyTable, type PadKey, type PadState,
 } from './football-screen/keyboard';
 import {
   GK_POSITION, applySwap, canSwap, checkLineup, createLineup, lineupBackspace, lineupEndEdit, lineupName, lineupTypeChar,
@@ -266,6 +266,7 @@ const CARD_BG = 'rgba(20,20,30,0.85)';
 const CARD_BORDER = '#444455';
 const DIM_TEXT = 'rgba(232,244,255,0.4)';
 const MODE_TITLE = 'ELIGE MODO';
+const LEVEL_TITLE = 'DIFICULTAD';   // G15-30
 const TEAM_TITLE_SOLO = 'ELIGE TU SELECCIÓN';
 const TEAM_TITLES_TWO: readonly [string, string] = ['JUGADOR 1 (WASD): ELIGE TU SELECCIÓN', 'JUGADOR 2 (FLECHAS): ELIGE TU SELECCIÓN'];
 const TEAM_HINTS_TWO: readonly [string, string] = ['WASD · C CONFIRMA · 1/2/3 ALINEACIÓN', 'FLECHAS · J CONFIRMA · 7/8/9 ALINEACIÓN'];
@@ -1175,11 +1176,13 @@ function VaultWorldCupGame({
         padToTeamInput(pads[0], first, run.inputs[0]);
         overlayPadToTeamInput(gamepadPads[0], first, run.inputs[0]);
         run.inputs[0].sub = -1;
+        padQuickKick(run.inputs[0]);   // G15-31: after both devices, the edge of A only
       }
       if (run.human[1]) {
         padToTeamInput(pads[1], first, run.inputs[1]);
         overlayPadToTeamInput(gamepadPads[1], first, run.inputs[1]);
         run.inputs[1].sub = -1;
+        padQuickKick(run.inputs[1]);
       }
       if (injuryViewTeam !== -1) injuryPick(injuryViewTeam);
       stepMatchRun(run);
@@ -1849,11 +1852,14 @@ function VaultWorldCupGame({
 
       // Only the AIM line: during the LESIONADO window A does something (it confirms the
       // reserve), so "only the d-pad works" would contradict the window's own hint.
-      if (idleHint(match) === 'aim') {
+      // G15-31: a HUMAN kickoff or restart (not the penalty) can go at once with A, so its
+      // line names that team's A; every other stop keeps HINT_AIM, as before.
+      const quickTeam = quickKickTeam(match, run.human);
+      if (quickTeam !== -1 || idleHint(match) === 'aim') {
         ctx.textAlign = 'center';
         ctx.font = FONT_SMALL;
         ctx.fillStyle = HINT_TEXT;
-        ctx.fillText(HINT_AIM, VIEW_W / 2, VIEW_H - 14);
+        ctx.fillText(quickTeam !== -1 ? quickKickHintFor(tables[quickTeam]) : HINT_AIM, VIEW_W / 2, VIEW_H - 14);
       }
 
       // S-SC3, for the human keeper who holds the ball (see runStep point 6). The hint
@@ -2035,6 +2041,27 @@ function VaultWorldCupGame({
       ctx.fillStyle = two ? DIM_TEXT : HUD_TEXT;
       ctx.fillText(two ? TWO_PLAYER_SCHEME_NOTE : hints.schemeDetail, VIEW_W / 2, MODE_SCHEME_DETAIL_Y);
       drawHint(hints.mode, MODE_HINT_Y);
+    }
+
+    // G15-30: the CPU friendly's three levels, as three of the mode cards -- the same
+    // highlight (accent border and name) as ELIGE MODO, the cursor on flow.levelIndex.
+    function drawLevelSelect(): void {
+      drawMenuBackground(LEVEL_TITLE);
+      const x = (VIEW_W - MODE_CARD_W) / 2;
+      for (let i = 0; i < FRIENDLY_LEVELS.length; i++) {
+        const y = modeCardY(i);
+        const selected = i === flow.levelIndex;
+        ctx.fillStyle = CARD_BG;
+        ctx.fillRect(x, y, MODE_CARD_W, MODE_CARD_H);
+        ctx.strokeStyle = selected ? HUD_ACCENT : CARD_BORDER;
+        ctx.lineWidth = selected ? 3 : 1;
+        ctx.strokeRect(x, y, MODE_CARD_W, MODE_CARD_H);
+        ctx.textAlign = 'center';
+        ctx.font = FONT_MENU_ITEM;
+        ctx.fillStyle = selected ? HUD_ACCENT : HUD_TEXT;
+        ctx.fillText(FRIENDLY_LEVEL_NAMES[FRIENDLY_LEVELS[i]], VIEW_W / 2, y + MODE_CARD_H / 2);
+      }
+      drawHint(CONTROL_HINTS[flow.keyScheme].levelSelect, MODE_HINT_Y);
     }
 
     function drawTeamSelect(): void {
@@ -2396,6 +2423,7 @@ function VaultWorldCupGame({
     function draw(): void {
       switch (flow.phase) {
         case 'mode-select': drawModeSelect(); break;
+        case 'level-select': drawLevelSelect(); break;
         case 'team-select': drawTeamSelect(); break;
         case 'lineup': drawLineup(); break;
         case 'draw': drawDraw(); break;
@@ -2480,6 +2508,14 @@ function VaultWorldCupGame({
           else if (k === 'down') flowMoveMode(flow, 1);
           else if (k === 'left' || k === 'right') toggleKeyScheme();
           else if (k === 'a') flowConfirmMode(flow);
+          else return false;
+          return true;
+        case 'level-select':
+          // G15-30: the cruceta walks the three levels, A goes on, B goes back.
+          if (k === 'up' || k === 'left') flowMoveLevel(flow, -1);
+          else if (k === 'down' || k === 'right') flowMoveLevel(flow, 1);
+          else if (k === 'a') flowConfirmLevel(flow);
+          else if (k === 'b') flowLevelBack(flow);
           else return false;
           return true;
         case 'team-select':

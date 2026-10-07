@@ -1022,4 +1022,20 @@ La v1 es el MVP; la v1.5 es el producto fino. Lo apuntado en el grill del 04-sep
       sin regrabado). Amistoso y Mundial no cambian. Sobre la dificultad: «el amistoso ya es difícil contra la máquina», así que
       la progresión del Mundial no preocupa por ahora (se confirma en el QA).
       *Implementado en V15-5 (Task 1): `MatchRules.discipline` (`NORMAL_RULES` true, `TRAINING_RULES` false); `registerFoul` y la tirada de lesión solo corren con él; ningún valor de test regrabado.*
+    - **G15-30 · Dificultad del Amistoso vs CPU (Paco, 2026-10-07):** tres niveles, BEGINNER = 2, MEDIUM = 4, PRO = 6, por
+      defecto MEDIUM, con los nombres en inglés tal cual. Se eligen en una pantalla propia justo después de elegir Amistoso vs
+      CPU, con cruceta y A (el patrón del selector de formación); en el partido, una etiqueta discreta con el nivel, como la ronda
+      en el Mundial. No afecta al amistoso a dos, al entrenamiento ni al Mundial.
+      *Implementado en V15-5 (extras, Task 11): `GameMode` `friendly-cpu` lleva `level` y `modeDifficulty` lo lee
+      (`FRIENDLY_DIFFICULTY` = 5 se queda para el amistoso a dos, el entrenamiento y las sondas); fase DIFICULTAD tras AMISTOSO,
+      cruceta con tope en los extremos, A sigue y B vuelve a ELIGE MODO, el nivel se recuerda como el modo; la etiqueta va al
+      cuadro Estado de la página, «AMISTOSO · MEDIUM», donde va la ronda del Mundial. Sin regrabado.*
+    - **G15-31 · Saque rápido en balones parados (Paco, 2026-10-07):** en saque inicial, banda, puerta, córner y falta, pulsar A
+      saca al momento en la dirección apuntada; si no se pulsa, la cuenta atrás sigue igual. El penalti no cambia. El aviso de
+      abajo nombra la tecla real de la tabla en uso.
+      *Implementado en V15-5 (extras, Task 12): un campo `TeamInput.quickKick` que solo escribe la pantalla con el flanco de la A
+      humana (`padQuickKick`) y solo lee `stepSetPiece` en esos cinco tipos; no se lee `a === 'pressed'` porque las grabaciones de
+      `match.test.ts` pulsan A en balones parados (24 veces, carrera C) y habrían cambiado sin que fallara nada. La CPU nunca saca
+      rápido. Aviso «CRUCETA: APUNTAR · A (J) SACA · SI NO, SALE SOLO» cuando saca un humano; el resto de paradas, como antes. Sin
+      regrabado: md5 de `engine-invariants.test.ts` y grabaciones intactos.*
 

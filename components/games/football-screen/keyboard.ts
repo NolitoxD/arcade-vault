@@ -284,6 +284,16 @@ export function padToTeamInput(pad: PadState, first: boolean, out: TeamInput): v
   out.strategy = pad.strategy;
 }
 
+// G15-31 (Paco, 07-oct): "A saca al momento". The quick kick is a fresh human press of A
+// -- the EDGE: 'pressed' lasts one step (settle, padAdvance), so an A held since before
+// the whistle reads 'held' and never takes the kick; the player has to let go and press
+// again, the LESIONADO window's rule. The component calls this for each HUMAN side after
+// both devices have written the step's input (the gamepad can turn 'held' into
+// 'pressed'); the CPU never does, so its quickKick stays false (input.ts).
+export function padQuickKick(out: TeamInput): void {
+  out.quickKick = out.a === 'pressed';
+}
+
 function settle(b: ButtonState): ButtonState {
   if (b === 'pressed') return 'held';
   if (b === 'released') return 'up';

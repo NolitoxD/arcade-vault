@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
-  CONTROL_HINTS, PRE_MATCH_HINT_TWO, TWO_PLAYER_SCHEME_NOTE, injuryHintFor, keeperHintFor, keyLabel, type ControlHints,
+  CONTROL_HINTS, PRE_MATCH_HINT_TWO, TWO_PLAYER_SCHEME_NOTE, injuryHintFor, keeperHintFor, keyLabel, quickKickHintFor, type ControlHints,
 } from './control-hints';
 import { ARROWS_SOLO, CLASSIC_SOLO, KEY_SCHEMES, TWO_PLAYER_P1, TWO_PLAYER_P2, type KeyTable } from './keyboard';
 
 function allTexts(h: ControlHints): string[] {
   return [
-    h.schemeRow, h.schemeDetail, h.mode, h.teamSolo, h.draw, h.bracketChoice, h.bracketPlay, h.spectate, h.victory,
-    h.lineupBrowse, h.lineupSwap, h.lineupEdit, h.preMatch,
+    h.schemeRow, h.schemeDetail, h.mode, h.levelSelect, h.teamSolo, h.draw, h.bracketChoice, h.bracketPlay, h.spectate,
+    h.victory, h.lineupBrowse, h.lineupSwap, h.lineupEdit, h.preMatch,
   ];
 }
 
@@ -55,6 +55,15 @@ describe('control hints per key scheme (G15-6)', () => {
     expect(injuryHintFor(CLASSIC_SOLO)).toBe('CRUCETA: ELIGE RESERVA · A (Z) CONFIRMA');
   });
 
+  // G15-31: a human set piece can go at once with A; the line names the A of the table
+  // of the team that takes it, and still says that waiting works as before.
+  it('quickKickHintFor: the d-pad aims and the table\'s own A takes the kick, or it goes by itself', () => {
+    expect(quickKickHintFor(ARROWS_SOLO)).toBe('CRUCETA: APUNTAR · A (J) SACA · SI NO, SALE SOLO');
+    expect(quickKickHintFor(TWO_PLAYER_P2)).toBe('CRUCETA: APUNTAR · A (J) SACA · SI NO, SALE SOLO');
+    expect(quickKickHintFor(TWO_PLAYER_P1)).toBe('CRUCETA: APUNTAR · A (C) SACA · SI NO, SALE SOLO');
+    expect(quickKickHintFor(CLASSIC_SOLO)).toBe('CRUCETA: APUNTAR · A (Z) SACA · SI NO, SALE SOLO');
+  });
+
   it('keyLabel names the key a table reads for a pad key, upper-cased, and throws when there is none', () => {
     expect(keyLabel(ARROWS_SOLO, 'a')).toBe('J');
     expect(keyLabel(CLASSIC_SOLO, 'right')).toBe('P');
@@ -94,6 +103,11 @@ describe('control hints per key scheme (G15-6)', () => {
     expect(CONTROL_HINTS.arrows.lineupSwap).toBe('CRUCETA: ELIGE RESERVA · A (J) CONFIRMA · B (K) CANCELA');
     expect(CONTROL_HINTS.classic.lineupBrowse).toBe('CRUCETA · A (Z) CAMBIAR · C (C) NOMBRE · B (X) VOLVER');
     expect(CONTROL_HINTS.classic.lineupSwap).toContain('(Z)');
+  });
+
+  it('DIFICULTAD (G15-30): the cruceta picks the level, the scheme\'s own A confirms and its B goes back', () => {
+    expect(CONTROL_HINTS.arrows.levelSelect).toBe('CRUCETA: NIVEL · A (J) CONFIRMA · B (K) VOLVER');
+    expect(CONTROL_HINTS.classic.levelSelect).toBe('CRUCETA: NIVEL · A (Z) CONFIRMA · B (X) VOLVER');
   });
 
   it('the name editor hint names no key of any scheme: it is the letters themselves plus Enter', () => {

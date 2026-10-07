@@ -7,7 +7,7 @@ import {
   ARROWS_SOLO, CLASSIC_SOLO, DEFAULT_KEY_SCHEME, KEY_BINDINGS, KEY_SCHEMES, KEY_SCHEME_STORAGE_KEY, SOLO_TABLES_BY_SCHEME,
   TWO_PLAYER_P1, TWO_PLAYER_P2, TWO_PLAYER_TABLES,
   createPadState, isPauseKey, loadKeyScheme, overlayPadToTeamInput, padAdvance, padBlur, padChoice, padClear, padDown,
-  padFormationChoice, padKeyFor, padToTeamInput, padUp, parseKeyScheme, saveKeyScheme, tablesShareKey,
+  padFormationChoice, padKeyFor, padQuickKick, padToTeamInput, padUp, parseKeyScheme, saveKeyScheme, tablesShareKey,
 } from './keyboard';
 
 describe('padKeyFor', () => {
@@ -164,6 +164,32 @@ describe('padToTeamInput', () => {
     padAdvance(pad);
     padToTeamInput(pad, true, out);
     expect(out.a).toBe('held');
+  });
+});
+
+// G15-31: the quick kick is the edge of A, never its level.
+describe('padQuickKick', () => {
+  it('is true only on the step A goes down: not while held, not on release, not after the frame advances', () => {
+    const pad = createPadState('neutral', 0);
+    const out = createTeamInput();
+    const seen: boolean[] = [];
+    const step = (first: boolean): void => {
+      padToTeamInput(pad, first, out);
+      padQuickKick(out);
+      seen.push(out.quickKick);
+    };
+    step(true);                // nothing pressed
+    padDown(pad, 'a');
+    step(true);                // the press
+    step(false);               // same frame, second step: held
+    padAdvance(pad);
+    step(true);                // next frame, still down: held
+    padUp(pad, 'a');
+    step(true);                // released
+    padAdvance(pad);
+    padDown(pad, 'a');
+    step(true);                // pressed again: a new kick
+    expect(seen).toEqual([false, true, false, false, false, true]);
   });
 });
 

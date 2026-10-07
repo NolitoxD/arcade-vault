@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { PITCH, centerY, goalLineX, isInsideBigArea } from './pitch';
 import { FORMATIONS, TEAMS, OUTFIELD, TEAM_SIZE, type Formation, type Strategy } from './teams';
 import { dist } from './geometry';
-import { createTeamInput, type TeamInput } from './input';
+import { createTeamInput, type ButtonState, type TeamInput } from './input';
+import { createMatch, stepMatch } from './match';
+import { profileFor } from './ai';
 import { GK_LINE_DIST, createPlayers, type PlayerState } from './players';
 import { CONTROL_DIST, LONG_PASS_VZ, createBall, type BallState } from './ball';
 import { createRng, type Rng } from './rng';
@@ -246,6 +248,81 @@ describe('automatic execution by kind', () => {
     expect(w.out.kind).toBe('shot');
     expect(speedOf(w.ball)).toBeCloseTo(shotSpeed(FREE_KICK_CHARGE_STEPS, w.players[w.sp.takerId].shotMult), 6);
     expect(shotSpeed(FREE_KICK_CHARGE_STEPS, 1)).toBe(800);
+  });
+});
+
+// ── G15-31 (Paco, 07-oct): "A saca al momento" ────────────────────────────────────
+describe('G15-31: the quick kick', () => {
+  // The five kinds that go by themselves, with the kick each one is (the table of
+  // 'automatic execution by kind' above). The aim of the PRESS step differs from the one
+  // held before it, so "in the aimed direction" means the aim of that very step.
+  type Quick = { kind: SetPieceKind; team: 0 | 1; x: number; y: number; dy: -1 | 1; event: 'short-pass' | 'long-pass' | 'shot' };
+  const QUICK: readonly Quick[] = [
+    { kind: 'kickoff', team: 0, x: SPOT_X, y: CY, dy: 1, event: 'short-pass' },
+    { kind: 'throw-in', team: 1, x: 700, y: 0, dy: 1, event: 'short-pass' },
+    { kind: 'goal-kick', team: 0, x: PITCH.smallAreaDepth, y: CY, dy: -1, event: 'long-pass' },
+    { kind: 'corner', team: 1, x: 0, y: PITCH.height, dy: -1, event: 'long-pass' },
+    { kind: 'free-kick', team: 0, x: 1500, y: 500, dy: 1, event: 'shot' },
+  ];
+
+  it('takes kickoff, throw-in, goal kick, corner and free kick on the step of the press, at that step\'s aim', () => {
+    for (const q of QUICK) {
+      const w = world();
+      begin(w, q.kind, q.team, q.x, q.y);
+      w.input.dx = 1;
+      w.input.dy = 0;
+      expect(run(w, 10), `${q.kind}: nothing before the press`).toBe(-1);
+      w.input.dx = 0;
+      w.input.dy = q.dy;
+      w.input.quickKick = true;
+      expect(run(w, 1, createRng(1), 0.6, 11), `${q.kind}: taken on the press`).toBe(11);
+      expect(w.sp.stepsLeft, `${q.kind}: countdown cut`).toBe(0);
+      expect(w.out.kind, `${q.kind}: the kick of its kind`).toBe(q.event);
+      expect(w.ball.owner, `${q.kind}: the ball is away`).toBeNull();
+      expect(w.ball.vx, `${q.kind}: no x left from the old aim`).toBeCloseTo(0, 10);
+      expect(Math.sign(w.ball.vy), `${q.kind}: along the new aim`).toBe(q.dy);
+    }
+  });
+
+  it('the penalty ignores it: the side still sticks and the countdown still runs to zero', () => {
+    const w = world();
+    begin(w, 'penalty', 0, PITCH.width - PITCH.penaltySpotDist, CY);
+    w.input.dy = 1;
+    w.input.quickKick = true;
+    const rng = fixedRng([0.61, 0.3]);
+    expect(run(w, SET_PIECE_COUNTDOWN_STEPS - 1, rng)).toBe(-1);
+    expect([w.sp.stepsLeft, w.sp.side]).toEqual([1, 1]);
+    expect(run(w, 1, rng, 0.6, SET_PIECE_COUNTDOWN_STEPS)).toBe(SET_PIECE_COUNTDOWN_STEPS);
+  });
+
+  it('A pressed, held or released WITHOUT the flag changes nothing: the CPU, the recordings and the probes never write it', () => {
+    const states: ButtonState[] = ['pressed', 'held', 'released'];
+    for (const state of states) {
+      const w = world();
+      begin(w, 'free-kick', 0, 1500, 500);
+      w.input.a = state;
+      w.input.b = state;
+      w.input.c = state;
+      expect(run(w, SET_PIECE_COUNTDOWN_STEPS - 1), `A ${state}`).toBe(-1);
+      expect(w.sp.stepsLeft, `A ${state}`).toBe(1);
+    }
+  });
+
+  it('through stepMatch only the TAKING team\'s flag counts, and play resumes on the step of the press', () => {
+    const m = createMatch([TEAMS[0], TEAMS[1]], FORMATIONS, PITCH, [profileFor(TEAMS[0], 5), profileFor(TEAMS[1], 5)]);
+    const sp = m.setPiece;
+    if (sp === null) throw new Error('a match opens with its kickoff');
+    const taking = sp.team;
+    const inputs: [TeamInput, TeamInput] = [createTeamInput(), createTeamInput()];
+    inputs[taking === 0 ? 1 : 0].quickKick = true;
+    stepMatch(m, inputs, createRng(1));
+    expect([m.phase, sp.stepsLeft]).toEqual(['kickoff', SET_PIECE_COUNTDOWN_STEPS - 1]);
+    inputs[taking === 0 ? 1 : 0].quickKick = false;
+    inputs[taking].quickKick = true;
+    const takerId = sp.takerId;
+    stepMatch(m, inputs, createRng(1));
+    expect(m.phase).toBe('play');
+    expect(m.scratch.events[takerId].kind).toBe('short-pass');
   });
 });
 

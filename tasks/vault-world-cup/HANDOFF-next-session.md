@@ -1,6 +1,61 @@
-# HANDOFF — VAULT WORLD CUP · v1.5: V15-5 «Espectáculo» DÍA 1 CERRADO EN CÓDIGO (T1-T4 en `f76a40a`, T5 sin commit); siguiente = QA de Paco + día 2 (T6-T10) · actualizado 2026-10-07
+# HANDOFF — VAULT WORLD CUP · v1.5: V15-5 COMPLETO EN CÓDIGO (día 2 en `2ce93ab`, extras T11-T12 sin commit); siguiente = QA de los extras + commit + SUBIDA A PRODUCCIÓN el viernes 09-oct · actualizado 2026-10-07
 
-Prompt para retomar: ver el bloque «PROMPT PARA LA SIGUIENTE SESIÓN» de §-23.
+Prompt para retomar: ver el bloque «PROMPT PARA LA SIGUIENTE SESIÓN» de §-24.
+
+## -24. 07-oct: extras del V15-5 HECHOS (T11 dificultad del Amistoso, T12 saque rápido con A); siguiente = PRODUCCIÓN el viernes 09-oct
+
+**Estado:** Paco commiteó el día 2 del V15-5 en `2ce93ab`. El QA del día 1 salió OK. Las extras **T11 (G15-30)** y **T12 (G15-31)** están
+implementadas y revisadas (0 rondas de arreglo cada una), **sin commit**. Plan: `docs/superpowers/plans/2026-10-07-vault-world-cup-v15-5-extras.md`.
+Ledger: `.superpowers/sdd/2026-10-07-vault-world-cup-v15-5-extras/progress.md`.
+- **T11:** Amistoso vs CPU a BEGINNER 2 / MEDIUM 4 (por defecto) / PRO 6, en la pantalla DIFICULTAD justo después de AMISTOSO (cruceta con
+  tope, A sigue, B vuelve a ELIGE MODO). El nivel se recuerda hasta recargar la página. El cuadro Estado dice «AMISTOSO · PRO». Tu portero
+  también escala con el nivel.
+- **T12:** en el saque inicial, la banda, el saque de puerta, el córner y la falta, una A **nueva** del humano saca al momento hacia donde
+  apuntas (`TeamInput.quickKick`, que solo escribe la pantalla). El penalti no cambia. Aviso «CRUCETA: APUNTAR · A (J) SACA · SI NO, SALE SOLO»
+  con la tecla de la tabla en uso. **Sin regrabado:** md5 de `engine-invariants` intacto y la huella de la grabación idéntica.
+- **Cierre:** vitest **1574 / 94**, `tsc` y eslint limpios, compuerta del motor OK, `next build` OK en una copia. Minors estéticos
+  diferidos: un import largo (`VaultWorldCupGame.tsx:52`) y un `describe` mal colocado (`hud.test.ts:149`).
+- **Working tree:** 15 ficheros de `components/` (M) + `specs/31-vault-world-cup.md` (G15-30/31 anotados) + este handoff. Ningún fichero nuevo.
+
+**QA pendiente (Paco):** `.superpowers/sdd/2026-10-07-vault-world-cup-v15-5-extras/qa-paco.md` (§1 DIFICULTAD, §2 Saque rápido, §3 General,
+§4 Notas). Después, el commit propuesto (en el ledger y en el informe).
+
+**SIGUIENTE PASO: subir a producción el viernes 09-oct (festivo de Paco).** Antes de nada, el QA de los extras y su commit. Luego, con
+`main` limpio y pusheado:
+
+Checklist de deploy:
+1. **Supabase de producción:** crear un proyecto nuevo, clonado del de desarrollo `hppzpkurlwqwzmigiuzq`. Misma región. Plan free salvo
+   que digas otra cosa.
+2. **Migraciones:** aplicar las 19 de `supabase/migrations/` en orden (`supabase link` al proyecto nuevo + `supabase db push`). Comprobar
+   las tablas `games`/`scores`, que la RLS está **activada** en las dos (ojo: ya no se activa sola), las políticas, el realtime de
+   `scores` y las filas de juegos con sus portadas. Pasar los advisors de seguridad y rendimiento.
+3. **Auth en producción:** Site URL y Redirect URLs con el dominio de Vercel (incluido `/auth/callback` y `/auth/reset-password`). Email
+   activado. Google, solo si ya está configurado.
+4. **Quitar el login con GitHub en producción:** hoy está en `app/auth/page.tsx` (`handleOAuth('github')`, botón «▣ GITHUB»). Opciones:
+   ocultar el botón (por ejemplo con una variable de entorno pública) y **no** activar el proveedor GitHub en Supabase de producción.
+   Decidirlo en un grill corto antes de tocar código.
+5. **Vercel desde GitHub:** importar el repo (rama `main`, framework Next.js, build por defecto). Producción = `main`.
+6. **Variables de entorno en Vercel (Production):** `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (las del proyecto
+   NUEVO, nunca las de desarrollo), `NEXT_PUBLIC_APP_URL` (el dominio de Vercel) y `RESEND_API_KEY` (formulario de contacto). Revisar
+   también si Preview debe apuntar a desarrollo.
+7. **Probar la URL de producción ANTES de la beta:** home, /games, una partida de cada juego (al menos VAULT WORLD CUP: un Mundial y un
+   amistoso, con teclado y mando), registro e inicio de sesión por email, que se guarda una puntuación y sale en /hall-of-fame (realtime),
+   formulario de contacto, que no hay botón GitHub, que no hay errores en la consola ni en los logs de Vercel, y en el móvil (controles
+   táctiles).
+8. **Beta informal:** pasar la URL solo cuando el punto 7 esté en verde.
+
+### PROMPT PARA LA SIGUIENTE SESIÓN
+```
+/retomar tasks/vault-world-cup/HANDOFF-next-session.md
+Viernes 09-oct: subimos arcade-vault a PRODUCCIÓN. Lee §-24 del handoff.
+0) Comprueba que commiteé los extras del V15-5 (git log; working tree limpio) y apunta mis notas del QA de
+   .superpowers/sdd/2026-10-07-vault-world-cup-v15-5-extras/qa-paco.md si te las paso.
+1) Grill corto del deploy: dominio, región y plan de Supabase, cómo quitar el login con GitHub en prod, Preview → qué Supabase.
+2) Sigue la checklist de §-24 en orden: Supabase prod clonada de hppzpkurlwqwzmigiuzq → migraciones + RLS + advisors →
+   Auth URLs → quitar GitHub → Vercel desde GitHub → variables de entorno → probar la URL de prod (lista del punto 7).
+   Pídeme confirmación antes de cada acción que cree recursos o toque producción. Secretos: nunca en el chat.
+3) Cierre: URL probada, lista de lo verificado y lo pendiente para la beta, y el handoff actualizado. Commits solo yo.
+```
 
 ## -23. 07-oct: V15-5 día 1 CERRADO (T4 re-revisada, T5 implementada y revisada; build OK)
 

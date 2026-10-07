@@ -167,6 +167,9 @@ export function stepSetPiece(
     placeTaker(sp, taker, ball, pitch);
   }
   sp.stepsLeft--;
+  // G15-31: A takes it now, AFTER this step's aim (so it goes where the d-pad points on
+  // the very step of the press). The penalty keeps its countdown and its side (Paco).
+  if (input.quickKick && sp.kind !== 'penalty') sp.stepsLeft = 0;
   if (sp.stepsLeft > 0) return false;
   switch (sp.kind) {
     case 'kickoff':

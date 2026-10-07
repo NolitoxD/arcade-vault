@@ -4,7 +4,9 @@ import { SQUAD_SIZE } from './squads';
 
 describe('TeamInput', () => {
   it('createTeamInput is the neutral input', () => {
-    expect(createTeamInput()).toEqual({ dx: 0, dy: 0, a: 'up', b: 'up', c: 'up', formation: 0, strategy: 'neutral', sub: -1 });
+    expect(createTeamInput()).toEqual({
+      dx: 0, dy: 0, a: 'up', b: 'up', c: 'up', formation: 0, strategy: 'neutral', sub: -1, quickKick: false,
+    });
   });
   it('isDown is true for pressed and held only', () => {
     expect(isDown('pressed')).toBe(true);
@@ -14,7 +16,7 @@ describe('TeamInput', () => {
   });
   it('copyTeamInput copies every field without aliasing', () => {
     const from = createTeamInput();
-    from.dx = -1; from.dy = 1; from.a = 'held'; from.b = 'released'; from.c = 'pressed'; from.formation = 2; from.strategy = 'attack'; from.sub = 13;
+    from.dx = -1; from.dy = 1; from.a = 'held'; from.b = 'released'; from.c = 'pressed'; from.formation = 2; from.strategy = 'attack'; from.sub = 13; from.quickKick = true;
     const to = createTeamInput();
     copyTeamInput(from, to);
     expect(to).toEqual(from);

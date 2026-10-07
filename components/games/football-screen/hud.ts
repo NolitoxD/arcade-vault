@@ -136,6 +136,17 @@ export function injuryWindowTeam(match: MatchState, human: readonly [boolean, bo
   return -1;
 }
 
+// G15-31 (Paco, 07-oct): the HUMAN team that can take the set piece standing now with A
+// -- a kickoff or any restart but the penalty, which keeps its countdown -- or -1. The
+// screen swaps the bottom line for that table's quickKickHintFor; a CPU set piece, the
+// penalty, the shootout and the goal and half-time pauses keep HINT_AIM.
+export function quickKickTeam(match: MatchState, human: readonly [boolean, boolean]): 0 | 1 | -1 {
+  if (match.phase !== 'kickoff' && match.phase !== 'set-piece') return -1;
+  const sp = match.setPiece;
+  if (sp === null || sp.kind === 'penalty' || !human[sp.team]) return -1;
+  return sp.team;
+}
+
 // The picker offers only what match.ts's substitute accepts (hud.test.ts checks the two
 // agree for every squad index): a keeper for a keeper and an outfield player of ANY
 // position for an outfield player (G15-18), nobody on the pitch and nobody who has left

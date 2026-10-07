@@ -1,8 +1,8 @@
 import { stepsFor } from '../football-logic/clock';
 import { winnerOf, type MatchState } from '../football-logic/match';
 import {
-  createFriendlyMode, createWorldCupMode, drawRival, drawSeedFor, modeAbandonMatch, modeBracket, modeEndMatch, modeRules,
-  modeStatus, type GameMode, type GameModeKind,
+  DEFAULT_FRIENDLY_LEVEL, FRIENDLY_LEVELS, createFriendlyMode, createWorldCupMode, drawRival, drawSeedFor, modeAbandonMatch,
+  modeBracket, modeEndMatch, modeRules, modeStatus, type GameMode, type GameModeKind,
 } from '../football-logic/mode';
 import { createRng } from '../football-logic/rng';
 import { nextCpuPair, resolveCpuMatch } from '../football-logic/world-cup';
@@ -15,6 +15,7 @@ import { DEFAULT_KEY_SCHEME, type KeyScheme } from './keyboard';
 // the keyboard, the clock or the DOM, and nothing allocates after createFlowState.
 export type FlowPhase =
   | 'mode-select'   // the four modes
+  | 'level-select'  // G15-30: BEGINNER / MEDIUM / PRO, the CPU friendly only
   | 'team-select'   // the twenty, with the formation selector (G9-4, G9-5, G15-9)
   | 'lineup'        // G15-17: starters, reserves and names, before a friendly or the World Cup
   | 'draw'          // the World Cup's sixteen, drawn
@@ -43,6 +44,7 @@ export function phaseGroup(phase: FlowPhase): PhaseGroup {
     case 'spectate':
       return 'match';
     case 'mode-select':
+    case 'level-select':
     case 'team-select':
     case 'lineup':
     case 'draw':
@@ -100,6 +102,17 @@ export const PRE_MATCH_BY_MODE: Readonly<Record<GameModeKind, boolean>> = {
 };
 export const PRE_MATCH_STEPS = stepsFor(3);
 
+// G15-30 (Paco, 07-oct): the level screen opens right after AMISTOSO is chosen, and only
+// there -- the two-player friendly, the training and the World Cup go on to the team
+// selector as before. MEDIUM is the cursor's first position.
+export const LEVEL_SELECT_BY_MODE: Readonly<Record<GameModeKind, boolean>> = {
+  'friendly-cpu': true,
+  'friendly-2p': false,
+  training: false,
+  'world-cup': false,
+};
+export const DEFAULT_LEVEL_INDEX = FRIENDLY_LEVELS.indexOf(DEFAULT_FRIENDLY_LEVEL);
+
 export type FlowState = {
   phase: FlowPhase;
   modeIndex: number;            // cursor on MODE_LIST; survives a reset (the last mode played)
@@ -112,6 +125,7 @@ export type FlowState = {
   lineupChoosing: number;       // the position being substituted, -1 = browsing
   lineupEditing: number;        // the squad index whose name is being typed, -1 = none
   preMatchStepsLeft: number;    // G15-19: fixed steps left on the line-up screen
+  levelIndex: number;           // G15-30: cursor on FRIENDLY_LEVELS; survives a reset, like modeIndex
   after: FlowPhase;             // where 'over' goes once the captions drain
   keyScheme: KeyScheme;         // G15-6: Flechas or Clásico; a preference, so it survives a reset
 };
@@ -119,7 +133,7 @@ export type FlowState = {
 export function createFlowState(): FlowState {
   return {
     phase: 'mode-select', modeIndex: 0, picking: 0, cursor: 0, picked: [-1, -1], formation: [0, 0], bracketChoice: 0,
-    lineupCursor: 0, lineupChoosing: -1, lineupEditing: -1, preMatchStepsLeft: 0,
+    lineupCursor: 0, lineupChoosing: -1, lineupEditing: -1, preMatchStepsLeft: 0, levelIndex: DEFAULT_LEVEL_INDEX,
     after: 'mode-select', keyScheme: DEFAULT_KEY_SCHEME,
   };
 }
@@ -174,13 +188,35 @@ export function flowMoveMode(f: FlowState, delta: number): void {
 
 export function flowConfirmMode(f: FlowState): void {
   if (f.phase !== 'mode-select') return;
-  f.phase = 'team-select';
+  f.phase = LEVEL_SELECT_BY_MODE[flowModeKind(f)] ? 'level-select' : 'team-select';
   f.picking = 0;
   f.cursor = 0;
   f.picked[0] = -1;
   f.picked[1] = -1;
   f.formation[0] = 0;
   f.formation[1] = 0;
+}
+
+// ── level-select (G15-30) ───────────────────────────────────────────────────────
+
+// The cruceta walks BEGINNER - MEDIUM - PRO with a stop at each end (the bracket's rule,
+// G15-8): a repeated press towards PRO stays on PRO instead of wrapping to BEGINNER.
+export function flowMoveLevel(f: FlowState, delta: number): void {
+  if (f.phase !== 'level-select' || delta === 0) return;
+  const next = f.levelIndex + (delta < 0 ? -1 : 1);
+  if (next >= 0 && next < FRIENDLY_LEVELS.length) f.levelIndex = next;
+}
+
+// A: on to the team selector, with the level kept for flowBuildMode.
+export function flowConfirmLevel(f: FlowState): void {
+  if (f.phase !== 'level-select') return;
+  f.phase = 'team-select';
+}
+
+// B (Paco's (d): the back button of every screen): back to ELIGE MODO, on the same mode.
+export function flowLevelBack(f: FlowState): void {
+  if (f.phase !== 'level-select') return;
+  f.phase = 'mode-select';
 }
 
 // G15-6: the key-scheme row of ELIGE MODO, flipped with left/right from any card.
@@ -243,7 +279,7 @@ export function flowBuildMode(f: FlowState, bankIds: readonly string[], seed: nu
   const homeId = bankIds[f.picked[0]];
   if (kind === 'world-cup') return createWorldCupMode(bankIds, homeId, seed);
   const awayId = kind === 'friendly-2p' ? bankIds[f.picked[1]] : drawRival(bankIds, homeId, createRng(drawSeedFor(seed)));
-  return createFriendlyMode(kind, homeId, awayId);
+  return createFriendlyMode(kind, homeId, awayId, FRIENDLY_LEVELS[f.levelIndex]);
 }
 
 // The human's match is about to start: through the line-up screen where the mode has one.

@@ -8,13 +8,14 @@ import {
 import { PITCH } from '../football-logic/pitch';
 import { FORMATIONS, TEAMS, teamById } from '../football-logic/teams';
 import {
-  BRACKET_CHOICE_COUNT, HUMANS_BY_MODE, LINEUP_BY_MODE, MODE_BLURBS, MODE_LIST, MODE_NAMES, PRE_MATCH_BY_MODE,
-  PRE_MATCH_STEPS, createFlowState, flowAfterModeBuilt, flowBracketAction, flowBuildMode, flowCaptionsDrained,
-  flowConfirmBracket, flowConfirmDraw, flowConfirmLineup, flowConfirmMode, flowConfirmTeam, flowContinue, flowCpuPair,
-  flowEndPreMatch, flowExitMatch, flowHasLineup, flowHumanCount, flowLineupBeginEdit, flowLineupCancelChoice,
-  flowLineupChoose, flowLineupEndEdit, flowLineupMove, flowMatchOver, flowModeKind, flowMoveBracketChoice, flowMoveMode,
-  flowMoveTeam, flowPickingHuman, flowRecordCpuResult, flowReset, flowSetFormation, flowSetKeyScheme, flowSkipSpectate,
-  flowSpectateOver, flowStepPreMatch, flowToggleKeyScheme, phaseGroup,
+  BRACKET_CHOICE_COUNT, DEFAULT_LEVEL_INDEX, HUMANS_BY_MODE, LEVEL_SELECT_BY_MODE, LINEUP_BY_MODE, MODE_BLURBS, MODE_LIST,
+  MODE_NAMES, PRE_MATCH_BY_MODE, PRE_MATCH_STEPS, createFlowState, flowAfterModeBuilt, flowBracketAction, flowBuildMode,
+  flowCaptionsDrained, flowConfirmBracket, flowConfirmDraw, flowConfirmLevel, flowConfirmLineup, flowConfirmMode,
+  flowConfirmTeam, flowContinue, flowCpuPair, flowEndPreMatch, flowExitMatch, flowLevelBack, flowMoveLevel, flowHasLineup,
+  flowHumanCount, flowLineupBeginEdit, flowLineupCancelChoice, flowLineupChoose, flowLineupEndEdit, flowLineupMove,
+  flowMatchOver, flowModeKind, flowMoveBracketChoice, flowMoveMode, flowMoveTeam, flowPickingHuman, flowRecordCpuResult,
+  flowReset, flowSetFormation, flowSetKeyScheme, flowSkipSpectate, flowSpectateOver, flowStepPreMatch, flowToggleKeyScheme,
+  phaseGroup,
   type FlowPhase, type FlowState,
 } from './flow';
 
@@ -57,6 +58,7 @@ function startRaw(kind: string, teamIndex: number, secondIndex = -1): { f: FlowS
   const f = createFlowState();
   while (flowModeKind(f) !== kind) flowMoveMode(f, 1);
   flowConfirmMode(f);
+  if (f.phase === 'level-select') flowConfirmLevel(f);   // G15-30: on MEDIUM, the default
   f.cursor = teamIndex;
   const first = flowConfirmTeam(f, BANK);
   if (first === 'next') {
@@ -105,7 +107,7 @@ describe('the mode selector', () => {
     expect(HUMANS_BY_MODE).toEqual({ 'friendly-cpu': 1, 'friendly-2p': 2, training: 1, 'world-cup': 1 });
   });
 
-  it('starts on mode-select at AMISTOSO, wraps in both directions, and A moves to team-select', () => {
+  it('starts on mode-select at AMISTOSO, wraps in both directions, and A moves to the level screen and then team-select', () => {
     const f = createFlowState();
     expect(f.phase).toBe('mode-select');
     expect(flowModeKind(f)).toBe('friendly-cpu');
@@ -116,6 +118,8 @@ describe('the mode selector', () => {
     flowMoveMode(f, 1);
     expect(flowModeKind(f)).toBe('friendly-cpu');
     flowConfirmMode(f);
+    expect(f.phase).toBe('level-select');   // G15-30
+    flowConfirmLevel(f);
     expect(f.phase).toBe('team-select');
     expect(flowPickingHuman(f)).toBe(0);
     expect(flowHumanCount(f)).toBe(1);
@@ -142,7 +146,7 @@ describe('the mode selector', () => {
     expect(f.keyScheme).toBe('arrows');
     flowConfirmMode(f);
     flowToggleKeyScheme(f);
-    expect(f.phase).toBe('team-select');
+    expect(f.phase).toBe('level-select');   // G15-30: AMISTOSO opens the level screen first
     expect(f.keyScheme).toBe('arrows');
   });
 
@@ -158,6 +162,7 @@ describe('the team selector', () => {
   it('moves the cursor on a 5 x 4 grid, wrapping rows and columns, and refuses a slot past the bank', () => {
     const f = createFlowState();
     flowConfirmMode(f);
+    flowConfirmLevel(f);
     flowMoveTeam(f, 1, 0, BANK);
     expect(f.cursor).toBe(1);
     flowMoveTeam(f, -1, 0, BANK);
@@ -183,6 +188,7 @@ describe('the team selector', () => {
   it('a friendly and the World Cup go on to ALINEACIÓN; the training is done there and then (G15-17)', () => {
     const solo = createFlowState();
     flowConfirmMode(solo);                                   // AMISTOSO
+    flowConfirmLevel(solo);                                  // G15-30: MEDIUM
     solo.cursor = 4;
     expect(flowConfirmTeam(solo, BANK)).toBe('lineup');
     expect(solo.phase).toBe('lineup');
@@ -217,6 +223,7 @@ describe('the team selector', () => {
   it('the ALINEACIÓN cursor wraps, and the two sub-modes open and close (G15-17)', () => {
     const f = createFlowState();
     flowConfirmMode(f);
+    flowConfirmLevel(f);
     f.cursor = 0;
     flowConfirmTeam(f, BANK);
     expect(f.phase).toBe('lineup');
@@ -252,6 +259,7 @@ describe('the team selector', () => {
   it('browsing, choosing a reserve and editing a name refuse to interleave (G15-17)', () => {
     const f = createFlowState();
     flowConfirmMode(f);
+    flowConfirmLevel(f);
     f.cursor = 0;
     flowConfirmTeam(f, BANK);
 
@@ -501,15 +509,16 @@ describe('the end of a match', () => {
   });
 });
 
-// ── Task 10-2 (G10-4): which music track a phase belongs to. All TEN phases of
+// ── Task 10-2 (G10-4): which music track a phase belongs to. All ELEVEN phases of
 // FlowPhase, not a sample -- risk 7 inherited from step 9. ───────────────────────
 describe('phaseGroup', () => {
-  it('match, spectate and pre-match are "match"; the other seven phases are "menu"', () => {
+  it('match, spectate and pre-match are "match"; the other eight phases are "menu"', () => {
     const phases: FlowPhase[] = [
-      'mode-select', 'team-select', 'lineup', 'draw', 'bracket', 'pre-match', 'match', 'spectate', 'victory', 'over',
+      'mode-select', 'level-select', 'team-select', 'lineup', 'draw', 'bracket', 'pre-match', 'match', 'spectate', 'victory',
+      'over',
     ];
     expect(phases.map(phaseGroup)).toEqual([
-      'menu', 'menu', 'menu', 'menu', 'menu', 'match', 'match', 'match', 'menu', 'menu',
+      'menu', 'menu', 'menu', 'menu', 'menu', 'menu', 'match', 'match', 'match', 'menu', 'menu',
     ]);
   });
 });
@@ -554,5 +563,75 @@ describe('the pre-match line-up (G15-19)', () => {
     flowEndPreMatch(menu);
     expect(flowStepPreMatch(menu)).toBe(false);
     expect(menu).toEqual(createFlowState());
+  });
+});
+
+// ── G15-30 (Paco, 07-oct): the CPU friendly's level screen ──────────────────────
+describe('the level screen (G15-30)', () => {
+  it('only AMISTOSO opens DIFICULTAD, right after the mode and on MEDIUM; the other three modes go straight to the team selector', () => {
+    expect(LEVEL_SELECT_BY_MODE).toEqual({ 'friendly-cpu': true, 'friendly-2p': false, training: false, 'world-cup': false });
+    expect(DEFAULT_LEVEL_INDEX).toBe(1);
+    const cpu = createFlowState();
+    flowConfirmMode(cpu);
+    expect([cpu.phase, cpu.levelIndex]).toEqual(['level-select', DEFAULT_LEVEL_INDEX]);
+    for (const steps of [1, 2, 3]) {
+      const f = createFlowState();
+      flowMoveMode(f, steps);
+      flowConfirmMode(f);
+      expect([flowModeKind(f), f.phase]).toEqual([MODE_LIST[steps], 'team-select']);
+    }
+  });
+
+  it('the cruceta walks BEGINNER - MEDIUM - PRO and stops at each end; A goes on to the team selector and nothing else moves it', () => {
+    const f = createFlowState();
+    flowMoveLevel(f, 1);
+    expect(f.levelIndex).toBe(DEFAULT_LEVEL_INDEX);         // not on its screen: a no-op
+    flowConfirmMode(f);
+    flowMoveLevel(f, -1);
+    expect(f.levelIndex).toBe(0);
+    flowMoveLevel(f, -1);
+    expect(f.levelIndex).toBe(0);                            // stops at BEGINNER, no wrap
+    flowMoveLevel(f, 1);
+    flowMoveLevel(f, 1);
+    flowMoveLevel(f, 1);
+    expect(f.levelIndex).toBe(2);                            // stops at PRO
+    flowConfirmLevel(f);
+    expect(f.phase).toBe('team-select');
+    flowMoveLevel(f, -1);
+    expect(f.levelIndex).toBe(2);                            // the team selector does not move it
+  });
+
+  it('B goes back to ELIGE MODO on AMISTOSO, the level kept; a reset keeps it too, like the mode', () => {
+    const f = createFlowState();
+    flowConfirmMode(f);
+    flowMoveLevel(f, 1);
+    flowLevelBack(f);
+    expect([f.phase, flowModeKind(f), f.levelIndex]).toEqual(['mode-select', 'friendly-cpu', 2]);
+    flowLevelBack(f);
+    expect(f.phase).toBe('mode-select');                     // only from its own screen
+    flowConfirmMode(f);
+    expect([f.phase, f.levelIndex]).toEqual(['level-select', 2]);
+    flowConfirmLevel(f);
+    flowReset(f);
+    expect([f.phase, f.levelIndex]).toEqual(['mode-select', 2]);
+  });
+
+  it('flowBuildMode plays the CPU friendly at the chosen level -- BEGINNER 2, MEDIUM 4, PRO 6 -- and the other modes as before', () => {
+    const played: number[] = [];
+    for (let level = 0; level < 3; level++) {
+      const f = createFlowState();
+      flowConfirmMode(f);
+      flowMoveLevel(f, -1);
+      for (let i = 0; i < level; i++) flowMoveLevel(f, 1);
+      flowConfirmLevel(f);
+      f.cursor = 0;
+      flowConfirmTeam(f, BANK);
+      flowConfirmLineup(f);
+      played.push(modeDifficulty(flowBuildMode(f, BANK_IDS, SEED)));
+    }
+    expect(played).toEqual([2, 4, 6]);
+    expect(modeDifficulty(start('friendly-2p', 3, 11).m)).toBe(5);
+    expect(modeDifficulty(start('training', 7).m)).toBe(5);
+    expect(modeDifficulty(start('world-cup', 1).m)).toBe(3);   // the round of 16 (G15-7)
   });
 });

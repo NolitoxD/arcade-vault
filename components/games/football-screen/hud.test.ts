@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { EXTRA_TIME_STEPS, HALF_STEPS, STEPS_PER_SECOND } from '../football-logic/clock';
-import { createMatch, substitute, TRAINING_RULES, type MatchState } from '../football-logic/match';
+import { createMatch, substitute, TRAINING_RULES, type MatchPhase, type MatchState } from '../football-logic/match';
+import type { SetPieceKind } from '../football-logic/referee';
 import { SQUAD_SIZE } from '../football-logic/squads';
 import { PITCH } from '../football-logic/pitch';
 import { FORMATIONS, TEAMS, TEAM_SIZE } from '../football-logic/teams';
@@ -9,7 +10,7 @@ import { SHOT_CHARGE_STEPS } from '../football-logic/actions';
 import { SHOOTOUT_ROUNDS, createShootoutState } from '../football-logic/set-pieces';
 import {
   INJURY_TITLE, SHOT_CHARGE_SEGMENTS, chargeSegments, clockSeconds, clockSteps, clockText,
-  countdownSeconds, cursorPlayerId, halfCapSteps, halfLabel, idleHint, injuryWindowTeam, keeperHoldsBall,
+  countdownSeconds, cursorPlayerId, halfCapSteps, halfLabel, idleHint, injuryWindowTeam, keeperHoldsBall, quickKickTeam,
   reserveCanComeOn, shootoutKicksTaken, shootoutRoundLabel, smallNumber, sprintBarFraction,
 } from './hud';
 
@@ -155,6 +156,35 @@ describe('the cursor', () => {
 // V15-4-7 (controller addition 3): during the LESIONADO window the match is stopped, but
 // A confirms the reserve, so the bottom line must not say "the buttons do nothing".
 // idleHint is the exhaustive switch that picks which line.
+// G15-31: which human, if any, can take the set piece now with A.
+describe('quickKickTeam', () => {
+  it('is the taking team when it is human, in a kickoff or a restart -- never a penalty, a CPU kick or another phase', () => {
+    const m = newMatch();
+    const sp = m.setPiece;
+    if (sp === null) throw new Error('a match opens with its kickoff');
+    expect(m.phase).toBe('kickoff');
+    const taking = sp.team;
+    const both: [boolean, boolean] = [true, true];
+    const onlyOther: [boolean, boolean] = [taking === 1, taking === 0];
+    expect(quickKickTeam(m, both)).toBe(taking);
+    expect(quickKickTeam(m, onlyOther)).toBe(-1);         // the CPU takes it: no A hint
+    m.phase = 'set-piece';
+    const restarts: SetPieceKind[] = ['throw-in', 'goal-kick', 'corner', 'free-kick'];
+    for (const kind of restarts) {
+      sp.kind = kind;
+      expect([kind, quickKickTeam(m, both)]).toEqual([kind, taking]);
+    }
+    sp.kind = 'penalty';
+    expect(quickKickTeam(m, both)).toBe(-1);              // the penalty keeps its countdown
+    sp.kind = 'free-kick';
+    const others: MatchPhase[] = ['play', 'golden-goal', 'goal', 'half-time', 'shootout', 'injury', 'over'];
+    for (const phase of others) {
+      m.phase = phase;
+      expect([phase, quickKickTeam(m, both)]).toEqual([phase, -1]);
+    }
+  });
+});
+
 describe('idleHint', () => {
   it('is the aim hint where stepSetPiece swallows A and B, and the injury hint in the LESIONADO window', () => {
     const m = newMatch();

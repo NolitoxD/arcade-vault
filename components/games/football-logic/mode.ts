@@ -28,12 +28,36 @@ export type FxKind = 'confetti' | 'fireworks';
 
 type FriendlyState = { homeId: string; awayId: string; status: ModeStatus };
 
+// G15-30 (Paco, 07-oct): the CPU friendly is played at one of three levels, chosen on
+// its own screen right after the mode. Only 'friendly-cpu' carries one: the two-player
+// friendly and the training stay at FRIENDLY_DIFFICULTY, the World Cup at its ladder.
+export type FriendlyLevel = 'beginner' | 'medium' | 'pro';
+type CpuFriendlyState = FriendlyState & { level: FriendlyLevel };
+
 export type GameMode =
-  | { kind: FriendlyKind; state: FriendlyState }
+  | { kind: 'friendly-cpu'; state: CpuFriendlyState }
+  | { kind: Exclude<FriendlyKind, 'friendly-cpu'>; state: FriendlyState }
   | { kind: 'world-cup'; state: WorldCupState };
 
-// G9-6: 5 in every friendly, no selector.
+// G9-6: 5 in every friendly, no selector. Since G15-30 that is the two-player friendly
+// and the training (and the probes, which play "the friendly difficulty"); the CPU
+// friendly reads FRIENDLY_LEVEL_DIFFICULTY instead.
 export const FRIENDLY_DIFFICULTY = 5;
+
+// G15-30: the order of the screen (top to bottom) and the names Paco gave them, in
+// English as he wrote them. Numbers, not branches.
+export const FRIENDLY_LEVELS: readonly FriendlyLevel[] = ['beginner', 'medium', 'pro'];
+export const FRIENDLY_LEVEL_NAMES: Readonly<Record<FriendlyLevel, string>> = {
+  beginner: 'BEGINNER',
+  medium: 'MEDIUM',
+  pro: 'PRO',
+};
+export const FRIENDLY_LEVEL_DIFFICULTY: Readonly<Record<FriendlyLevel, number>> = {
+  beginner: 2,
+  medium: 4,
+  pro: 6,
+};
+export const DEFAULT_FRIENDLY_LEVEL: FriendlyLevel = 'medium';
 
 // G9-7: the draw stream (the World Cup's eight, or a friendly's rival) comes off the
 // run seed by integer arithmetic, like every other stream of this game.
@@ -56,8 +80,12 @@ export function drawRival(bankIds: readonly string[], homeId: string, rng: Rng):
   throw new Error('unreachable: rival index out of range');
 }
 
-export function createFriendlyMode(kind: FriendlyKind, homeId: string, awayId: string): GameMode {
+// `level` is read only by the CPU friendly (G15-30); the other two ignore it.
+export function createFriendlyMode(
+  kind: FriendlyKind, homeId: string, awayId: string, level: FriendlyLevel = DEFAULT_FRIENDLY_LEVEL,
+): GameMode {
   if (homeId === awayId) throw new Error(`a friendly needs two different teams: ${homeId}`);
+  if (kind === 'friendly-cpu') return { kind, state: { homeId, awayId, status: 'playing', level } };
   return { kind, state: { homeId, awayId, status: 'playing' } };
 }
 
@@ -91,7 +119,8 @@ export function modeAwayId(m: GameMode): string {
 }
 
 export function modeDifficulty(m: GameMode): number {
-  return m.kind === 'world-cup' ? worldCup.currentDifficulty(m.state) : FRIENDLY_DIFFICULTY;
+  if (m.kind === 'world-cup') return worldCup.currentDifficulty(m.state);
+  return m.kind === 'friendly-cpu' ? FRIENDLY_LEVEL_DIFFICULTY[m.state.level] : FRIENDLY_DIFFICULTY;
 }
 
 // G9-1: the only mode with a switch on. Returns the frozen module constants, so the
@@ -192,11 +221,19 @@ const MATCH_LABEL_BY_KIND: Readonly<Record<FriendlyKind, string>> = {
   'friendly-2p': 'AMISTOSO A DOS',
   training: 'ENTRENAMIENTO',
 };
+// G15-30: the level rides on the CPU friendly's label, which the play page shows in its
+// Estado box during the match -- the same place as the World Cup's round.
+const CPU_FRIENDLY_LABEL_BY_LEVEL: Readonly<Record<FriendlyLevel, string>> = {
+  beginner: `${MATCH_LABEL_BY_KIND['friendly-cpu']} · ${FRIENDLY_LEVEL_NAMES.beginner}`,
+  medium: `${MATCH_LABEL_BY_KIND['friendly-cpu']} · ${FRIENDLY_LEVEL_NAMES.medium}`,
+  pro: `${MATCH_LABEL_BY_KIND['friendly-cpu']} · ${FRIENDLY_LEVEL_NAMES.pro}`,
+};
 const FRIENDLY_VICTORY_TITLE = 'GANADOR';
 const WORLD_CUP_VICTORY_TITLE = 'CAMPEONES DEL MUNDO';
 
 export function modeMatchLabel(m: GameMode): string {
-  return m.kind === 'world-cup' ? worldCup.roundLabel(m.state) : MATCH_LABEL_BY_KIND[m.kind];
+  if (m.kind === 'world-cup') return worldCup.roundLabel(m.state);
+  return m.kind === 'friendly-cpu' ? CPU_FRIENDLY_LABEL_BY_LEVEL[m.state.level] : MATCH_LABEL_BY_KIND[m.kind];
 }
 
 export function modeVictoryTitle(m: GameMode): string {

@@ -19,6 +19,7 @@ export type ControlHints = {
   readonly schemeRow: string;      // ELIGE MODO: the row, 'TECLADO: < FLECHAS >'
   readonly schemeDetail: string;   // ELIGE MODO: the keys of that scheme and its pause
   readonly mode: string;           // ELIGE MODO: the screen hint
+  readonly levelSelect: string;    // G15-30: DIFICULTAD, the CPU friendly's level
   readonly teamSolo: string;
   readonly draw: string;
   readonly bracketChoice: string;
@@ -50,6 +51,7 @@ function buildHints(scheme: KeyScheme, table: KeyTable): ControlHints {
     schemeRow: `TECLADO: < ${SCHEME_NAMES[scheme]} >`,
     schemeDetail: SCHEME_DETAILS[scheme],
     mode: `ARRIBA / ABAJO: MODO · IZQ / DER: TECLADO · A (${a}) CONFIRMA`,
+    levelSelect: `CRUCETA: NIVEL · A (${a}) CONFIRMA · B (${b}) VOLVER`,
     teamSolo: `CRUCETA · A (${a}) CONFIRMA · 1/2/3 ALINEACIÓN`,
     draw: `A (${a}) PARA CONTINUAR`,
     bracketChoice: `IZQ / DER: VER · SALTAR · TODOS · A (${a}) CONFIRMA`,
@@ -106,4 +108,20 @@ export function injuryHintFor(table: KeyTable): string {
   if (table === CLASSIC_SOLO) return INJURY_HINT_CLASSIC;
   if (table === TWO_PLAYER_P1) return INJURY_HINT_P1;
   return INJURY_HINT_ARROWS;
+}
+
+// G15-31 (Paco, 07-oct): a human set piece -- kickoff, throw-in, goal kick, corner, free
+// kick -- can go at once with A, or by itself when the countdown ends, as before. Per
+// table, like the two above, so the line names the A of the team taking it.
+function quickKickHint(table: KeyTable): string {
+  return `CRUCETA: APUNTAR · A (${keyLabel(table, 'a')}) SACA · SI NO, SALE SOLO`;
+}
+const QUICK_KICK_HINT_ARROWS = quickKickHint(ARROWS_SOLO);   // also J2's: the same J
+const QUICK_KICK_HINT_CLASSIC = quickKickHint(CLASSIC_SOLO);
+const QUICK_KICK_HINT_P1 = quickKickHint(TWO_PLAYER_P1);
+
+export function quickKickHintFor(table: KeyTable): string {
+  if (table === CLASSIC_SOLO) return QUICK_KICK_HINT_CLASSIC;
+  if (table === TWO_PLAYER_P1) return QUICK_KICK_HINT_P1;
+  return QUICK_KICK_HINT_ARROWS;
 }

@@ -23,13 +23,21 @@ export type TeamInput = {
   // would not replay. It is read ONLY while the match is in phase 'injury' for that
   // team, and ignored everywhere else.
   sub: number;
+  // G15-31 (Paco, 07-oct): "A saca al momento" -- the set piece is taken on THIS step, at
+  // this step's aim, instead of waiting for its countdown. Written ONLY by the screen, from
+  // a fresh human press of A (keyboard.ts padQuickKick: the edge 'pressed', never 'held'),
+  // and read ONLY by stepSetPiece for the five kinds that go by themselves -- never the
+  // penalty. A field of its own and not `a === 'pressed'` because the recorded matches of
+  // match.test.ts press A in set pieces too (24 presses, all in its run C) and none of them
+  // must change: nothing but the screen writes this field, so it stays false there.
+  quickKick: boolean;
 };
 
 const BUTTON_STATES: readonly ButtonState[] = ['up', 'pressed', 'held', 'released'];
 const STRATEGY_NAMES: readonly Strategy[] = ['attack', 'neutral', 'defend'];
 
 export function createTeamInput(): TeamInput {
-  return { dx: 0, dy: 0, a: 'up', b: 'up', c: 'up', formation: 0, strategy: 'neutral', sub: -1 };
+  return { dx: 0, dy: 0, a: 'up', b: 'up', c: 'up', formation: 0, strategy: 'neutral', sub: -1, quickKick: false };
 }
 
 export function copyTeamInput(from: TeamInput, to: TeamInput): void {
@@ -41,6 +49,7 @@ export function copyTeamInput(from: TeamInput, to: TeamInput): void {
   to.formation = from.formation;
   to.strategy = from.strategy;
   to.sub = from.sub;
+  to.quickKick = from.quickKick;
 }
 
 export function isDown(b: ButtonState): boolean {

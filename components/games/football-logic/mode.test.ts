@@ -5,7 +5,8 @@ import { PITCH } from './pitch';
 import { createRng } from './rng';
 import { FORMATIONS, TEAMS, teamById } from './teams';
 import {
-  FRIENDLY_DIFFICULTY, createFriendlyMode, createWorldCupMode, drawRival, drawSeedFor, modeAbandonMatch, modeAwayId,
+  DEFAULT_FRIENDLY_LEVEL, FRIENDLY_DIFFICULTY, FRIENDLY_LEVELS, FRIENDLY_LEVEL_DIFFICULTY, FRIENDLY_LEVEL_NAMES,
+  createFriendlyMode, createWorldCupMode, drawRival, drawSeedFor, modeAbandonMatch, modeAwayId,
   modeBracket, modeDifficulty, modeEndMatch, modeFxKind, modeHasCrowd, modeHomeId, modeHumanSide, modeMatchLabel,
   modeMatchSeed, modeRules, modeScore, modeScores, modeStatus, modeVictoryScreen, modeVictoryTeamId, modeVictoryTitle,
   sideIsHuman, type GameMode,
@@ -92,7 +93,8 @@ describe('the three friendly modes', () => {
     expect([modeHomeId(cpu), modeAwayId(cpu)]).toEqual(['espana', 'italia']);
     expect([modeHomeId(two), modeAwayId(two)]).toEqual(['brasil', 'argentina']);
     for (const m of [cpu, two, training]) {
-      expect(modeDifficulty(m)).toBe(FRIENDLY_DIFFICULTY);   // G9-6: 5, no selector
+      // G9-6: 5, no selector -- except the CPU friendly since G15-30, built here on its default level.
+      expect(modeDifficulty(m)).toBe(m === cpu ? FRIENDLY_LEVEL_DIFFICULTY.medium : FRIENDLY_DIFFICULTY);
       expect(modeScore(m)).toBe(0);
       expect(modeScores(m)).toBe(false);                      // criterion 19: no friendly writes to the table
       expect(modeBracket(m)).toBeNull();
@@ -107,9 +109,26 @@ describe('the three friendly modes', () => {
     expect(modeVictoryScreen(cpu)).toBe(true);
     expect(modeVictoryScreen(two)).toBe(true);
     expect(modeVictoryScreen(training)).toBe(false);           // no clock, no end, no screen: R exits
-    expect(modeMatchLabel(cpu)).toBe('AMISTOSO');
+    expect(modeMatchLabel(cpu)).toBe('AMISTOSO · MEDIUM');   // G15-30: the level, on its default
     expect(modeMatchLabel(two)).toBe('AMISTOSO A DOS');
     expect(modeMatchLabel(training)).toBe('ENTRENAMIENTO');
+  });
+
+  // ── G15-30 (Paco, 07-oct): the CPU friendly's three levels ──────────────────────
+  it('G15-30: the CPU friendly plays at the level it was built with -- BEGINNER 2, MEDIUM 4 (the default), PRO 6 -- and says so in its label; the other two friendlies ignore it', () => {
+    expect(FRIENDLY_LEVELS).toEqual(['beginner', 'medium', 'pro']);
+    expect(FRIENDLY_LEVELS.map((l) => FRIENDLY_LEVEL_NAMES[l])).toEqual(['BEGINNER', 'MEDIUM', 'PRO']);
+    expect(DEFAULT_FRIENDLY_LEVEL).toBe('medium');
+    const played = FRIENDLY_LEVELS.map((l) => createFriendlyMode('friendly-cpu', 'espana', 'italia', l));
+    expect(played.map(modeDifficulty)).toEqual([2, 4, 6]);
+    expect(played.map(modeMatchLabel)).toEqual(['AMISTOSO · BEGINNER', 'AMISTOSO · MEDIUM', 'AMISTOSO · PRO']);
+    expect(modeDifficulty(createFriendlyMode('friendly-cpu', 'espana', 'italia'))).toBe(4);
+    const others: ('friendly-2p' | 'training')[] = ['friendly-2p', 'training'];
+    for (const kind of others) {
+      const m = createFriendlyMode(kind, 'brasil', 'argentina', 'pro');
+      expect([kind, modeDifficulty(m)]).toEqual([kind, FRIENDLY_DIFFICULTY]);
+    }
+    expect(modeMatchLabel(createFriendlyMode('friendly-2p', 'brasil', 'argentina', 'beginner'))).toBe('AMISTOSO A DOS');
   });
 
   it('refuse the same team on both sides', () => {
