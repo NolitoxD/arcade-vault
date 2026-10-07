@@ -44,6 +44,13 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
    - **Gol de oro:** el corro en 'over' con la cámara quieta; los que vienen de lejos pueden entrar desde fuera de plano.
    - **Lo de siempre:** salir/abandonar a mitad de corro y empezar otro partido no hereda el corro.
 
+**QA de Paco del día 1 (07-oct): OK** — «el juego sigue funcionando de maravilla, cada vez mejor». Sin defectos.
+**Idea nueva de Paco (07-oct), PARA EL FINAL del V15-5 (tras la T10, no antes):** en los balones parados, mostrar una ayuda de
+**tecla rápida para sacar**. Contexto: hoy en 'set-piece' (y kickoff/shootout/goal/half-time) `idleHint` devuelve 'aim' y se pinta
+`HINT_AIM` («solo funciona la cruceta»; `VaultWorldCupGame.tsx:~1709`, `hud.ts:102`). Antes de implementar: grill corto — ¿existe ya
+una tecla para sacar antes de tiempo o hay que crearla (motor = otra tarea con compuerta)?, ¿la ayuda sustituye o acompaña a HINT_AIM?,
+¿nombra las teclas de la tabla en uso (como `keeperHintFor`)?
+
 **Después: día 2 = T6-T10** (red que ondula, pantalla previa, victoria con confeti/fuegos, cableado del día 2, cierre con `qa-paco.md`
 del V15-5 y commit). Objetivo final 1561 / 94.
 
@@ -57,6 +64,7 @@ Seguimos con el V15-5 «Espectáculo», DÍA 2 (Tasks 6-10). Lee §-23 del hando
    rondas de arreglo hasta review limpio), respetando la tabla de orden del plan (objetivo final 1561 / 94).
 2) Cierre: suite, tsc, eslint, `sdd.sh gate`, `next build` en copia (nunca next dev ni build en sitio),
    qa-paco.md del V15-5 y commit propuesto. Commits solo yo.
+3) Al final (tras la T10): grill corto de la ayuda de tecla rápida para sacar en balones parados (§-23) y, si cabe, tarea extra.
 ```
 
 ## -22. 06-oct: V15-4 commiteado (`77aecd7`, verificado sin marcas viejas, 1519 verdes) + V15-5 «Espectáculo»: plan, pre-vuelo y día 1 a medias

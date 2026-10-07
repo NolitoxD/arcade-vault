@@ -945,6 +945,20 @@ La v1 es el MVP; la v1.5 es el producto fino. Lo apuntado en el grill del 04-sep
     final, con los valores viejos conservados al lado de los nuevos. Quedan para V15-5 el abrazo, la red que ondula, los nombres y
     dorsales en los eventos (G15-11), la pantalla previa (G15-19) y la celebración de victoria (G15-21); y para v1.6 la resistencia,
     el banquillo táctico y, si el Mundial se nota plano jugando, la fórmula de dificultad.*
+    *V15-5 implementado (2026-10-06/07), último paso de la v1.5: el entrenamiento sin tarjetas ni lesiones (G15-29, un interruptor
+    `discipline` en `MatchRules`, sin regrabado); cada rótulo lleva su propio sujeto — GOL con el goleador o, en propia, «GOL» con
+    «EN PROPIA · \<defensa\>» debajo, GOL y FALLA de la tanda con el lanzador, PENALTI con el lanzador, FALTA con el infractor,
+    TARJETA y LESIÓN con el suyo — y el dorsal va junto al cursor del controlado
+    (G15-11; se retira la ranura única de nombre de V15-4); la entrada se dibuja «tirándose» con la pierna estirada delante y el
+    jugador se levanta agachado, y el robo con rival a tiro amaga (G15-25); el gol se celebra con carrera al goleador (los
+    compañeros a velocidad de carrera normal, no al sprint), abrazo en corro y rivales cabizbajos dentro de la pausa de 4 s, también
+    el gol de oro, y en la tanda solo el lanzador, dibujado donde tiró con la cámara sujeta 1 s en esa portería, lo que dura su
+    rótulo GOL (G15-4); la red de la portería del gol ondula ~1 s desde el punto de impacto, nunca
+    con poste o larguero (G15-14); la pantalla previa enseña las dos formaciones de pie, de frente, con sus equipaciones, el nombre de
+    la selección y TU EQUIPO/ORDENADOR (J1/J2 a dos), sin nombres, ~3 s o hasta A, en amistosos y Mundial (G15-19 matizada); y la
+    victoria arranca el confeti sobre el campo en el pitido final, más denso y con el kit del ganador, y en el Mundial suma fuegos,
+    confeti dorado y el destello de la copa (G15-21). El motor solo cambia en G15-29. Las seis dudas del plan (D1-D6) quedaron
+    resueltas por Paco el 06-oct, antes de ejecutar.*
   - **G15-23 · Online**: el online (amistoso 1v1 y Mundial a dos por Supabase Realtime, lockstep de TeamInput) NO entra antes de producción: va como **V15-6 tras la subida**, durante la beta. Prod sale con multijugador local.
   - **QA jugado de V15-2 (Paco, 2026-09-23): «con mando perfecto».** Dos ajustes nuevos:
     - **G15-24 · Entradas y faltas** (V15-4, mismo regrabado): `TACKLE_BALL_REACH` 20 → 28 (por encima de `TACKLE_FOUL_RADIUS` 24)
@@ -1007,4 +1021,5 @@ La v1 es el MVP; la v1.5 es el producto fino. Lo apuntado en el grill del 04-sep
       coger habilidad, no para practicar reglas: se desactivan tarjetas y lesiones en ese modo (interruptor en las reglas del modo,
       sin regrabado). Amistoso y Mundial no cambian. Sobre la dificultad: «el amistoso ya es difícil contra la máquina», así que
       la progresión del Mundial no preocupa por ahora (se confirma en el QA).
+      *Implementado en V15-5 (Task 1): `MatchRules.discipline` (`NORMAL_RULES` true, `TRAINING_RULES` false); `registerFoul` y la tirada de lesión solo corren con él; ningún valor de test regrabado.*
 

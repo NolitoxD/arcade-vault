@@ -1,5 +1,5 @@
 import {
-  ARROWS_SOLO, CLASSIC_SOLO, TWO_PLAYER_P1, type KeyScheme, type KeyTable, type PadKey,
+  ARROWS_SOLO, CLASSIC_SOLO, TWO_PLAYER_P1, TWO_PLAYER_P2, type KeyScheme, type KeyTable, type PadKey,
 } from './keyboard';
 
 // G15-6 (grill of the v1.5, 17-sep): every on-screen text that names a key, built ONCE
@@ -25,6 +25,7 @@ export type ControlHints = {
   readonly bracketPlay: string;
   readonly spectate: string;
   readonly victory: string;
+  readonly preMatch: string;       // G15-19: the line-up screen
   readonly lineupBrowse: string;   // ALINEACIÓN: moving over the eleven
   readonly lineupSwap: string;     // ALINEACIÓN: picking the reserve who comes on
   readonly lineupEdit: string;     // ALINEACIÓN: typing a name
@@ -55,6 +56,7 @@ function buildHints(scheme: KeyScheme, table: KeyTable): ControlHints {
     bracketPlay: `A (${a}) PARA JUGAR`,
     spectate: `PARTIDO DE LA CPU · X4 · A (${a}) SALTA AL RESULTADO`,
     victory: `A (${a}) · CONTINUAR`,
+    preMatch: `A (${a}) · EMPEZAR`,
     // Paco's (d): A confirms/chooses, B goes back or cancels, C edits the name.
     lineupBrowse: `CRUCETA · A (${a}) CAMBIAR · C (${c}) NOMBRE · B (${b}) VOLVER`,
     lineupSwap: `CRUCETA: ELIGE RESERVA · A (${a}) CONFIRMA · B (${b}) CANCELA`,
@@ -70,6 +72,10 @@ export const CONTROL_HINTS: Readonly<Record<KeyScheme, ControlHints>> = {
 // Shown dimmed on the scheme row while AMISTOSO A DOS is the highlighted mode: G9-2's
 // split is fixed and the scheme does not apply to it.
 export const TWO_PLAYER_SCHEME_NOTE = 'A DOS NO SE ELIGE: J1 WASD + C/V/B · J2 FLECHAS + J/K/L';
+
+// G15-19: at two the line-up screen takes either player's A (the component routes both
+// tables there), so the hint names both -- built from the tables, never typed by hand.
+export const PRE_MATCH_HINT_TWO = `${keyLabel(TWO_PLAYER_P1, 'a')} (J1) O ${keyLabel(TWO_PLAYER_P2, 'a')} (J2) · EMPEZAR`;
 
 // S-SC3's keeper-hold hint, per table: B throws short, A throws long.
 function keeperHint(table: KeyTable): string {

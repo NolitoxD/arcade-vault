@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { createRng } from '../football-logic/rng';
 import { VIEW_H, VIEW_W } from './camera';
 import {
-  FIREWORK_BURST_SIZE, FIREWORK_BURST_STEPS, FX_COLORS, FX_DIR_COUNT, FX_DIR_X, FX_DIR_Y, FX_SEED_SALT, PARTICLE_COUNT,
-  activeCount, createParticlePool, fxSeedFor, startFx, stepFx,
+  CONFETTI_COUNT, CUP_FLASH_PERIOD, FIREWORK_BURST_SIZE, FIREWORK_BURST_STEPS, FIREWORK_LIFE_MAX, FIREWORK_POOL_COUNT,
+  FX_COLORS, FX_DIR_COUNT, FX_DIR_X, FX_DIR_Y, FX_GOLD, FX_GOLD_LIGHT, FX_SEED_SALT, PARTICLE_COUNT,
+  activeCount, createParticlePool, cupFlashAlpha, fxSeedFor, startConfettiRain, startFx, stepFx, writeConfettiPalette,
 } from './particles';
 
 describe('the pool', () => {
@@ -149,5 +150,66 @@ describe('fireworks', () => {
     expect(pool.life).toBe(life);
     expect(pool.color).toBe(color);
     expect(pool.size).toBe(size);
+  });
+});
+
+// ── G15-21: the victory, denser, in the winner's kit and in gold ─────────────────
+describe('the victory celebration (G15-21)', () => {
+  it('every pool carries its own palette (v1\'s colours by default), rewritten in place for the kit or for gold + kit', () => {
+    const pool = createParticlePool(8);
+    expect(pool.palette).toEqual([...FX_COLORS]);
+    expect(pool.palette).not.toBe(FX_COLORS);
+    const palette = pool.palette;
+    writeConfettiPalette(pool, 'kit', '#d40000', '#ffcc00');
+    expect(pool.palette).toBe(palette);
+    expect(pool.palette.length).toBe(FX_COLORS.length);
+    expect(new Set(pool.palette)).toEqual(new Set(['#d40000', '#ffcc00', '#ffffff']));
+    expect(pool.palette.filter((c) => c === '#d40000' || c === '#ffcc00').length).toBeGreaterThanOrEqual(4);
+    writeConfettiPalette(pool, 'gold-kit', '#d40000', '#ffcc00');
+    expect(pool.palette).toContain('#d40000');
+    expect(pool.palette).toContain('#ffcc00');
+    expect(pool.palette.filter((c) => c === FX_GOLD || c === FX_GOLD_LIGHT).length).toBeGreaterThanOrEqual(3);
+    startFx(pool, 'confetti', createRng(5));
+    for (let i = 0; i < pool.count; i++) expect(pool.color[i]).toBeLessThan(pool.palette.length);
+  });
+
+  it('startConfettiRain starts every particle ABOVE the view, and two seconds later it is raining on the pitch', () => {
+    const pool = createParticlePool(CONFETTI_COUNT);
+    const rng = createRng(fxSeedFor(4));
+    startConfettiRain(pool, rng);
+    expect(activeCount(pool)).toBe(CONFETTI_COUNT);
+    for (let i = 0; i < pool.count; i++) {
+      expect(pool.y[i]).toBeLessThan(0);
+      expect(pool.y[i]).toBeGreaterThanOrEqual(-VIEW_H);
+      expect(pool.x[i]).toBeGreaterThanOrEqual(0);
+      expect(pool.x[i]).toBeLessThanOrEqual(VIEW_W);
+      expect(pool.vy[i]).toBeGreaterThan(0);
+    }
+    for (let step = 0; step < 120; step++) stepFx(pool, 'confetti', rng);
+    let inView = 0;
+    for (let i = 0; i < pool.count; i++) if (pool.y[i] >= 0) inView++;
+    expect(inView).toBeGreaterThan(0);
+    expect(inView).toBeLessThan(CONFETTI_COUNT);
+  });
+
+  it('is denser than v1: more confetti, a bigger fireworks pool, bigger and more frequent bursts that still all fit', () => {
+    expect(CONFETTI_COUNT).toBeGreaterThan(PARTICLE_COUNT);
+    expect(FIREWORK_POOL_COUNT).toBeGreaterThan(PARTICLE_COUNT);
+    expect(FIREWORK_BURST_SIZE / FIREWORK_BURST_STEPS).toBeGreaterThan(40 / 45);   // v1: 40 every 45 steps
+    // Every spark of every burst still alive fits: the pool never refuses a burst.
+    expect(Math.ceil(FIREWORK_LIFE_MAX / FIREWORK_BURST_STEPS) * FIREWORK_BURST_SIZE).toBeLessThanOrEqual(PARTICLE_COUNT);
+    expect(FIREWORK_POOL_COUNT).toBeGreaterThanOrEqual(PARTICLE_COUNT);
+  });
+
+  it('cupFlashAlpha: a gold glint that is 0 when each period starts, 1 halfway, and never leaves [0, 1]', () => {
+    expect(cupFlashAlpha(0)).toBe(0);
+    expect(cupFlashAlpha(CUP_FLASH_PERIOD / 2)).toBe(1);
+    expect(cupFlashAlpha(CUP_FLASH_PERIOD)).toBe(0);
+    expect(cupFlashAlpha(CUP_FLASH_PERIOD * 7 + CUP_FLASH_PERIOD / 2)).toBe(1);
+    for (let s = 0; s < CUP_FLASH_PERIOD * 3; s++) {
+      const a = cupFlashAlpha(s);
+      expect(a).toBeGreaterThanOrEqual(0);
+      expect(a).toBeLessThanOrEqual(1);
+    }
   });
 });

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { humanProfile, profileFor } from '../football-logic/ai';
+import { stepsFor } from '../football-logic/clock';
 import { createMatch, type MatchState } from '../football-logic/match';
 import {
   modeAwayId, modeBracket, modeDifficulty, modeHomeId, modeHumanSide, modeScore, modeStatus, type GameMode,
@@ -7,13 +8,13 @@ import {
 import { PITCH } from '../football-logic/pitch';
 import { FORMATIONS, TEAMS, teamById } from '../football-logic/teams';
 import {
-  BRACKET_CHOICE_COUNT, HUMANS_BY_MODE, LINEUP_BY_MODE, MODE_BLURBS, MODE_LIST, MODE_NAMES,
-  createFlowState, flowAfterModeBuilt, flowBracketAction, flowBuildMode, flowCaptionsDrained, flowConfirmBracket,
-  flowConfirmDraw, flowConfirmLineup, flowConfirmMode, flowConfirmTeam, flowContinue, flowCpuPair, flowExitMatch,
-  flowHasLineup, flowHumanCount, flowLineupBeginEdit, flowLineupCancelChoice, flowLineupChoose, flowLineupEndEdit,
-  flowLineupMove, flowMatchOver, flowModeKind, flowMoveBracketChoice, flowMoveMode, flowMoveTeam, flowPickingHuman,
-  flowRecordCpuResult, flowReset, flowSetFormation, flowSetKeyScheme, flowSkipSpectate, flowSpectateOver,
-  flowToggleKeyScheme, phaseGroup,
+  BRACKET_CHOICE_COUNT, HUMANS_BY_MODE, LINEUP_BY_MODE, MODE_BLURBS, MODE_LIST, MODE_NAMES, PRE_MATCH_BY_MODE,
+  PRE_MATCH_STEPS, createFlowState, flowAfterModeBuilt, flowBracketAction, flowBuildMode, flowCaptionsDrained,
+  flowConfirmBracket, flowConfirmDraw, flowConfirmLineup, flowConfirmMode, flowConfirmTeam, flowContinue, flowCpuPair,
+  flowEndPreMatch, flowExitMatch, flowHasLineup, flowHumanCount, flowLineupBeginEdit, flowLineupCancelChoice,
+  flowLineupChoose, flowLineupEndEdit, flowLineupMove, flowMatchOver, flowModeKind, flowMoveBracketChoice, flowMoveMode,
+  flowMoveTeam, flowPickingHuman, flowRecordCpuResult, flowReset, flowSetFormation, flowSetKeyScheme, flowSkipSpectate,
+  flowSpectateOver, flowStepPreMatch, flowToggleKeyScheme, phaseGroup,
   type FlowPhase, type FlowState,
 } from './flow';
 
@@ -52,7 +53,7 @@ function humanMatch(m: GameMode, goalsFor: number, goalsAgainst: number, humanWi
 }
 
 // Walks the selector to a mode and a team, and builds the mode as the component does.
-function start(kind: string, teamIndex: number, secondIndex = -1): { f: FlowState; m: GameMode } {
+function startRaw(kind: string, teamIndex: number, secondIndex = -1): { f: FlowState; m: GameMode } {
   const f = createFlowState();
   while (flowModeKind(f) !== kind) flowMoveMode(f, 1);
   flowConfirmMode(f);
@@ -66,6 +67,14 @@ function start(kind: string, teamIndex: number, secondIndex = -1): { f: FlowStat
   const m = flowBuildMode(f, BANK_IDS, SEED);
   flowAfterModeBuilt(f, m);
   return { f, m };
+}
+
+// The same, past the G15-19 line-up screen (A on it), so the tests that are about the
+// match start in the match.
+function start(kind: string, teamIndex: number, secondIndex = -1): { f: FlowState; m: GameMode } {
+  const s = startRaw(kind, teamIndex, secondIndex);
+  flowEndPreMatch(s.f);
+  return s;
 }
 
 // Resolves the CPU pairs of the round by SALTAR, the way the component does.
@@ -342,7 +351,7 @@ describe('the bracket screen (G9-3: VER / SALTAR, then the human match)', () => 
     expect(pairs).toBe(7);
     expect(flowCpuPair(m)).toBe(-1);
     expect(flowConfirmBracket(f, m)).toBe('play');
-    expect(f.phase).toBe('match');
+    expect(f.phase).toBe('pre-match');
   });
 
   it('is directional with a stop at each end: repeating a direction never wraps round', () => {
@@ -437,6 +446,7 @@ describe('the end of a match', () => {
       skipCpuPairs(f, m);
       difficulties.push(modeDifficulty(m));
       expect(flowConfirmBracket(f, m)).toBe('play');
+      flowEndPreMatch(f);
       flowMatchOver(f, m, humanMatch(m, 2, 0, true), false);
       expect(f.phase).toBe('over');
       flowCaptionsDrained(f);
@@ -452,6 +462,7 @@ describe('the end of a match', () => {
     flowConfirmDraw(lost.f);
     skipCpuPairs(lost.f, lost.m);
     flowConfirmBracket(lost.f, lost.m);
+    flowEndPreMatch(lost.f);
     flowMatchOver(lost.f, lost.m, humanMatch(lost.m, 0, 1, false), false);
     expect(modeStatus(lost.m)).toBe('eliminated');
     expect(lost.f.after).toBe('mode-select');
@@ -460,6 +471,7 @@ describe('the end of a match', () => {
     flowConfirmDraw(abandoned.f);
     skipCpuPairs(abandoned.f, abandoned.m);
     flowConfirmBracket(abandoned.f, abandoned.m);
+    flowEndPreMatch(abandoned.f);
     const leading = humanMatch(abandoned.m, 1, 0, true);
     flowMatchOver(abandoned.f, abandoned.m, leading, true);
     expect(modeStatus(abandoned.m)).toBe('eliminated');
@@ -489,15 +501,58 @@ describe('the end of a match', () => {
   });
 });
 
-// ── Task 10-2 (G10-4): which music track a phase belongs to. All NINE phases of
+// ── Task 10-2 (G10-4): which music track a phase belongs to. All TEN phases of
 // FlowPhase, not a sample -- risk 7 inherited from step 9. ───────────────────────
 describe('phaseGroup', () => {
-  it('match and spectate are "match"; the other seven phases are "menu"', () => {
+  it('match, spectate and pre-match are "match"; the other seven phases are "menu"', () => {
     const phases: FlowPhase[] = [
-      'mode-select', 'team-select', 'lineup', 'draw', 'bracket', 'match', 'spectate', 'victory', 'over',
+      'mode-select', 'team-select', 'lineup', 'draw', 'bracket', 'pre-match', 'match', 'spectate', 'victory', 'over',
     ];
     expect(phases.map(phaseGroup)).toEqual([
-      'menu', 'menu', 'menu', 'menu', 'menu', 'match', 'match', 'menu', 'menu',
+      'menu', 'menu', 'menu', 'menu', 'menu', 'match', 'match', 'match', 'menu', 'menu',
     ]);
+  });
+});
+
+// ── G15-19 (matizada 23-sep): the line-up screen, "justo al pulsar JUGAR" ─────────
+describe('the pre-match line-up (G15-19)', () => {
+  it('a friendly, either one, goes to PRE-MATCH once its rival is drawn; the training goes straight to the match', () => {
+    expect(PRE_MATCH_BY_MODE).toEqual({ 'friendly-cpu': true, 'friendly-2p': true, training: false, 'world-cup': true });
+    const cpu = startRaw('friendly-cpu', 0);
+    expect([cpu.f.phase, cpu.f.preMatchStepsLeft]).toEqual(['pre-match', PRE_MATCH_STEPS]);
+    expect(modeAwayId(cpu.m)).not.toBe('espana');   // the rival is already drawn
+    const two = startRaw('friendly-2p', 3, 11);
+    expect(two.f.phase).toBe('pre-match');
+    const training = startRaw('training', 7);
+    expect([training.f.phase, training.f.preMatchStepsLeft]).toEqual(['match', 0]);
+  });
+
+  it('the World Cup\'s JUGAR -- A on the bracket on YOUR match -- goes to PRE-MATCH, and a CPU pair never does', () => {
+    const { f, m } = start('world-cup', 1);
+    flowConfirmDraw(f);
+    expect(flowConfirmBracket(f, m)).toBe('spectate');
+    expect(f.phase).toBe('spectate');
+    flowSkipSpectate(f);
+    skipCpuPairs(f, m);
+    expect(flowConfirmBracket(f, m)).toBe('play');
+    expect([f.phase, f.preMatchStepsLeft]).toEqual(['pre-match', PRE_MATCH_STEPS]);
+  });
+
+  it('PRE-MATCH ends by itself after PRE_MATCH_STEPS, or at once with A, and only from its own phase', () => {
+    expect(PRE_MATCH_STEPS).toBe(stepsFor(3));
+    const { f } = startRaw('friendly-cpu', 2);
+    let ended = 0;
+    for (let i = 0; i < PRE_MATCH_STEPS - 1; i++) if (flowStepPreMatch(f)) ended++;
+    expect([ended, f.phase]).toEqual([0, 'pre-match']);
+    expect(flowStepPreMatch(f)).toBe(true);
+    expect([f.phase, f.preMatchStepsLeft]).toEqual(['match', 0]);
+    expect(flowStepPreMatch(f)).toBe(false);          // a no-op in the match
+    const a = startRaw('friendly-cpu', 2);
+    flowEndPreMatch(a.f);
+    expect([a.f.phase, a.f.preMatchStepsLeft]).toEqual(['match', 0]);
+    const menu = createFlowState();
+    flowEndPreMatch(menu);
+    expect(flowStepPreMatch(menu)).toBe(false);
+    expect(menu).toEqual(createFlowState());
   });
 });

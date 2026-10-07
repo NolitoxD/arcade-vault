@@ -37,14 +37,16 @@ import {
   CAPTION_TEXT, OWN_GOAL_PREFIX, collectCaptions, createCaptionState, createMatchWatch, goalScoredThisStep,
   pushCaption, resetCaptionState, resetMatchWatch, stepCaption, updateWatch, type ShowingCaption,
 } from './football-screen/captions';
-import { CONTROL_HINTS, TWO_PLAYER_SCHEME_NOTE, injuryHintFor, keeperHintFor } from './football-screen/control-hints';
+import {
+  CONTROL_HINTS, PRE_MATCH_HINT_TWO, TWO_PLAYER_SCHEME_NOTE, injuryHintFor, keeperHintFor,
+} from './football-screen/control-hints';
 import {
   BRACKET_CHOICE_COUNT, MODE_BLURBS, MODE_LIST, MODE_NAMES, createFlowState, flowAfterModeBuilt, flowBuildMode,
   flowCaptionsDrained, flowConfirmBracket, flowConfirmDraw, flowConfirmLineup, flowConfirmMode, flowConfirmTeam,
-  flowContinue, flowCpuPair, flowExitMatch, flowHasLineup, flowHumanCount, flowLineupBeginEdit, flowLineupCancelChoice,
+  flowContinue, flowCpuPair, flowEndPreMatch, flowExitMatch, flowHasLineup, flowHumanCount, flowLineupBeginEdit, flowLineupCancelChoice,
   flowLineupChoose, flowLineupEndEdit, flowLineupMove, flowMatchOver, flowMoveBracketChoice, flowMoveMode,
   flowMoveTeam, flowPickingHuman, flowRecordCpuResult, flowSetFormation, flowSetKeyScheme, flowSkipSpectate,
-  flowSpectateOver, flowToggleKeyScheme, phaseGroup, type PhaseGroup,
+  flowSpectateOver, flowStepPreMatch, flowToggleKeyScheme, phaseGroup, type PhaseGroup,
 } from './football-screen/flow';
 import {
   BRACKET_BUTTON_H, BRACKET_BUTTON_W, BRACKET_BUTTON_Y, BRACKET_HINT_Y, BRACKET_PROMPT_Y, BRACKET_ROW_H, DRAW_ROW_H,
@@ -60,6 +62,7 @@ import { PAD_KEYS, routeGamepadStrategy, routeGamepadToPad } from './football-sc
 import {
   GESTURE_IDLE, beginGkCatchGestures, beginStealFeints, createGestureTimers, gestureProgress, resetGestures,
 } from './football-screen/gestures';
+import { FRONT_H, FRONT_W, bakeFrontSprite } from './football-screen/front-sprite';
 import { GOAL_MOUTH_DEPTH, NET_CELL, netLineCount } from './football-screen/goal-net';
 import {
   GRASS_TILE_H, GRASS_TILE_W, forEachGrassCell, grassTileOffset,
@@ -82,9 +85,21 @@ import { SPECTATE_SPEED, createStepBudget } from './football-screen/loop';
 import { createFramePlan, planFrame, planHalfAmbience } from './football-screen/match-loop';
 import { createMatchRun, finishMatchRun, stepMatchRun, type MatchRun } from './football-screen/match-run';
 import {
+  createNetRipple, createRippleVertex, beginNetRipple, resetNetRipple, rippleVertex, stepNetRipple,
+  RIPPLE_SEGMENTS_ACROSS, RIPPLE_SEGMENTS_DEEP,
+} from './football-screen/net-ripple';
+import {
   MINIMAP_H, MINIMAP_PAD, MINIMAP_W, createMinimapRect, minimapViewRect, minimapX, minimapY,
 } from './football-screen/minimap';
-import { FX_COLORS, createParticlePool, fxSeedFor, startFx, stepFx } from './football-screen/particles';
+import {
+  CONFETTI_COUNT, FIREWORK_POOL_COUNT, createParticlePool, cupFlashAlpha, fxSeedFor, startConfettiRain, startFx, stepFx,
+  writeConfettiPalette, type ParticlePool,
+} from './football-screen/particles';
+import {
+  CROWD_BG, CROWD_DOT, CROWD_SEED, PRE_MATCH_BOTTOM_FEET_Y, PRE_MATCH_BOTTOM_LABEL_Y, PRE_MATCH_HINT_Y,
+  PRE_MATCH_STANDS_H, PRE_MATCH_TAG_DY, PRE_MATCH_TOP_FEET_Y, PRE_MATCH_TOP_LABEL_Y, forEachCrowdDot,
+  preMatchBottomTeam, preMatchSlotX, preMatchTag, preMatchTopTeam,
+} from './football-screen/pre-match';
 import {
   ambienceDue, captionSfxOnEdge, createAmbienceMarks, crossbarDue, goalCrowdDue, goalNetDue, halfEndWhistleDue,
   shortPassFiredThisStep, shotFiredThisStep, victoryChantGain,
@@ -291,6 +306,7 @@ const TRAINING_HINT = 'R PARA SALIR';
 const STATUS_SELECTOR = 'SELECTOR';
 const STATUS_VICTORY = 'VICTORIA';
 const CUP_COLOR = '#ffcf3a';
+const CUP_FLASH = '#fff6c8';   // G15-21: the gold glint on the cup
 const SKIN_COLOR = '#f1c27d';
 const FONT_MENU_TITLE = 'bold 26px monospace';
 const FONT_MENU_ITEM = 'bold 22px monospace';
@@ -358,6 +374,43 @@ function bakeAtlas(atlas: HTMLCanvasElement, palette: Readonly<SpritePalette>): 
     c.fillStyle = color;
     c.fillRect(x, y, size, size);
   });
+}
+
+// G15-19: one FRONT_W x FRONT_H canvas per standing figure (home, away, keeper), created
+// ONCE per mount; home and away are re-baked on entering the line-up screen, from the
+// resolved kits of that match -- never per frame.
+function createFrontCanvas(): HTMLCanvasElement {
+  const el = document.createElement('canvas');
+  el.width = FRONT_W;
+  el.height = FRONT_H;
+  return el;
+}
+
+function bakeFront(front: HTMLCanvasElement, palette: Readonly<SpritePalette>): void {
+  const c = front.getContext('2d');
+  if (c === null) return;
+  c.clearRect(0, 0, front.width, front.height);
+  bakeFrontSprite(palette, (x, y, size, color) => {
+    c.fillStyle = color;
+    c.fillRect(x, y, size, size);
+  });
+}
+
+// G15-19: the stands of the line-up screen, ONCE per mount, from CROWD_SEED (no
+// Math.random: the same crowd every time).
+function bakeStands(): HTMLCanvasElement {
+  const el = document.createElement('canvas');
+  el.width = VIEW_W;
+  el.height = PRE_MATCH_STANDS_H;
+  const c = el.getContext('2d');
+  if (c === null) return el;
+  c.fillStyle = CROWD_BG;
+  c.fillRect(0, 0, VIEW_W, PRE_MATCH_STANDS_H);
+  forEachCrowdDot(CROWD_SEED, VIEW_W, PRE_MATCH_STANDS_H, (x, y, color) => {
+    c.fillStyle = color;
+    c.fillRect(x, y, CROWD_DOT, CROWD_DOT);
+  });
+  return el;
 }
 
 function VaultWorldCupGame({
@@ -543,14 +596,30 @@ function VaultWorldCupGame({
     writeSpritePalette(spritePalette, GK_KIT_PRIMARY, GK_KIT_SECONDARY);
     bakeAtlas(atlasKeeper, spritePalette);
     bakeMatchAtlases();
+    // G15-19: the three standing figures and the stands, created ONCE. The keeper's is
+    // baked once and for all (G12-1), home and away on entering the line-up screen.
+    const frontHome = createFrontCanvas();
+    const frontAway = createFrontCanvas();
+    const frontKeeper = createFrontCanvas();
+    writeSpritePalette(spritePalette, GK_KIT_PRIMARY, GK_KIT_SECONDARY);
+    bakeFront(frontKeeper, spritePalette);
+    const stands = bakeStands();
+    // G15-14: the rippling net and the vertex it writes, created ONCE.
+    const ripple = createNetRipple();
+    const rippleOut = createRippleVertex();
 
     const ambienceMarks = createAmbienceMarks();
     let ambienceCount = 0;
     let ambienceIndex = 0;
     let ambienceHalf: 1 | 2 | 3 = 1;
 
-    // The fourth stream and the pool (criterion 20: created once).
-    const fxPool = createParticlePool();
+    // The fourth stream and the two victory pools (criterion 20: created once). G15-21:
+    // the confetti runs alone in a friendly, with the fireworks in the World Cup, and both
+    // start at the final whistle, over the pitch, then carry on into the victory screen.
+    const confettiPool = createParticlePool(CONFETTI_COUNT);
+    const fireworkPool = createParticlePool(FIREWORK_POOL_COUNT);
+    let fxLive = false;
+    let victorySteps = 0;
     let fxRng: Rng = createRng(0);
     let fxKind: FxKind = 'confetti';
     let victoryTitle = '';
@@ -708,6 +777,8 @@ function VaultWorldCupGame({
       injuryChoiceCount = 0;
       resetGestures(feints);
       resetCelebration(celebration);
+      resetNetRipple(ripple);
+      fxLive = false;
       // D2: the own-goal labels of this match, on this event. `run` and runLineups are
       // already this match's here; two explicit writes, because playerName takes a `0 | 1`
       // and the counter of a for loop is a `number`.
@@ -755,6 +826,38 @@ function VaultWorldCupGame({
         modeRules(mode), side, runFormations, modeVictoryScreen(mode), runLineups,
       );
       reportStatus(modeMatchLabel(mode));
+      // G15-19: the line-up screen draws this very run (frozen until the flow says
+      // 'match'), so its figures are baked now, from the kits the match will wear.
+      if (flow.phase === 'pre-match') refreshPreMatchView();
+    }
+
+    // G15-19, on the event of entering the line-up screen: the two standing figures in the
+    // RESOLVED kits (the away side inverted when they clash, QA 15-sep), never per frame.
+    function refreshPreMatchView(): void {
+      writeSpritePalette(spritePalette, matchKits[HOME].primary, matchKits[HOME].secondary);
+      bakeFront(frontHome, spritePalette);
+      writeSpritePalette(spritePalette, matchKits[AWAY].primary, matchKits[AWAY].secondary);
+      bakeFront(frontAway, spritePalette);
+    }
+
+    // G15-21, on the event of the final whistle of a human win with a victory screen to
+    // follow (flow.after === 'victory'): the confetti starts raining over the pitch NOW,
+    // in the winner's own kit -- gold and kit, plus the fireworks, in the World Cup.
+    function beginVictoryFx(): void {
+      fxKind = modeFxKind(mode);
+      victoryTeam = teamOf(modeVictoryTeamId(mode, run.match));
+      const worldCup = fxKind === 'fireworks';
+      writeConfettiPalette(confettiPool, worldCup ? 'gold-kit' : 'kit', victoryTeam.kit.primary, victoryTeam.kit.secondary);
+      startConfettiRain(confettiPool, fxRng);
+      if (worldCup) startFx(fireworkPool, 'fireworks', fxRng);
+      fxLive = true;
+      victorySteps = 0;
+    }
+
+    function stepVictoryFx(): void {
+      stepFx(confettiPool, 'confetti', fxRng);
+      if (fxKind === 'fireworks') stepFx(fireworkPool, 'fireworks', fxRng);
+      victorySteps++;
     }
 
     // G9-3: the CPU pair the bracket points at, either on screen (VER) or headless
@@ -827,10 +930,8 @@ function VaultWorldCupGame({
     }
 
     function startVictory(): void {
-      fxKind = modeFxKind(mode);
+      // The effects are already running: beginVictoryFx started them at the final whistle (G15-21).
       victoryTitle = modeVictoryTitle(mode);
-      victoryTeam = teamOf(modeVictoryTeamId(mode, run.match));
-      startFx(fxPool, fxKind, fxRng);
       accumulatorMs = 0;
       // Spec audio table: the chants under the fireworks at full volume, under the
       // confetti "a volumen bajo". They start here, when the caption queue is already
@@ -846,6 +947,7 @@ function VaultWorldCupGame({
     // CONTINUAR: cut the chants and back to the selector (spec).
     function continueFromVictory(): void {
       sfxVaultWorldCup.stop('chants_victory');
+      fxLive = false;
       flowContinue(flow);
       reportStatus(STATUS_SELECTOR);
     }
@@ -1178,8 +1280,13 @@ function VaultWorldCupGame({
       //    G15-4: the celebration of an earlier goal moves on one step, and a goal ON this
       //    step starts a new one -- read against the same watch, before updateWatch.
       stepCelebration(celebration, match.phase);
+      stepNetRipple(ripple);
       const scoredTeam = goalScoredThisStep(match, watch);
-      if (scoredTeam !== -1) beginCelebrationForGoal(celebration, match, watch, scoredTeam, preStep);
+      if (scoredTeam !== -1) {
+        beginCelebrationForGoal(celebration, match, watch, scoredTeam, preStep);
+        // G15-14: from the ball ONE step before (the shootout has moved it already).
+        beginNetRipple(ripple, PITCH, preStep.ballX, preStep.ballY);
+      }
       const before = captions.kind;
       collectCaptions(match, watch, humanSide, captions, victoryScreen);
       updateWatch(match, watch);
@@ -1216,7 +1323,11 @@ function VaultWorldCupGame({
           // Cheap minor: leaving spectate for over drops the x4 -- the FINAL caption
           // of a watched CPU match drains at real time (3 s), not sped up.
           speed = 1;
-        } else endHumanMatch(false);
+        } else {
+          endHumanMatch(false);
+          // G15-21: "empieza sobre el campo al pitido final".
+          if (flow.after === 'victory') beginVictoryFx();
+        }
       }
     }
 
@@ -1231,11 +1342,20 @@ function VaultWorldCupGame({
         playCaptionEdge(before);
         // G15-4: a golden goal (straight to 'over') celebrates in these frames.
         stepCelebration(celebration, run.match.phase);
+        stepNetRipple(ripple);
+        if (fxLive) stepVictoryFx();
       }
     }
 
     function update(frameMs: number): void {
       const phase = flow.phase;
+      if (phase === 'pre-match') {
+        // G15-19: ~3 s or A, at the fixed step, paused with P, frozen by the guard.
+        accumulatorMs = planFrame('play', pausedRef.current, blocked, accumulatorMs, frameMs, budget, plan, 1);
+        if (plan.mode !== 'full') return;
+        for (let i = 0; i < plan.steps; i++) if (flowStepPreMatch(flow)) break;
+        return;
+      }
       if (phase === 'match' || phase === 'spectate' || phase === 'over') {
         // planFrame owns the three modes, the accumulator, the pad-advance guard (H3)
         // and, new in step 9, the x4 of a spectated pair.
@@ -1267,7 +1387,7 @@ function VaultWorldCupGame({
         // The effects run at the fixed step too, from their own stream, paused with P.
         accumulatorMs = planFrame('play', pausedRef.current, blocked, accumulatorMs, frameMs, budget, plan, 1);
         if (plan.mode !== 'full') return;
-        for (let i = 0; i < plan.steps; i++) stepFx(fxPool, fxKind, fxRng);
+        for (let i = 0; i < plan.steps; i++) stepVictoryFx();
         return;
       }
       accumulatorMs = 0;   // the menus step nothing
@@ -1337,29 +1457,52 @@ function VaultWorldCupGame({
         ctx.arc(toScreenX(cam, goalX + dir * p.penaltySpotDist), toScreenY(cam, midY), SPOT_RADIUS, 0, Math.PI * 2);
         ctx.fill();
         // The goal itself: a white mouth 30 units deep behind the line, now with its
-        // frame and its net. G11-4: the net is a STATIC grid (the one that ripples is
-        // v1.5) and it is drawn HERE, in drawPitch, on purpose -- drawPlayers and
+        // frame and its net. G11-4: the net is a static grid, and ripples for ~1 s after a
+        // goal (G15-14, V15-5), and it is drawn HERE, in drawPitch, on purpose -- drawPlayers and
         // drawBall run after it, so the ball the engine leaves frozen inside the mouth
         // for the whole celebration is drawn ON TOP of the mesh instead of behind it.
         const mouthX = toScreenX(cam, goalX + (dir === 1 ? -GOAL_MOUTH_DEPTH : 0));
         const mouthY = toScreenY(cam, midY - p.goalWidth / 2);
         ctx.fillStyle = GOAL_MOUTH;
         ctx.fillRect(mouthX, mouthY, GOAL_MOUTH_DEPTH, p.goalWidth);
-        // One path for the whole mesh: 16 line segments, one stroke, no allocation.
+        // One path for the whole mesh, no allocation. G15-14: the goal that has just been
+        // scored on draws its mesh as polylines pushed by the ripple (net-ripple.ts); the
+        // other one, and every goal outside a ripple, the static grid of G11-4.
         ctx.strokeStyle = NET_LINE;
         ctx.lineWidth = 1;
         ctx.beginPath();
         const across = netLineCount(p.goalWidth, NET_CELL);
-        for (let i = 1; i <= across; i++) {
-          const lineY = mouthY + i * NET_CELL;
-          ctx.moveTo(mouthX, lineY);
-          ctx.lineTo(mouthX + GOAL_MOUTH_DEPTH, lineY);
-        }
         const deep = netLineCount(GOAL_MOUTH_DEPTH, NET_CELL);
-        for (let i = 1; i <= deep; i++) {
-          const lineX = mouthX + i * NET_CELL;
-          ctx.moveTo(lineX, mouthY);
-          ctx.lineTo(lineX, mouthY + p.goalWidth);
+        if (ripple.active && ripple.side === side) {
+          const worldX = goalX + (dir === 1 ? -GOAL_MOUTH_DEPTH : 0);
+          const worldY = midY - p.goalWidth / 2;
+          for (let i = 1; i <= across; i++) {
+            const wy = worldY + i * NET_CELL;
+            for (let k = 0; k <= RIPPLE_SEGMENTS_DEEP; k++) {
+              rippleVertex(ripple, worldX + (k * GOAL_MOUTH_DEPTH) / RIPPLE_SEGMENTS_DEEP, wy, rippleOut);
+              if (k === 0) ctx.moveTo(toScreenX(cam, rippleOut.x), toScreenY(cam, rippleOut.y));
+              else ctx.lineTo(toScreenX(cam, rippleOut.x), toScreenY(cam, rippleOut.y));
+            }
+          }
+          for (let i = 1; i <= deep; i++) {
+            const wx = worldX + i * NET_CELL;
+            for (let k = 0; k <= RIPPLE_SEGMENTS_ACROSS; k++) {
+              rippleVertex(ripple, wx, worldY + (k * p.goalWidth) / RIPPLE_SEGMENTS_ACROSS, rippleOut);
+              if (k === 0) ctx.moveTo(toScreenX(cam, rippleOut.x), toScreenY(cam, rippleOut.y));
+              else ctx.lineTo(toScreenX(cam, rippleOut.x), toScreenY(cam, rippleOut.y));
+            }
+          }
+        } else {
+          for (let i = 1; i <= across; i++) {
+            const lineY = mouthY + i * NET_CELL;
+            ctx.moveTo(mouthX, lineY);
+            ctx.lineTo(mouthX + GOAL_MOUTH_DEPTH, lineY);
+          }
+          for (let i = 1; i <= deep; i++) {
+            const lineX = mouthX + i * NET_CELL;
+            ctx.moveTo(lineX, mouthY);
+            ctx.lineTo(lineX, mouthY + p.goalWidth);
+          }
         }
         ctx.stroke();
         // The posts and the back of the net: the outline that turns the mouth into a
@@ -1979,6 +2122,40 @@ function VaultWorldCupGame({
       }
     }
 
+    // G15-19 (matizada 23-sep): the two elevens standing in a row, the rival above and your
+    // team below, the selection's name and its tag -- no player names. Stands baked at
+    // mount, figures baked on entering (refreshPreMatchView). The run exists already and
+    // is frozen until the flow says 'match'.
+    function drawPreMatch(): void {
+      ctx.drawImage(stands, 0, 0);
+      ctx.fillStyle = GRASS_DARK;
+      ctx.fillRect(0, PRE_MATCH_STANDS_H, VIEW_W, VIEW_H - PRE_MATCH_STANDS_H);
+      drawPreMatchRow(preMatchTopTeam(humanSide), PRE_MATCH_TOP_FEET_Y, PRE_MATCH_TOP_LABEL_Y);
+      drawPreMatchRow(preMatchBottomTeam(humanSide), PRE_MATCH_BOTTOM_FEET_Y, PRE_MATCH_BOTTOM_LABEL_Y);
+      drawHint(flowHumanCount(flow) === 2 ? PRE_MATCH_HINT_TWO : CONTROL_HINTS[flow.keyScheme].preMatch, PRE_MATCH_HINT_Y);
+    }
+
+    function drawPreMatchRow(team: 0 | 1, feetY: number, labelY: number): void {
+      const match = run.match;
+      const first = team * TEAM_SIZE;
+      const figure = team === HOME ? frontHome : frontAway;
+      for (let i = 0; i < TEAM_SIZE; i++) {
+        const p = match.players[first + i];
+        ctx.drawImage(
+          p.role === 'gk' ? frontKeeper : figure,
+          Math.round(preMatchSlotX(i, TEAM_SIZE) - FRONT_W / 2), feetY - FRONT_H,
+        );
+      }
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = FONT_TEAM;
+      ctx.fillStyle = HUD_TEXT;
+      ctx.fillText(match.teams[team].name, VIEW_W / 2, labelY);
+      ctx.font = FONT_SMALL;
+      ctx.fillStyle = HUD_ACCENT;
+      ctx.fillText(preMatchTag(humanSide, team), VIEW_W / 2, labelY + PRE_MATCH_TAG_DY);
+    }
+
     // G15-17: the starters on a mini pitch with shirt number and name, the reserves
     // on the right, and the cursor ring on whichever list is live. Only YOUR team:
     // the rival is drawn from V15-5 on (the draw has not happened yet at this point).
@@ -2129,11 +2306,8 @@ function VaultWorldCupGame({
     function drawVictory(): void {
       ctx.fillStyle = MENU_BG;
       ctx.fillRect(0, 0, VIEW_W, VIEW_H);
-      for (let i = 0; i < fxPool.count; i++) {
-        if (fxPool.life[i] === 0) continue;
-        ctx.fillStyle = FX_COLORS[fxPool.color[i]];
-        ctx.fillRect(fxPool.x[i], fxPool.y[i], fxPool.size[i], fxPool.size[i]);
-      }
+      drawFxPool(confettiPool);
+      if (fxKind === 'fireworks') drawFxPool(fireworkPool);
       ctx.textBaseline = 'middle';
       ctx.textAlign = 'center';
       ctx.font = FONT_VICTORY_TITLE;
@@ -2166,7 +2340,40 @@ function VaultWorldCupGame({
       ctx.fillRect(cx - 30, cy - 118, 60, 26);
       ctx.fillRect(cx - 8, cy - 92, 16, 14);
       ctx.fillRect(cx - 24, cy - 78, 48, 8);
+      // G15-21 "destello dorado en la copa", the World Cup's only: a glint over the cup and
+      // four short rays, faded by cupFlashAlpha. globalAlpha is a number (criterion 20).
+      if (fxKind === 'fireworks') {
+        const glint = cupFlashAlpha(victorySteps);
+        if (glint > 0) {
+          ctx.globalAlpha = glint;
+          ctx.fillStyle = CUP_FLASH;
+          ctx.fillRect(cx - 30, cy - 118, 60, 8);
+          ctx.strokeStyle = CUP_FLASH;
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.moveTo(cx - 52, cy - 140);
+          ctx.lineTo(cx - 40, cy - 128);
+          ctx.moveTo(cx + 52, cy - 140);
+          ctx.lineTo(cx + 40, cy - 128);
+          ctx.moveTo(cx, cy - 152);
+          ctx.lineTo(cx, cy - 136);
+          ctx.moveTo(cx - 60, cy - 110);
+          ctx.lineTo(cx - 46, cy - 110);
+          ctx.stroke();
+          ctx.globalAlpha = 1;
+        }
+      }
       drawHint(CONTROL_HINTS[flow.keyScheme].victory, VICTORY_HINT_Y);
+    }
+
+    // G15-21: one pool, in its own palette. Shared by the final whistle (over the pitch)
+    // and the victory screen.
+    function drawFxPool(pool: ParticlePool): void {
+      for (let i = 0; i < pool.count; i++) {
+        if (pool.life[i] === 0) continue;
+        ctx.fillStyle = pool.palette[pool.color[i]];
+        ctx.fillRect(pool.x[i], pool.y[i], pool.size[i], pool.size[i]);
+      }
     }
 
     function drawMatch(): void {
@@ -2179,6 +2386,11 @@ function VaultWorldCupGame({
       drawHud();
       drawCaption();
       drawInjuryWindow();
+      // G15-21: the confetti (and the World Cup's fireworks) from the final whistle on.
+      if (fxLive) {
+        drawFxPool(confettiPool);
+        if (fxKind === 'fireworks') drawFxPool(fireworkPool);
+      }
     }
 
     function draw(): void {
@@ -2188,6 +2400,7 @@ function VaultWorldCupGame({
         case 'lineup': drawLineup(); break;
         case 'draw': drawDraw(); break;
         case 'bracket': drawBracket(); break;
+        case 'pre-match': drawPreMatch(); break;
         case 'victory': drawVictory(); break;
         case 'match':
         case 'spectate':
@@ -2318,6 +2531,11 @@ function VaultWorldCupGame({
           else if (k === 'right') flowMoveBracketChoice(flow, 1);
           else if (k === 'a') confirmBracket();
           else return false;
+          return true;
+        case 'pre-match':
+          // G15-19: "~3 s o hasta A".
+          if (k !== 'a') return false;
+          flowEndPreMatch(flow);
           return true;
         case 'spectate':
           if (k !== 'a') return false;
@@ -2490,7 +2708,10 @@ function VaultWorldCupGame({
         return;
       }
       const table = phase === 'team-select' || phase === 'lineup' ? tableForPicker() : menuTable();
-      const k = padKeyFor(table, key);
+      // G15-19: at two, either player's A starts the match from the line-up screen.
+      const k = phase === 'pre-match' && flowHumanCount(flow) === 2
+        ? padKeyFor(TWO_PLAYER_P1, key) ?? padKeyFor(TWO_PLAYER_P2, key)
+        : padKeyFor(table, key);
       if (k !== null && menuAction(k)) {
         e.preventDefault();
         return;

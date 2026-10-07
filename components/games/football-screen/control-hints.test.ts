@@ -1,17 +1,25 @@
 import { describe, expect, it } from 'vitest';
 import {
-  CONTROL_HINTS, TWO_PLAYER_SCHEME_NOTE, injuryHintFor, keeperHintFor, keyLabel, type ControlHints,
+  CONTROL_HINTS, PRE_MATCH_HINT_TWO, TWO_PLAYER_SCHEME_NOTE, injuryHintFor, keeperHintFor, keyLabel, type ControlHints,
 } from './control-hints';
 import { ARROWS_SOLO, CLASSIC_SOLO, KEY_SCHEMES, TWO_PLAYER_P1, TWO_PLAYER_P2, type KeyTable } from './keyboard';
 
 function allTexts(h: ControlHints): string[] {
   return [
     h.schemeRow, h.schemeDetail, h.mode, h.teamSolo, h.draw, h.bracketChoice, h.bracketPlay, h.spectate, h.victory,
-    h.lineupBrowse, h.lineupSwap, h.lineupEdit,
+    h.lineupBrowse, h.lineupSwap, h.lineupEdit, h.preMatch,
   ];
 }
 
 describe('control hints per key scheme (G15-6)', () => {
+  it('PRE-MATCH (G15-19): each scheme names its own A, and the two-player line names both players\' A', () => {
+    expect(CONTROL_HINTS.arrows.preMatch).toBe('A (J) · EMPEZAR');
+    expect(CONTROL_HINTS.classic.preMatch).toBe('A (Z) · EMPEZAR');
+    expect(PRE_MATCH_HINT_TWO).toBe('C (J1) O J (J2) · EMPEZAR');
+    expect(PRE_MATCH_HINT_TWO).toContain(keyLabel(TWO_PLAYER_P1, 'a'));
+    expect(PRE_MATCH_HINT_TWO).toContain(keyLabel(TWO_PLAYER_P2, 'a'));
+  });
+
   it('keeps the step-8 wording for Flechas, word for word', () => {
     const h = CONTROL_HINTS.arrows;
     expect(h.teamSolo).toBe('CRUCETA · A (J) CONFIRMA · 1/2/3 ALINEACIÓN');

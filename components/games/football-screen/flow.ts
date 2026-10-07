@@ -1,3 +1,4 @@
+import { stepsFor } from '../football-logic/clock';
 import { winnerOf, type MatchState } from '../football-logic/match';
 import {
   createFriendlyMode, createWorldCupMode, drawRival, drawSeedFor, modeAbandonMatch, modeBracket, modeEndMatch, modeRules,
@@ -18,15 +19,17 @@ export type FlowPhase =
   | 'lineup'        // G15-17: starters, reserves and names, before a friendly or the World Cup
   | 'draw'          // the World Cup's sixteen, drawn
   | 'bracket'       // the round's pairs; VER / SALTAR per CPU pair, then the human's match
+  | 'pre-match'     // G15-19: the two elevens lined up before the kickoff, ~3 s or A
   | 'match'         // a match with at least one human
   | 'spectate'      // a CPU pair watched at x4 (G9-3)
   | 'victory'       // GANADOR / CAMPEONES DEL MUNDO, CONTINUAR
   | 'over';         // the match ended: the captions drain, then `after`
 
 // G10-4: which of the two tracks the play-page's music belongs to. 'match' is the
-// only two phases with a game actually running -- a played match and a spectated
-// CPU pair; the other six (every menu, the draw, the bracket, the victory screen,
-// and the caption drain of 'over') are 'menu'. The pause is deliberately NOT a
+// phases with a game on: a played match, a spectated CPU pair, and since V15-5 the
+// pre-match line-up that opens the human's match (G15-19: "para dar ambiente", so the
+// match track starts with it); the other seven (every menu, the draw, the bracket, the
+// victory screen, and the caption drain of 'over') are 'menu'. The pause is deliberately NOT a
 // phase here: the play-page reads `paused` from its own prop (spec L464: the lobby
 // track also covers the pause), not from this function.
 export type PhaseGroup = 'menu' | 'match';
@@ -35,6 +38,7 @@ export type PhaseGroup = 'menu' | 'match';
 // with no case here fails tsc instead of silently falling into 'menu'.
 export function phaseGroup(phase: FlowPhase): PhaseGroup {
   switch (phase) {
+    case 'pre-match':
     case 'match':
     case 'spectate':
       return 'match';
@@ -85,6 +89,17 @@ export const LINEUP_BY_MODE: Readonly<Record<GameModeKind, boolean>> = {
   'world-cup': true,
 };
 
+// G15-19 (matizada 23-sep): the line-up screen opens a friendly (either one) and every
+// World Cup match the human plays -- "justo al pulsar JUGAR, con el rival ya sorteado" --
+// for ~3 s or until A. The training has none (G15-19: "en amistoso y Mundial").
+export const PRE_MATCH_BY_MODE: Readonly<Record<GameModeKind, boolean>> = {
+  'friendly-cpu': true,
+  'friendly-2p': true,
+  training: false,
+  'world-cup': true,
+};
+export const PRE_MATCH_STEPS = stepsFor(3);
+
 export type FlowState = {
   phase: FlowPhase;
   modeIndex: number;            // cursor on MODE_LIST; survives a reset (the last mode played)
@@ -96,6 +111,7 @@ export type FlowState = {
   lineupCursor: number;         // G15-17: the position, or the reserve while choosing
   lineupChoosing: number;       // the position being substituted, -1 = browsing
   lineupEditing: number;        // the squad index whose name is being typed, -1 = none
+  preMatchStepsLeft: number;    // G15-19: fixed steps left on the line-up screen
   after: FlowPhase;             // where 'over' goes once the captions drain
   keyScheme: KeyScheme;         // G15-6: Flechas or Clásico; a preference, so it survives a reset
 };
@@ -103,7 +119,7 @@ export type FlowState = {
 export function createFlowState(): FlowState {
   return {
     phase: 'mode-select', modeIndex: 0, picking: 0, cursor: 0, picked: [-1, -1], formation: [0, 0], bracketChoice: 0,
-    lineupCursor: 0, lineupChoosing: -1, lineupEditing: -1,
+    lineupCursor: 0, lineupChoosing: -1, lineupEditing: -1, preMatchStepsLeft: 0,
     after: 'mode-select', keyScheme: DEFAULT_KEY_SCHEME,
   };
 }
@@ -122,6 +138,7 @@ export function flowReset(f: FlowState): void {
   f.lineupCursor = 0;
   f.lineupChoosing = -1;
   f.lineupEditing = -1;
+  f.preMatchStepsLeft = 0;
   f.after = 'mode-select';
 }
 
@@ -229,11 +246,22 @@ export function flowBuildMode(f: FlowState, bankIds: readonly string[], seed: nu
   return createFriendlyMode(kind, homeId, awayId);
 }
 
-// A mode with a bracket shows the draw first; one without goes straight to the match.
-// The question is "does this mode have a bracket", never "which mode is it".
+// The human's match is about to start: through the line-up screen where the mode has one.
+function enterHumanMatch(f: FlowState): void {
+  if (PRE_MATCH_BY_MODE[flowModeKind(f)]) {
+    f.phase = 'pre-match';
+    f.preMatchStepsLeft = PRE_MATCH_STEPS;
+    return;
+  }
+  f.phase = 'match';
+}
+
+// A mode with a bracket shows the draw first; one without goes to its match -- through
+// the line-up screen of G15-19 when the mode has it.
 export function flowAfterModeBuilt(f: FlowState, m: GameMode): void {
   if (f.phase !== 'team-select' && f.phase !== 'lineup') return;
-  f.phase = modeBracket(m) === null ? 'match' : 'draw';
+  if (modeBracket(m) === null) enterHumanMatch(f);
+  else f.phase = 'draw';
 }
 
 // ── lineup (G15-17) ─────────────────────────────────────────────────────────────
@@ -321,13 +349,13 @@ export function flowMoveBracketChoice(f: FlowState, delta: number): void {
 
 // A on the bracket. 'spectate' moves to the spectate phase (the component starts the
 // CPU run on screen); 'skip' and 'skip-all' stay here (the component resolves the pair,
-// or every pair left, headless and refreshes the screen); 'play' moves to the match.
-// 'none' outside the bracket phase.
+// or every pair left, headless and refreshes the screen); 'play' moves to the match,
+// through the line-up screen (G15-19). 'none' outside the bracket phase.
 export function flowConfirmBracket(f: FlowState, m: GameMode): BracketAction | 'none' {
   if (f.phase !== 'bracket') return 'none';
   const action = flowBracketAction(f, m);
   if (action === 'spectate') f.phase = 'spectate';
-  else if (action === 'play') f.phase = 'match';
+  else if (action === 'play') enterHumanMatch(f);
   // 'skip' and 'skip-all' stay on the bracket: the component resolves the pair (or
   // every pair left) headless and refreshes the screen.
   return action;
@@ -402,4 +430,23 @@ export function flowContinue(f: FlowState): void {
 export function flowExitMatch(f: FlowState, m: GameMode): void {
   if (f.phase !== 'match' || modeRules(m).timed) return;
   flowReset(f);
+}
+
+// ── pre-match (G15-19) ──────────────────────────────────────────────────────────
+
+// One fixed step of the line-up screen (the component runs it at the match's step
+// rate). true on the step the screen ends and the match begins.
+export function flowStepPreMatch(f: FlowState): boolean {
+  if (f.phase !== 'pre-match') return false;
+  f.preMatchStepsLeft--;
+  if (f.preMatchStepsLeft > 0) return false;
+  flowEndPreMatch(f);
+  return true;
+}
+
+// A on the line-up screen: straight to the kickoff.
+export function flowEndPreMatch(f: FlowState): void {
+  if (f.phase !== 'pre-match') return;
+  f.phase = 'match';
+  f.preMatchStepsLeft = 0;
 }
