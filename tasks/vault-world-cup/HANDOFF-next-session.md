@@ -1,6 +1,63 @@
-# HANDOFF — VAULT WORLD CUP · v1.5: V15-4 COMMITEADO (`77aecd7`); V15-5 «Espectáculo» día 1 A MEDIAS (T1-T3 hechas, T4 en arreglo, T5 pendiente; sin commit) · actualizado 2026-10-06
+# HANDOFF — VAULT WORLD CUP · v1.5: V15-5 «Espectáculo» DÍA 1 CERRADO EN CÓDIGO (T1-T4 en `f76a40a`, T5 sin commit); siguiente = QA de Paco + día 2 (T6-T10) · actualizado 2026-10-07
 
-Prompt para retomar: ver el bloque «PROMPT PARA LA SIGUIENTE SESIÓN» de §-22.
+Prompt para retomar: ver el bloque «PROMPT PARA LA SIGUIENTE SESIÓN» de §-23.
+
+## -23. 07-oct: V15-5 día 1 CERRADO (T4 re-revisada, T5 implementada y revisada; build OK)
+
+**Estado de partida:** Paco commiteó y pusheó T1-T4 + la ronda de arreglo 1 de la T4 en `f76a40a` (HEAD = origin/main). Por eso
+`localhost:3000` daba Build Error «Export SLIDE_TILT_COS doesn't exist»: eran los 5 errores de `tsc` que la T3 dejaba para la T5.
+Verificado: el código de HEAD es exactamente el tree `13f2493` del ledger.
+
+**Hecho hoy (SDD, ledger al final de `.superpowers/sdd/2026-10-06-vault-world-cup-v15-5/progress.md`):**
+- **T4:** re-review acotado (sonnet) → Approved. Las aserciones literales de `capturePreStep` (lanzador 1, x 249, y 715, penalti 231/715)
+  y los 2 controles negativos dan rojo. Corregido el texto del control 3 en el plan (8 → 6, tras D5). Minor diferido: la rama de
+  orientación `: 1` de la tanda sigue sin fijar.
+- **T5** (`VaultWorldCupGame.tsx`, solo ese fichero): rótulos con el nombre de su sujeto (fuera `cardName`/`injuryName`); gol en propia
+  con «EN PROPIA · <defensa>» horneado en `startMatch`; dorsal junto al cursor; entrada tumbada, amagos y levantarse; corro y cabizbajos;
+  cámara sujeta 1 s en la tanda; el golden goal celebra en `stepCaptionsOnly`. Revisión Approved a la primera. 2 Minors estéticos
+  diferidos: una línea de comentario de 154 caracteres (:1070) y el filtro largo de `drawPlayers` (:1495), a pulir si la T9 lo toca.
+- **Cierre:** vitest **1541 / 91** verde, `tsc` limpio, eslint limpio en lo tocado, compuerta del motor OK (solo los 3 ficheros de la T1,
+  md5 `0845d50e…`, sin `Math.random(`). `next build` OK, hecho en una copia en el scratchpad para no pisar el `.next` del `next dev`:
+  `/games/vault-world-cup/play` compila. El Build Error de `:3000` debería desaparecer al recargar (si no, reinicia `next dev`).
+
+**Working tree (sin commit):** `M components/games/VaultWorldCupGame.tsx`, `M docs/superpowers/plans/2026-10-06-vault-world-cup-v15-5-show.md`
+(1 línea, el texto del control 3) y este handoff.
+
+**Commit propuesto (solo T5 + docs):**
+```
+feat(world-cup): v1.5 show day 1 wiring — named captions with own-goal defender, shirt number by the cursor, slide/feint/get-up sprites, goal hug and dejected rivals, shootout camera hold in the game screen (V15-5, G15-11/G15-25/G15-4)
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+```
+
+**QA de Paco (pendiente; jugar ahora, antes del día 2):**
+1. QA del V15-4 entero: `.superpowers/sdd/2026-09-24-vault-world-cup-v15-4/qa-paco.md` (bloques 1-10).
+2. Lo nuevo del día 1:
+   - **Entrenamiento:** sin tarjetas ni lesiones (G15-29).
+   - **Rótulos:** GOL / FALTA / PENALTI / TARJETA / LESIÓN con el nombre correcto; gol en propia = «GOL» + «EN PROPIA · <defensa>»;
+     FALLA de la tanda con el nombre del lanzador; el GOL de la tanda dura 1 s.
+   - **Dorsal** a la derecha de la flecha del cursor: ¿se lee? ¿choca con las muescas de carga?
+   - **Sprites:** entrada tumbada (sin el sprite inclinado de antes), amago del rival al robar, levantarse agachado.
+   - **Corro del gol (4 s):** compañeros cercanos al corro, lejanos corriendo sin sprint, rivales cabizbajos (portero incluido, desde su
+     atlas), el portero del goleador abraza solo en su sitio, los compañeros que llegan por la izquierda cruzan al goleador (QA 4.2).
+   - **Tanda:** la cámara se queda 1 s en el gol y luego corta (¿tira el siguiente fuera de plano?).
+   - **Gol de oro:** el corro en 'over' con la cámara quieta; los que vienen de lejos pueden entrar desde fuera de plano.
+   - **Lo de siempre:** salir/abandonar a mitad de corro y empezar otro partido no hereda el corro.
+
+**Después: día 2 = T6-T10** (red que ondula, pantalla previa, victoria con confeti/fuegos, cableado del día 2, cierre con `qa-paco.md`
+del V15-5 y commit). Objetivo final 1561 / 94.
+
+### PROMPT PARA LA SIGUIENTE SESIÓN
+```
+/retomar tasks/vault-world-cup/HANDOFF-next-session.md
+Seguimos con el V15-5 «Espectáculo», DÍA 2 (Tasks 6-10). Lee §-23 del handoff y el final de
+.superpowers/sdd/2026-10-06-vault-world-cup-v15-5/progress.md.
+0) Comprueba que commiteé la T5 (git log; working tree limpio) y apunta mis notas del QA del día 1 si te las paso.
+1) Ejecuta T6 → T10 con SDD en serie (implementador + revisor por tarea, `bash sdd.sh brief N` / `step N`,
+   rondas de arreglo hasta review limpio), respetando la tabla de orden del plan (objetivo final 1561 / 94).
+2) Cierre: suite, tsc, eslint, `sdd.sh gate`, `next build` en copia (nunca next dev ni build en sitio),
+   qa-paco.md del V15-5 y commit propuesto. Commits solo yo.
+```
 
 ## -22. 06-oct: V15-4 commiteado (`77aecd7`, verificado sin marcas viejas, 1519 verdes) + V15-5 «Espectáculo»: plan, pre-vuelo y día 1 a medias
 

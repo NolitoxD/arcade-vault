@@ -1951,7 +1951,7 @@ Expected: PASS, 8 tests. (Los dos de partido real se validaron con un prototipo 
 
 1. `goalHubId` devolviendo `id` sin mirar el equipo → FALLA el primero (`expected 3 to be 15`: el defensa rival como anfitrión).
 2. Sin `p.role === 'gk' ||` en el reparto de huecos → FALLA el de huecos: el portero recibe hueco (`expected [ 1, true, false ] to deeply equal [ 1, false, false ]`, o `expected 9 to be 8` si es el último en entrar).
-3. `celebrationView` devolviendo siempre `p.x/p.y` para los que corren → FALLA el de la carrera (`expected 0 to be close to 8`).
+3. `celebrationView` devolviendo siempre `p.x/p.y` para los que corren → FALLA el de la carrera (`expected 0 to be close to 6` — 2 × HUG_RUN_SPEED tras D5; corregido 07-oct).
 4. `stepCelebration` sin la condición de fase → FALLA el de duraciones en `stepCelebration(c, 'kickoff')` (`expected 'goal' to be 'none'`).
 5. La tanda con `c.hubX = match.players[pre.takerId].x` (la posición de DESPUÉS del paso) → FALLAN el sintético (`980` en vez de `249`) y el de la semilla 16.
 6. `beginCelebrationForGoal` sin la rama de la tanda (todo como gol normal) → FALLA el de la semilla 16 (`expected [ 'goal', … ] to equal [ 'shootout', … ]`).

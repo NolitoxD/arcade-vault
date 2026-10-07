@@ -30,8 +30,12 @@ import {
   followCamera, isOnScreen, toScreenX, toScreenY, type Camera,
 } from './football-screen/camera';
 import {
-  CAPTION_TEXT, cardShownThisStep, collectCaptions, createCaptionState, createMatchWatch, injuredTeamThisStep, pushCaption,
-  resetCaptionState, resetMatchWatch, stepCaption, updateWatch, type ShowingCaption,
+  beginCelebrationForGoal, capturePreStep, celebrationHoldsCamera, celebrationView, createCelebration,
+  createCelebrationView, createPreStep, resetCelebration, stepCelebration,
+} from './football-screen/celebration';
+import {
+  CAPTION_TEXT, OWN_GOAL_PREFIX, collectCaptions, createCaptionState, createMatchWatch, goalScoredThisStep,
+  pushCaption, resetCaptionState, resetMatchWatch, stepCaption, updateWatch, type ShowingCaption,
 } from './football-screen/captions';
 import { CONTROL_HINTS, TWO_PLAYER_SCHEME_NOTE, injuryHintFor, keeperHintFor } from './football-screen/control-hints';
 import {
@@ -53,7 +57,9 @@ import {
 } from './football-screen/flow-layout';
 import { previewGkX, previewGkY, previewSlotX, previewSlotY } from './football-screen/formation-preview';
 import { PAD_KEYS, routeGamepadStrategy, routeGamepadToPad } from './football-screen/gamepad-input';
-import { GESTURE_IDLE, beginGkCatchGestures, createGestureTimers, gestureProgress, resetGestures } from './football-screen/gestures';
+import {
+  GESTURE_IDLE, beginGkCatchGestures, beginStealFeints, createGestureTimers, gestureProgress, resetGestures,
+} from './football-screen/gestures';
 import { GOAL_MOUTH_DEPTH, NET_CELL, netLineCount } from './football-screen/goal-net';
 import {
   GRASS_TILE_H, GRASS_TILE_W, forEachGrassCell, grassTileOffset,
@@ -83,7 +89,7 @@ import {
   ambienceDue, captionSfxOnEdge, createAmbienceMarks, crossbarDue, goalCrowdDue, goalNetDue, halfEndWhistleDue,
   shortPassFiredThisStep, shotFiredThisStep, victoryChantGain,
 } from './football-screen/sfx-map';
-import { SLIDE_TILT_COS, SLIDE_TILT_SIN, choosePlayerSprite, createSpriteChoice } from './football-screen/sprite-frame';
+import { choosePlayerSprite, createSpriteChoice } from './football-screen/sprite-frame';
 import {
   ATLAS_H, ATLAS_W, PLAYER_SPRITE_MAPS, SPRITE_HALF, SPRITE_SIZE, atlasCellX, atlasCellY, bakeSpriteAtlas,
   createSpritePalette, writeSpritePalette, type SpritePalette,
@@ -144,7 +150,6 @@ const LINE = 'rgba(255,255,255,0.75)';
 const GOAL_MOUTH = 'rgba(255,255,255,0.25)';
 const NET_LINE = 'rgba(255,255,255,0.32)';
 const GOAL_FRAME = 'rgba(255,255,255,0.9)';
-const HEADS_DOWN = 'rgba(0,0,0,0.5)';
 const SPRINT_RING = 'rgba(255,255,255,0.5)';
 const NOTCH_FRAME = 'rgba(0,0,0,0.6)';
 const NOTCH_EMPTY = 'rgba(0,0,0,0.5)';
@@ -203,6 +208,10 @@ const NOTCH_H = 5;
 const NOTCH_GAP = 2;
 const NOTCH_TOTAL_W = SHOT_CHARGE_SEGMENTS * NOTCH_W + (SHOT_CHARGE_SEGMENTS - 1) * NOTCH_GAP;
 const NOTCH_DY = -24;
+// G15-11: the shirt number of the controlled player, to the right of the cursor arrow
+// (which spans x - 7 .. x + 7 at y - PLAYER_RADIUS - 12).
+const DORSAL_DX = 10;
+const DORSAL_DY = 8;
 // V15-1 (G15-2 "sombra mínima"): a small ellipse under the sprite's feet, smaller than
 // v1's body shadow, so the sprite and not the shadow is what reads.
 const SPRITE_SHADOW_DY = 4;
@@ -499,9 +508,6 @@ function VaultWorldCupGame({
     let injuryCursor = 0;
     let injuryLastDir = 0;
     let injuryALatched = false;
-    // G15-13 / G15-18: the name under the card and injury captions, composed on the event.
-    let cardName = '';
-    let injuryName = '';
 
     const cam: Camera = createCamera();
     const budget = createStepBudget();
@@ -516,6 +522,17 @@ function VaultWorldCupGame({
     // Criterion 20: created ONCE, written in place by runStep/drawPlayer every frame.
     const gestures = createGestureTimers();
     const spriteChoice = createSpriteChoice();
+    // G15-25: the steal feints, a GestureTimers of their own (the dives keep theirs).
+    // G15-4: the goal celebration, its per-player view and the snapshot taken before every
+    // step (what the shootout destroys on the step of its goal). All created ONCE.
+    const feints = createGestureTimers();
+    const celebration = createCelebration();
+    const celebrationOut = createCelebrationView();
+    const preStep = createPreStep();
+    // G15-11 / D2: the second line of an own-goal caption, "EN PROPIA · <name>", for every
+    // (team, squad index) of THIS match -- index = team * SQUAD_SIZE + squad. Built once per
+    // match in startMatch (an event), so drawCaption only looks it up (criterion 20).
+    const ownGoalLabels: string[] = [];
     // V15-1 (G15-2): the three sprite atlases. The keeper's is baked once and for all
     // (G12-1: the same fluor green and black for the twenty keepers); home and away
     // are re-baked by bakeMatchAtlases on every startMatch, from the RESOLVED kits.
@@ -689,8 +706,15 @@ function VaultWorldCupGame({
       keeperHoldTeam = -1;
       injuryViewTeam = -1;
       injuryChoiceCount = 0;
-      cardName = '';
-      injuryName = '';
+      resetGestures(feints);
+      resetCelebration(celebration);
+      // D2: the own-goal labels of this match, on this event. `run` and runLineups are
+      // already this match's here; two explicit writes, because playerName takes a `0 | 1`
+      // and the counter of a for loop is a `number`.
+      for (let i = 0; i < SQUAD_SIZE; i++) {
+        ownGoalLabels[i] = OWN_GOAL_PREFIX + playerName(0, i);
+        ownGoalLabels[SQUAD_SIZE + i] = OWN_GOAL_PREFIX + playerName(1, i);
+      }
     }
 
     // The formation each TEAM starts with: the human's pick for a human team (J1's for
@@ -992,23 +1016,6 @@ function VaultWorldCupGame({
       return l === null ? squadName(teamId, squadIndex) : lineupName(l, teamId, squadIndex);
     }
 
-    // G15-13: the name under TARJETA AMARILLA / ROJA, on the step the card is shown. From
-    // lastCard.squadIndex, never from the slot: after a keeper's red the slot (playerId)
-    // already holds the keeper who came on (review-6).
-    function refreshCardView(): void {
-      const card = run.match.lastCard;
-      cardName = playerName(run.match.players[card.playerId].team, card.squadIndex);
-    }
-
-    // G15-18: the name under LESIÓN, on the step injuriesUsed grows. The injured player is
-    // the one waiting in pendingInjury, or -- a keeper with no keeper left, who plays on
-    // (resolution 7) -- the one in lastInjury, which is readable on that same step.
-    function refreshInjuryCaption(team: 0 | 1): void {
-      const match = run.match;
-      const id = match.pendingInjury[team] >= 0 ? match.pendingInjury[team] : match.lastInjury;
-      injuryName = id < 0 ? '' : playerName(team, match.players[id].squadIndex);
-    }
-
     // G15-18: the LESIONADO window, ONCE per window (criterion 20): the title, and one
     // label per reserve of the human's Lineup.reserves (H10: the model the ALINEACIÓN
     // screen draws, not a second list) that the engine's substitute would accept.
@@ -1060,8 +1067,8 @@ function VaultWorldCupGame({
       // (ai.ts's keeperCatch calls givePossession, which snaps ball.x/y to the keeper's
       // own facing, BEFORE stamping the event -- see gestures.ts's header comment). The
       // direction has to be read HERE, before this step's stepMatchRun runs it over.
-      const prevBallX = match.ball.x;
-      const prevBallY = match.ball.y;
+      // V15-5: capturePreStep keeps that snapshot, and also what the shootout destroys on the step of its goal (the taker's position, the spot) -- G15-4.
+      capturePreStep(match, preStep);
       if (run.human[0]) {
         padToTeamInput(pads[0], first, run.inputs[0]);
         overlayPadToTeamInput(gamepadPads[0], first, run.inputs[0]);
@@ -1083,9 +1090,11 @@ function VaultWorldCupGame({
       // 1c. G11-2: the keeper's dive. A SCREEN timer started by the engine's own
       //     'gk-catch' event -- the engine knows nothing about the gesture, and the
       //     sweep is the same 18-slot scan points 1 and 1b do for the sound. The
-      //     direction comes from prevBallX/prevBallY, captured above, not from the
+      //     direction comes from preStep.ballX/ballY, captured above, not from the
       //     event itself.
-      beginGkCatchGestures(match, gestures, prevBallX, prevBallY);
+      beginGkCatchGestures(match, gestures, preStep.ballX, preStep.ballY);
+      // 1d. G15-25: a steal with a rival in reach feints, read off THIS step's events.
+      beginStealFeints(match, feints);
       // 2. The first link of the goal chain, the moment the ball crosses the line.
       //    goalNetDue reads the EDGE of scratch.call against `watch`, which still
       //    holds the previous step here (updateWatch runs at point 7): the call is a
@@ -1164,12 +1173,13 @@ function VaultWorldCupGame({
       } else keeperHoldSteps = 0;
 
       // 7. Captions, from the transition detector, seen from the human side of THIS
-      //    match; no GANADOR when a victory screen follows (S-FL3).
-      //    The names under a card or an injury caption are composed HERE, on the step of
-      //    the event and against the same watch, before updateWatch moves it on.
-      if (cardShownThisStep(match, watch)) refreshCardView();
-      const injured = injuredTeamThisStep(match, watch);
-      if (injured !== -1) refreshInjuryCaption(injured);
+      //    match; no GANADOR when a victory screen follows (S-FL3). G15-11: every caption
+      //    carries its own subject (collectCaptions), so no name is composed here.
+      //    G15-4: the celebration of an earlier goal moves on one step, and a goal ON this
+      //    step starts a new one -- read against the same watch, before updateWatch.
+      stepCelebration(celebration, match.phase);
+      const scoredTeam = goalScoredThisStep(match, watch);
+      if (scoredTeam !== -1) beginCelebrationForGoal(celebration, match, watch, scoredTeam, preStep);
       const before = captions.kind;
       collectCaptions(match, watch, humanSide, captions, victoryScreen);
       updateWatch(match, watch);
@@ -1187,10 +1197,13 @@ function VaultWorldCupGame({
 
       // 8. The camera. During the shootout the target is the alternating penalty
       //    spot and the cut is instant (S-SC8): panning 1600 units between kicks
-      //    would take longer than the kick itself.
+      //    would take longer than the kick itself. G15-4: for the SHOOTOUT_HOLD_STEPS
+      //    after a shootout goal it is held on the kick that scored, or the cut to the
+      //    next spot would hide the celebration and the net.
       const tx = cameraTargetX(match);
       const ty = cameraTargetY(match);
-      if (match.phase === 'shootout') centreCamera(cam, tx, ty, PITCH);
+      if (celebrationHoldsCamera(celebration)) centreCamera(cam, celebration.camX, celebration.camY, PITCH);
+      else if (match.phase === 'shootout') centreCamera(cam, tx, ty, PITCH);
       else followCamera(cam, tx, ty, PITCH, CAMERA_LAG);
 
       // 9. The end, exactly once. A spectated pair is recorded and the flow drains its
@@ -1216,6 +1229,8 @@ function VaultWorldCupGame({
         const before = captions.kind;
         stepCaption(captions);
         playCaptionEdge(before);
+        // G15-4: a golden goal (straight to 'over') celebrates in these frames.
+        stepCelebration(celebration, run.match.phase);
       }
     }
 
@@ -1355,69 +1370,57 @@ function VaultWorldCupGame({
       }
     }
 
-    // V15-1 (G15-2 + G15-3): every player is ONE sprite from the atlas of its side --
-    // run/idle frames, its own lying-down frame, the keeper's two dive frames, a slide
-    // drawn as the run sprite tilted -- chosen by sprite-frame.ts's choosePlayerSprite.
-    // The direction stick, the head and shoulders of G11-1 and the dive capsule are
-    // gone (G15-3); the shadow, the step-8 goal celebration arcs, the cursor, the
-    // charge notches and the sprint ring stay vector, on top of the sprite.
+    // V15-1 (G15-2 + G15-3): every player is ONE sprite from the atlas of its side,
+    // chosen by sprite-frame.ts's choosePlayerSprite. V15-5: the slide is its own lying
+    // sprite (G15-25, no tilted run any more), a steal feints, a player getting up crouches,
+    // and during a goal celebration (G15-4) celebrationView moves and poses the sprite --
+    // the engine's own positions stay frozen under it. The shadow, the cursor with the
+    // shirt number (G15-11), the charge notches and the sprint ring stay vector, on top.
     //
-    // The shootout exclusions of stage B2 §8 live in choosePlayerSprite now:
+    // The shootout exclusions of stage B2 §8 live in choosePlayerSprite:
     //   · `parked` — the nineteen in the centre circle stand still, whatever slide,
     //     floor or charge fields the engine left on them.
     //   · nobody is drawn lying down or sliding during the shootout, THE TAKER
     //     INCLUDED (B2 report, Minor 2; probe P6(1)).
     function drawPlayer(p: PlayerState, cursor: boolean): void {
       const match = run.match;
-      if (!isOnScreen(cam, p.x, p.y, PLAYER_RADIUS * 3)) return;
-      const x = toScreenX(cam, p.x);
-      const y = toScreenY(cam, p.y);
       const shootout = match.phase === 'shootout';
       const parked = shootout && p.id !== (match.shootout?.takerId ?? -1) && p.role !== 'gk';
+      // G11-2 still drives the dive: a SCREEN timer started by 'gk-catch'. G15-25: the
+      // steal feint is the same kind of timer, for the outfield.
+      const gesture = p.role === 'gk' ? gestureProgress(gestures, p.id, match.stepCount) : GESTURE_IDLE;
+      const feint = p.role === 'gk' ? GESTURE_IDLE : gestureProgress(feints, p.id, match.stepCount);
+      choosePlayerSprite(
+        p, match.stepCount, shootout, parked, gesture, gestures.dirX[p.id], gestures.dirY[p.id], feint, spriteChoice,
+      );
+      // The position is chosen BEFORE the culling: a team-mate running into the hug may be
+      // coming on screen.
+      let wx = p.x;
+      let wy = p.y;
+      if (celebrationView(celebration, p, celebrationOut)) {
+        wx = celebrationOut.x;
+        wy = celebrationOut.y;
+        spriteChoice.octant = celebrationOut.octant;
+        spriteChoice.pose = celebrationOut.pose;
+      }
+      if (!isOnScreen(cam, wx, wy, PLAYER_RADIUS * 3)) return;
+      const x = toScreenX(cam, wx);
+      const y = toScreenY(cam, wy);
 
       ctx.fillStyle = SHADOW;
       ctx.beginPath();
       ctx.ellipse(x, y + SPRITE_SHADOW_DY, SPRITE_SHADOW_RX, SPRITE_SHADOW_RY, 0, 0, Math.PI * 2);
       ctx.fill();
 
-      // G11-2 still drives the dive: a SCREEN timer started by 'gk-catch'. G15-3 turns
-      // it into two sprite frames chosen by the fraction of the gesture, pointed where
-      // the gesture stored (the ball one step before the catch).
-      const gesture = p.role === 'gk' ? gestureProgress(gestures, p.id, match.stepCount) : GESTURE_IDLE;
-      choosePlayerSprite(
-        p, match.stepCount, shootout, parked, gesture, gestures.dirX[p.id], gestures.dirY[p.id], spriteChoice,
-      );
       // G12-1: the keeper ALWAYS paints from the reserved atlas, never its team's.
       const atlas = p.role === 'gk' ? atlasKeeper : p.team === HOME ? atlasHome : atlasAway;
-      const sx = atlasCellX(spriteChoice.octant);
-      const sy = atlasCellY(spriteChoice.pose);
       // Whole pixels, or the pixel art shimmers while the camera glides.
       const px = Math.round(x);
       const py = Math.round(y);
-      if (spriteChoice.tilt === 0) {
-        ctx.drawImage(atlas, sx, sy, SPRITE_SIZE, SPRITE_SIZE, px - SPRITE_HALF, py - SPRITE_HALF, SPRITE_SIZE, SPRITE_SIZE);
-      } else {
-        // G15-3: the slide is the run sprite tilted. cos/sin were computed once at
-        // module load; the transform is undone on the very next line.
-        const s = SLIDE_TILT_SIN * spriteChoice.tilt;
-        ctx.setTransform(SLIDE_TILT_COS, s, -s, SLIDE_TILT_COS, px, py);
-        ctx.drawImage(atlas, sx, sy, SPRITE_SIZE, SPRITE_SIZE, -SPRITE_HALF, -SPRITE_HALF, SPRITE_SIZE, SPRITE_SIZE);
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
-      }
-
-      // The fixed goal celebration (spec: always the same one, no variations): the
-      // scoring team throws its arms up, the conceding team drops its head.
-      if (match.phase === 'goal' && match.lastGoalTeam >= 0) {
-        ctx.strokeStyle = p.team === match.lastGoalTeam ? HUD_ACCENT : HEADS_DOWN;
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        if (p.team === match.lastGoalTeam) {
-          ctx.arc(x, y - PLAYER_RADIUS, PLAYER_RADIUS * 0.9, Math.PI, Math.PI * 2);
-        } else {
-          ctx.arc(x, y + PLAYER_RADIUS * 0.2, PLAYER_RADIUS * 0.7, 0, Math.PI);
-        }
-        ctx.stroke();
-      }
+      ctx.drawImage(
+        atlas, atlasCellX(spriteChoice.octant), atlasCellY(spriteChoice.pose), SPRITE_SIZE, SPRITE_SIZE,
+        px - SPRITE_HALF, py - SPRITE_HALF, SPRITE_SIZE, SPRITE_SIZE,
+      );
 
       if (cursor) {
         ctx.strokeStyle = CURSOR_COLOR;
@@ -1428,6 +1431,13 @@ function VaultWorldCupGame({
         ctx.lineTo(x, y - PLAYER_RADIUS - 3);
         ctx.closePath();
         ctx.stroke();
+        // G15-11: "dorsal sobre el controlado junto al cursor". SHIRT_LABELS is built at
+        // module load; squadIndex 0..17 is its index.
+        ctx.font = FONT_HALF;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = CURSOR_COLOR;
+        ctx.fillText(SHIRT_LABELS[p.squadIndex], x + DORSAL_DX, y - PLAYER_RADIUS - DORSAL_DY);
 
         // R33 (Paco, 07-sep), replacing the continuous yellow bar the first draft
         // put in the HUD: THREE notches, here, next to the player who is charging.
@@ -1482,7 +1492,7 @@ function VaultWorldCupGame({
       cursorIds[1] = run.human[1] ? cursorPlayerId(match, 1) : -1;
       for (let i = 0; i < match.players.length; i++) {
         const p = match.players[i];
-        if (!isActive(p) && !isShootoutTaker(match, p)) continue;
+        if (!isActive(p) && !isShootoutTaker(match, p) && !(celebrationHoldsCamera(celebration) && p.id === celebration.hubId)) continue;
         drawPlayer(p, p.id === cursorIds[p.team]);
       }
     }
@@ -1739,9 +1749,17 @@ function VaultWorldCupGame({
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillStyle = kind === 'card-yellow' ? CARD_YELLOW : kind === 'card-red' ? CARD_RED : HUD_ACCENT;
-      // G15-13 "rótulo tarjeta + nombre", and the same for LESIÓN: the name composed on the
-      // event (refreshCardView / refreshInjuryCaption) goes on a second line.
-      const name = kind === 'card-yellow' || kind === 'card-red' ? cardName : kind === 'injury' ? injuryName : '';
+      // G15-11: the subject travels with the caption (captions.ts); the name is a lookup
+      // (playerName: the lineup's for a human team, the squad's for the CPU), never a
+      // string built here. D2: an own goal is about the DEFENDER (captions.team/squad are
+      // his), and its second line is the label baked at startMatch: "EN PROPIA · <name>".
+      // The same two lines serve every caption with a subject: GOL, FALLA and PENALTI,
+      // FALTA, TARJETA, LESIÓN.
+      const name = captions.squad < 0
+        ? ''
+        : captions.ownGoal
+          ? ownGoalLabels[captions.team * SQUAD_SIZE + captions.squad]
+          : playerName(captions.team, captions.squad);
       if (name === '') {
         ctx.fillText(CAPTION_TEXT[kind], VIEW_W / 2, CAPTION_Y + CAPTION_H / 2);
         return;
